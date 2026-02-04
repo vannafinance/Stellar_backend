@@ -68,353 +68,148 @@ export const tableHeadings = [
     { label: "Collateral", id: "collateral" },
   ]
 
- export  const tableBody = {
-    rows: [
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "WBTC",
-         
-            tag: "Active",
-          },
-          {
-            title: "$345.8K",
-            
-            tag: "7.51M USDC",
-          },
-          {
-            title: "22.16%",
-            tag: "22.16%",
-          },
-          {
-            title: "$4.66M USD",
-            tag: "4.66M USDC",
-          },
-          {
-            title: "22.16%",
-            tag: "22.16%",
-          },
-          {
-            title: "62.07%",
-            tag: "62.07%",
-          },
-          {
-            onlyIcons: ["WBTC", "USDC","USDT"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-  
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "WBTC",
-            
-            tag: "Active",
-          },
-          {
-            title: "$345.8K",
-            
-            tag: "7.51M USDC",
-          },
-          {
-            title: "22.16%",
-            tag: "22.16%",
-          },
-          {
-            title: "$4.66M USD",
-            tag: "4.66M USDC",
-          },
-          {
-            title: "22.16%",
-            tag: "22.16%",
-          },
-          {
-            title: "62.07%",    
-            tag: "62.07%",
-          },
-          {
-            onlyIcons: ["WBTC", "USDC","USDT"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "ETH",
-            tag: "Active",
-          },
-          {
-            title: "$892.4K",
-            tag: "12.3M USDC",
-          },
-          {
-            title: "18.45%",
-            tag: "18.45%",
-          },
-          {
-            title: "$6.21M USD",
-            tag: "6.21M USDC",
-          },
-          {
-            title: "15.32%",
-            tag: "15.32%",
-          },
-          {
-            title: "58.92%",
-            tag: "58.92%",
-          },
-          {
-            onlyIcons: ["ETH", "USDC"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "USDC",
-            tag: "Active",
-          },
-          {
-            title: "$1.2M",
-            tag: "15.8M USDC",
-          },
-          {
-            title: "12.85%",
-            tag: "12.85%",
-          },
-          {
-            title: "$8.45M USD",
-            tag: "8.45M USDC",
-          },
-          {
-            title: "9.67%",
-            tag: "9.67%",
-          },
-          {
-            title: "72.15%",
-            tag: "72.15%",
-          },
-          {
-            onlyIcons: ["USDC", "USDT"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "USDT",
-            tag: "Active",
-          },
-          {
-            title: "$567.3K",
-            tag: "9.12M USDC",
-          },
-          {
-            title: "16.78%",
-            tag: "16.78%",
-          },
-          {
-            title: "$3.89M USD",
-            tag: "3.89M USDC",
-          },
-          {
-            title: "11.24%",
-            tag: "11.24%",
-          },
-          {
-            title: "65.43%",
-            tag: "65.43%",
-          },
-          {
-            onlyIcons: ["USDT", "USDC", "ETH"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "LINK",
-            tag: "Active",
-          },
-          {
-            title: "$234.6K",
-            tag: "4.56M USDC",
-          },
-          {
-            title: "24.32%",
-            tag: "24.32%",
-          },
-          {
-            title: "$1.98M USD",
-            tag: "1.98M USDC",
-          },
-          {
-            title: "19.45%",
-            tag: "19.45%",
-          },
-          {
-            title: "54.21%",
-            tag: "54.21%",
-          },
-          {
-            onlyIcons: ["LINK", "ETH"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "UNI",
-            tag: "Active",
-          },
-          {
-            title: "$178.9K",
-            tag: "3.24M USDC",
-          },
-          {
-            title: "20.15%",
-            tag: "20.15%",
-          },
-          {
-            title: "$1.45M USD",
-            tag: "1.45M USDC",
-          },
-          {
-            title: "14.67%",
-            tag: "14.67%",
-          },
-          {
-            title: "51.89%",
-            tag: "51.89%",
-          },
-          {
-            onlyIcons: ["UNI", "USDC", "ETH"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "AAVE",
-            tag: "Active",
-          },
-          {
-            title: "$445.7K",
-            tag: "7.89M USDC",
-          },
-          {
-            title: "19.87%",
-            tag: "19.87%",
-          },
-          {
-            title: "$2.67M USD",
-            tag: "2.67M USDC",
-          },
-          {
-            title: "13.45%",
-            tag: "13.45%",
-          },
-          {
-            title: "59.34%",
-            tag: "59.34%",
-          },
-          {
-            onlyIcons: ["AAVE", "ETH", "USDC"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "MATIC",
-            tag: "Active",
-          },
-          {
-            title: "$312.4K",
-            tag: "5.67M USDC",
-          },
-          {
-            title: "17.23%",
-            tag: "17.23%",
-          },
-          {
-            title: "$1.89M USD",
-            tag: "1.89M USDC",
-          },
-          {
-            title: "12.34%",
-            tag: "12.34%",
-          },
-          {
-            title: "56.78%",
-            tag: "56.78%",
-          },
-          {
-            onlyIcons: ["MATIC", "USDT"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-      {
-        cell: [
-          {
-            chain: "ETH",
-            title: "DAI",
-            tag: "Active",
-          },
-          {
-            title: "$678.2K",
-            tag: "11.45M USDC",
-          },
-          {
-            title: "14.56%",
-            tag: "14.56%",
-          },
-          {
-            title: "$4.23M USD",
-            tag: "4.23M USDC",
-          },
-          {
-            title: "10.89%",
-            tag: "10.89%",
-          },
-          {
-            title: "68.92%",
-            tag: "68.92%",
-          },
-          {
-            onlyIcons: ["DAI", "USDC", "USDT"],
-            tag: "Collateral",
-            clickable: "toggle",
-          },
-        ],
-      },
-    ],
-  };
-  
+// Stellar Blockchain Pool Data
+export const tableBody = {
+  rows: [
+    {
+      cell: [
+        {
+          chain: "XLM",
+          title: "XLM",
+          tag: "Active",
+        },
+        {
+          title: "$125.4K",
+          tag: "1.25M XLM",
+        },
+        {
+          title: "8.45%",
+          tag: "8.45%",
+        },
+        {
+          title: "$45.2K",
+          tag: "452K XLM",
+        },
+        {
+          title: "6.25%",
+          tag: "6.25%",
+        },
+        {
+          title: "36.05%",
+          tag: "36.05%",
+        },
+        {
+          onlyIcons: ["XLM", "USDC", "EURC"],
+          tag: "Collateral",
+          clickable: "toggle",
+        },
+      ],
+    },
+    {
+      cell: [
+        {
+          chain: "USDC",
+          title: "USDC",
+          tag: "Active",
+        },
+        {
+          title: "$892.4K",
+          tag: "892.4K USDC",
+        },
+        {
+          title: "5.75%",
+          tag: "5.75%",
+        },
+        {
+          title: "$312.8K",
+          tag: "312.8K USDC",
+        },
+        {
+          title: "4.85%",
+          tag: "4.85%",
+        },
+        {
+          title: "35.05%",
+          tag: "35.05%",
+        },
+        {
+          onlyIcons: ["USDC", "XLM", "EURC"],
+          tag: "Collateral",
+          clickable: "toggle",
+        },
+      ],
+    },
+    {
+      cell: [
+        {
+          chain: "EURC",
+          title: "EURC",
+          tag: "Active",
+        },
+        {
+          title: "$567.8K",
+          tag: "523.2K EURC",
+        },
+        {
+          title: "6.25%",
+          tag: "6.25%",
+        },
+        {
+          title: "$198.5K",
+          tag: "183.1K EURC",
+        },
+        {
+          title: "5.15%",
+          tag: "5.15%",
+        },
+        {
+          title: "34.95%",
+          tag: "34.95%",
+        },
+        {
+          onlyIcons: ["EURC", "USDC", "XLM"],
+          tag: "Collateral",
+          clickable: "toggle",
+        },
+      ],
+    },
+  ],
+};
+
+// Pool configuration with contract addresses (Stellar Testnet)
+export const STELLAR_POOLS = {
+  XLM: {
+    id: 'XLM',
+    name: 'Stellar Lumens',
+    symbol: 'XLM',
+    icon: '/icons/usdc-icon.svg', // Placeholder - replace with proper XLM icon
+    decimals: 7,
+    lendingProtocol: 'CDZX7NBK7FVYM5KTHSMKDHE44SKGOVXYXWCFHXHJ47RPBZO3XLSFZPHV',
+    vToken: 'CDEQJMUKX7XGZQ5C7DX7WOGZHXCIC7ATRAUICYPYJGYXSVZPGUYLVXCI',
+    nativeContract: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
+  },
+  USDC: {
+    id: 'USDC',
+    name: 'USD Coin',
+    symbol: 'USDC',
+    icon: '/icons/usdc-icon.svg',
+    decimals: 7,
+    lendingProtocol: 'CAYBLJPQA22UFRERDDX2U62ZR52UDO7YRUSQUO7ZANERXA4UKARBQCFQ',
+    vToken: 'CACVSNZ322SDFHWIU6DO3OKN5JYRL6Q7A6OHT2TVAE4ASWDU7I34GQSH',
+    nativeContract: '', // Add USDC token contract when deployed
+  },
+  EURC: {
+    id: 'EURC',
+    name: 'Euro Coin',
+    symbol: 'EURC',
+    icon: '/icons/usdc-icon.svg', // Placeholder - replace with proper EURC icon
+    decimals: 7,
+    lendingProtocol: 'CCJM2PJR2PFN25VK7RNLDDBUC7U7OP6NO3BX6I7LRVKYOCAOJRUM3TTW',
+    vToken: 'CCACTGHDA5KBAY3YVJJ2SJHIYTOQ54PJFUEEDA5FUO7XLBZRCIJ2RIT6',
+    nativeContract: '', // Add EURC token contract when deployed
+  },
+} as const;
+
+// Supported assets for dropdown
+export const STELLAR_ASSETS = ['XLM', 'USDC', 'EURC'] as const;
+export type StellarAsset = typeof STELLAR_ASSETS[number];

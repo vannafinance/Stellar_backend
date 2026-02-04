@@ -10,18 +10,19 @@ export const HORIZON_URL = 'https://horizon-testnet.stellar.org';
 export const CONTRACT_ADDRESSES = {
   // Core Infrastructure
   REGISTRY: 'CCUCFIYAFFPP7BZPTE4M354IJDAE5TNK3X7IVF4LGQBIZG4MCIG44XCR',
-  ORACLE: 'CDMK4JPBZZYXTJ3AYQ2GF2P5CX5STW3YOPBLVA7AO7X64TXHAES3DHFY',
+  ORACLE: 'CB3RMYEL7KZ7SO6ZT3K2MXE3UGJ7OYA4QXR7XAADWSJJMFK4CJ7TP5BT',
   RATE_MODEL: 'CAFYIBXFVY6KEFES4PEDXPS3ZY7IN7PRP72A5VR6GHKVHKG6C5ZKL5MY',
+  RISK_ENGINE: "CAVGKEZJ5D4SZSCT37B2L623ZWTY5G66JX464SUGT7P2QE4LYN4FNSP3", // Fixed health ratio calculation
   
   // Token Contracts (deployed and initialized)
   VXLM_TOKEN: 'CDEQJMUKX7XGZQ5C7DX7WOGZHXCIC7ATRAUICYPYJGYXSVZPGUYLVXCI',
-  VUSDC_TOKEN: 'CACVSNZ322SDFHWIU6DO3OKN5JYRL6Q7A6OHT2TVAE4ASWDU7I34GQSH',
-  VEURC_TOKEN: 'CCACTGHDA5KBAY3YVJJ2SJHIYTOQ54PJFUEEDA5FUO7XLBZRCIJ2RIT6',
+  VUSDC_TOKEN: 'CDEWKHD2H7MT4C66EKFTKF7RIRWLNPWLYEUFYO5RU6OFNJ2SQQO6G34U',
+  VEURC_TOKEN: 'CCVQONJ3ALWZ4TWIJEIFH2PJWWDAO3DYUIRTB2T3TBCQM7T6OIXJ4OAV',
   
   // Lending Protocols (deployed and functional)
   LENDING_PROTOCOL_XLM: 'CDZX7NBK7FVYM5KTHSMKDHE44SKGOVXYXWCFHXHJ47RPBZO3XLSFZPHV',
-  LENDING_PROTOCOL_USDC: 'CAYBLJPQA22UFRERDDX2U62ZR52UDO7YRUSQUO7ZANERXA4UKARBQCFQ',
-  LENDING_PROTOCOL_EURC: 'CCJM2PJR2PFN25VK7RNLDDBUC7U7OP6NO3BX6I7LRVKYOCAOJRUM3TTW',
+  LENDING_PROTOCOL_USDC: 'CDSBWGEG6RBHNTZDYJHKGAFVXOOR3XJ63WPCYSBBGODOUIWLOJCVKLBW',
+  LENDING_PROTOCOL_EURC: 'CC5N7FI4MIJOF7XB55RI5OVY2R7RTX27ASHJNUNLX6TFDIKYQJZVVQSE',
   ACCOUNT_MANAGER: 'CCRVL6J45GRHI4JEFDBLERIQ27Z72SJENZIZD4WQZMMKNZMCG6ZQ7WVU',
 } as const;
 
@@ -30,6 +31,12 @@ export const ASSET_TYPES = {
   XLM: 'XLM',
   USDC: 'USDC',
   EURC: 'EURC',
+} as const;
+
+// Asset Issuers (Stellar Testnet)
+export const ASSET_ISSUERS = {
+  USDC: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  EURC: 'GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2',
 } as const;
 
 export type AssetType = typeof ASSET_TYPES[keyof typeof ASSET_TYPES];
@@ -333,5 +340,349 @@ export class ContractService {
     }
     
     throw new Error('Transaction timeout');
+  }
+
+  // Get total liquidity in pool
+  static async getPoolLiquidity(assetType: AssetType = ASSET_TYPES.XLM): Promise<string> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      
+      let contractAddress: string;
+      switch (assetType) {
+        case ASSET_TYPES.XLM:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_XLM;
+          break;
+        case ASSET_TYPES.USDC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_USDC;
+          break;
+        case ASSET_TYPES.EURC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
+          break;
+        default:
+          throw new Error('Unsupported asset type');
+      }
+      
+      // Create a temporary account for simulation
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      
+      const contract = new StellarSdk.Contract(contractAddress);
+      
+      const transaction = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(contract.call('get_total_liquidity_in_pool'))
+        .setTimeout(30)
+        .build();
+
+      const simulationResponse = await server.simulateTransaction(transaction);
+      
+      if (StellarSdk.rpc.Api.isSimulationSuccess(simulationResponse)) {
+        const result = simulationResponse.result;
+        if (result && result.retval) {
+          const liquidityWad = StellarSdk.scValToNative(result.retval);
+          // Convert from WAD (18 decimals) to regular decimal
+          const liquidity = Number(liquidityWad) / 1e18;
+          return liquidity.toFixed(7);
+        }
+      }
+      return '0';
+    } catch (error: any) {
+      console.error('Error fetching pool liquidity:', error);
+      return '0';
+    }
+  }
+
+  // Get total borrows in pool
+  static async getPoolBorrows(assetType: AssetType = ASSET_TYPES.XLM): Promise<string> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      
+      let contractAddress: string;
+      switch (assetType) {
+        case ASSET_TYPES.XLM:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_XLM;
+          break;
+        case ASSET_TYPES.USDC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_USDC;
+          break;
+        case ASSET_TYPES.EURC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
+          break;
+        default:
+          throw new Error('Unsupported asset type');
+      }
+      
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      
+      const contract = new StellarSdk.Contract(contractAddress);
+      
+      const transaction = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(contract.call('get_borrows'))
+        .setTimeout(30)
+        .build();
+
+      const simulationResponse = await server.simulateTransaction(transaction);
+      
+      if (StellarSdk.rpc.Api.isSimulationSuccess(simulationResponse)) {
+        const result = simulationResponse.result;
+        if (result && result.retval) {
+          const borrowsWad = StellarSdk.scValToNative(result.retval);
+          const borrows = Number(borrowsWad) / 1e18;
+          return borrows.toFixed(7);
+        }
+      }
+      return '0';
+    } catch (error: any) {
+      console.error('Error fetching pool borrows:', error);
+      return '0';
+    }
+  }
+
+  // Get total assets (liquidity + borrows)
+  static async getTotalAssets(assetType: AssetType = ASSET_TYPES.XLM): Promise<string> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      
+      let contractAddress: string;
+      switch (assetType) {
+        case ASSET_TYPES.XLM:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_XLM;
+          break;
+        case ASSET_TYPES.USDC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_USDC;
+          break;
+        case ASSET_TYPES.EURC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
+          break;
+        default:
+          throw new Error('Unsupported asset type');
+      }
+      
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      
+      const contract = new StellarSdk.Contract(contractAddress);
+      
+      const transaction = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(contract.call('total_assets'))
+        .setTimeout(30)
+        .build();
+
+      const simulationResponse = await server.simulateTransaction(transaction);
+      
+      if (StellarSdk.rpc.Api.isSimulationSuccess(simulationResponse)) {
+        const result = simulationResponse.result;
+        if (result && result.retval) {
+          const totalWad = StellarSdk.scValToNative(result.retval);
+          const total = Number(totalWad) / 1e18;
+          return total.toFixed(7);
+        }
+      }
+      return '0';
+    } catch (error: any) {
+      console.error('Error fetching total assets:', error);
+      return '0';
+    }
+  }
+
+  // Get vToken total supply
+  static async getVTokenTotalSupply(assetType: AssetType = ASSET_TYPES.XLM): Promise<string> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      
+      let contractAddress: string;
+      switch (assetType) {
+        case ASSET_TYPES.XLM:
+          contractAddress = CONTRACT_ADDRESSES.VXLM_TOKEN;
+          break;
+        case ASSET_TYPES.USDC:
+          contractAddress = CONTRACT_ADDRESSES.VUSDC_TOKEN;
+          break;
+        case ASSET_TYPES.EURC:
+          contractAddress = CONTRACT_ADDRESSES.VEURC_TOKEN;
+          break;
+        default:
+          throw new Error('Unsupported asset type');
+      }
+      
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      
+      const contract = new StellarSdk.Contract(contractAddress);
+      
+      const transaction = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(contract.call('total_supply'))
+        .setTimeout(30)
+        .build();
+
+      const simulationResponse = await server.simulateTransaction(transaction);
+      
+      if (StellarSdk.rpc.Api.isSimulationSuccess(simulationResponse)) {
+        const result = simulationResponse.result;
+        if (result && result.retval) {
+          const supply = StellarSdk.scValToNative(result.retval);
+          // vTokens have 7 decimals
+          const supplyDecimal = Number(supply) / 1e7;
+          return supplyDecimal.toFixed(7);
+        }
+      }
+      return '0';
+    } catch (error: any) {
+      console.error('Error fetching vToken supply:', error);
+      return '0';
+    }
+  }
+
+  // Get complete pool statistics
+  static async getPoolStats(assetType: AssetType = ASSET_TYPES.XLM): Promise<{
+    totalSupply: string;
+    totalBorrowed: string;
+    availableLiquidity: string;
+    utilizationRate: string;
+    vTokenSupply: string;
+  }> {
+    try {
+      const [liquidity, borrows, vTokenSupply] = await Promise.all([
+        this.getPoolLiquidity(assetType),
+        this.getPoolBorrows(assetType),
+        this.getVTokenTotalSupply(assetType),
+      ]);
+      
+      const liquidityNum = parseFloat(liquidity) || 0;
+      const borrowsNum = parseFloat(borrows) || 0;
+      const totalSupply = liquidityNum + borrowsNum;
+      
+      // Calculate utilization rate
+      const utilizationRate = totalSupply > 0 
+        ? ((borrowsNum / totalSupply) * 100).toFixed(2)
+        : '0';
+      
+      return {
+        totalSupply: totalSupply.toFixed(7),
+        totalBorrowed: borrows,
+        availableLiquidity: liquidity,
+        utilizationRate,
+        vTokenSupply,
+      };
+    } catch (error: any) {
+      console.error('Error fetching pool stats:', error);
+      return {
+        totalSupply: '0',
+        totalBorrowed: '0',
+        availableLiquidity: '0',
+        utilizationRate: '0',
+        vTokenSupply: '0',
+      };
+    }
+  }
+
+  // Get user borrow balance
+  static async getUserBorrowBalance(
+    address: string,
+    assetType: AssetType = ASSET_TYPES.XLM
+  ): Promise<string> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(address);
+      
+      let contractAddress: string;
+      switch (assetType) {
+        case ASSET_TYPES.XLM:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_XLM;
+          break;
+        case ASSET_TYPES.USDC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_USDC;
+          break;
+        case ASSET_TYPES.EURC:
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
+          break;
+        default:
+          throw new Error('Unsupported asset type');
+      }
+      
+      const contract = new StellarSdk.Contract(contractAddress);
+      
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          contract.call(
+            'get_borrow_balance',
+            StellarSdk.nativeToScVal(address, { type: 'address' })
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const simulationResponse = await server.simulateTransaction(transaction);
+      
+      if (StellarSdk.rpc.Api.isSimulationSuccess(simulationResponse)) {
+        const result = simulationResponse.result;
+        if (result && result.retval) {
+          const balance = StellarSdk.scValToNative(result.retval);
+          const balanceDecimal = Number(balance) / 1e18;
+          return balanceDecimal.toFixed(7);
+        }
+      }
+      return '0';
+    } catch (error: any) {
+      console.error('Error fetching borrow balance:', error);
+      return '0';
+    }
+  }
+
+  // Get all token balances for a wallet (XLM, USDC, EURC)
+  static async getAllTokenBalances(address: string): Promise<{
+    XLM: string;
+    USDC: string;
+    EURC: string;
+  }> {
+    try {
+      const server = new StellarSdk.Horizon.Server(HORIZON_URL);
+      const account = await server.loadAccount(address);
+      
+      let xlmBalance = '0';
+      let usdcBalance = '0';
+      let eurcBalance = '0';
+      
+      for (const balance of account.balances) {
+        if (balance.asset_type === 'native') {
+          xlmBalance = parseFloat(balance.balance).toFixed(7);
+        } else if (balance.asset_type === 'credit_alphanum4' || balance.asset_type === 'credit_alphanum12') {
+          const assetBalance = balance as StellarSdk.Horizon.HorizonApi.BalanceLineAsset;
+          if (assetBalance.asset_code === 'USDC' && assetBalance.asset_issuer === ASSET_ISSUERS.USDC) {
+            usdcBalance = parseFloat(assetBalance.balance).toFixed(7);
+          } else if (assetBalance.asset_code === 'EURC' && assetBalance.asset_issuer === ASSET_ISSUERS.EURC) {
+            eurcBalance = parseFloat(assetBalance.balance).toFixed(7);
+          }
+        }
+      }
+      
+      return {
+        XLM: xlmBalance,
+        USDC: usdcBalance,
+        EURC: eurcBalance,
+      };
+    } catch (error: any) {
+      console.error('Error fetching token balances:', error);
+      return {
+        XLM: '0',
+        USDC: '0',
+        EURC: '0',
+      };
+    }
   }
 }

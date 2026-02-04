@@ -6,7 +6,7 @@ import { Details } from "@/components/earn/details-tab";
 import { YourPositions } from "@/components/earn/your-positions";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import Image from "next/image";
-import { useState, use, useMemo } from "react";
+import { useState, use, useMemo, useEffect } from "react";
 import { ActivityTab } from "@/components/earn/acitivity-tab";
 import { AnalyticsTab } from "@/components/earn/analytics-tab";
 import { MarginManagersTab } from "@/components/earn/margin-managers-tab";
@@ -16,6 +16,8 @@ import { iconPaths } from "@/lib/constants";
 import { formatNumber } from "@/lib/utils/format-value";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
+import { useSelectedPoolStore, setSelectedPool } from "@/store/selected-pool-store";
+import { ASSET_TYPES, AssetType } from "@/lib/stellar-utils";
 
 // Helper function to parse values with K/M/B suffixes
 const parseAmountValue = (value?: string): number => {
@@ -64,15 +66,29 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
     router.push("/earn");
   };
 
+  // Set selected pool when page loads or id changes
+  useEffect(() => {
+    const assetType = id.toUpperCase();
+    if (assetType === 'XLM' || assetType === 'USDC' || assetType === 'EURC') {
+      setSelectedPool(assetType as AssetType, {
+        id: id,
+        chain: assetType,
+        title: assetType,
+        tag: "Active"
+      });
+    }
+  }, [id]);
+
   // Get vault data - either from store or use id as fallback
   const vaultData = useMemo(() => {
     if (selectedVault && selectedVault.id === id) {
       return selectedVault;
     }
     // Fallback data if store is empty (e.g., direct URL access)
+    // Default to Stellar XLM for the blockchain
     return {
       id: id,
-      chain: "ETH",
+      chain: id.toUpperCase() === 'USDC' ? 'USDC' : id.toUpperCase() === 'EURC' ? 'EURC' : 'XLM',
       title: id,
       tag: "Active",
     };
@@ -80,9 +96,9 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
 
   // Get icon path for the asset
   const iconPath = useMemo(() => {
-    // Try to get icon from iconPaths, fallback to eth-icon
+    // Try to get icon from iconPaths, fallback to xlm-icon for Stellar
     const assetName = vaultData.title.toUpperCase();
-    return iconPaths[assetName] || "/icons/eth-icon.png";
+    return iconPaths[assetName] || "/icons/xlm-icon.png";
   }, [vaultData.title]);
 
   // Prepare account stats items
@@ -178,11 +194,6 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
                   {vaultData.title}
                 </h1>
                 <div className="w-fit h-fit flex gap-[8px] items-center">
-                  <span className={`text-[12px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
-                    isDark ? "bg-[#222222] text-white" : "bg-[#F4F4F4] text-[#0C0C0C]"
-                  }`}>
-                    V3
-                  </span>
                   <span className={`text-[12px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
                     isDark ? "bg-[#222222] text-white" : "bg-[#F4F4F4] text-[#0C0C0C]"
                   }`}>

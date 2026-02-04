@@ -1,52 +1,57 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dropdown } from "../ui/dropdown";
 import { DropdownOptions } from "@/lib/constants";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
+import { Button } from "../ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
-import { useSupplyLiquidity, usePoolData, useUserPositions } from "@/hooks/use-earn";
-import { AssetType, ContractService } from "@/lib/stellar-utils";
+import { useSupplyLiquidity, usePoolData } from "@/hooks/use-earn";
+import { ASSET_TYPES, AssetType, ContractService } from "@/lib/stellar-utils";
+import { useSelectedPoolStore } from "@/store/selected-pool-store";
 
 export const SupplyLiquidityTab = () => {
   const { isDark } = useTheme();
-  const [selectedOption, setSelectedOption] = useState<string>("XLM");
+  const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
+  const [selectedOption, setSelectedOption] = useState<string>(selectedAsset);
   const [value, setValue] = useState<string>("");
   const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
+  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', EURC: '0' });
   
   const userAddress = useUserStore((state) => state.address);
   const balance = useUserStore((state) => state.balance);
-  const tokenBalances = useUserStore((state) => state.tokenBalances);
+  const depositedBalances = useUserStore((state) => state.depositedBalances);
   
   const { supply, isLoading, message, clearMessage } = useSupplyLiquidity();
   const { pools } = usePoolData();
-  const { refresh: refreshPositions } = useUserPositions();
 
-  // Fetch all token balances when user connects
-  const refreshTokenBalances = useCallback(async () => {
-    if (!userAddress) return;
-    
-    try {
-      const balances = await ContractService.getAllTokenBalances(userAddress);
-      useUserStore.getState().set({
-        tokenBalances: balances,
-        balance: balances.XLM, // Also update native XLM balance
-      });
-    } catch (error) {
-      console.error('Error fetching token balances:', error);
-    }
-  }, [userAddress]);
-
-  // Refresh positions and token balances when user connects
+  // Sync with selected pool store
   useEffect(() => {
-    if (userAddress) {
-      refreshPositions();
-      refreshTokenBalances();
-    }
-  }, [userAddress, refreshPositions, refreshTokenBalances]);
+    setSelectedOption(selectedAsset);
+  }, [selectedAsset]);
+
+  // Fetch token balances when user connects or asset changes
+  useEffect(() => {
+    const fetchTokenBalances = async () => {
+      if (userAddress) {
+        try {
+          const balances = await ContractService.getAllTokenBalances(userAddress);
+          setTokenBalances(balances);
+        } catch (error) {
+          console.error('Error fetching token balances:', error);
+          // Set to zero on error
+          setTokenBalances({ XLM: '0', USDC: '0', EURC: '0' });
+        }
+      } else {
+        setTokenBalances({ XLM: '0', USDC: '0', EURC: '0' });
+      }
+    };
+    
+    fetchTokenBalances();
+  }, [userAddress]);
 
   // Get pool stats for selected asset
   const selectedPool = pools[selectedOption as keyof typeof pools];
@@ -56,12 +61,12 @@ export const SupplyLiquidityTab = () => {
   const availableBalance = useMemo(() => {
     if (selectedOption === 'XLM') {
       // For XLM, use native balance minus some reserve for fees
-      const xlmBalance = parseFloat(tokenBalances?.XLM || balance) || 0;
+      const xlmBalance = parseFloat(balance) || 0;
       return Math.max(0, xlmBalance - 1).toFixed(7); // Keep 1 XLM for fees
     } else if (selectedOption === 'USDC') {
-      return tokenBalances?.USDC || '0';
+      return tokenBalances.USDC || '0';
     } else if (selectedOption === 'EURC') {
-      return tokenBalances?.EURC || '0';
+      return tokenBalances.EURC || '0';
     }
     return '0';
   }, [selectedOption, balance, tokenBalances]);
@@ -82,11 +87,6 @@ export const SupplyLiquidityTab = () => {
       if (result.success) {
         setValue("");
         setSelectedPercentage(null);
-        // Refresh positions and balances after successful deposit
-        setTimeout(() => {
-          refreshPositions();
-          refreshTokenBalances();
-        }, 2000);
       }
     }
   };
@@ -131,7 +131,11 @@ export const SupplyLiquidityTab = () => {
           </label>
           <Dropdown
             items={DropdownOptions}
-            setSelectedOption={setSelectedOption}
+            setSelectedOption={(option) => {
+              const optionString = typeof option === 'string' ? option : option.toString();
+              setSelectedOption(optionString);
+              useSelectedPoolStore.getState().set({ selectedAsset: optionString as AssetType });
+            }}
             selectedOption={selectedOption}
             classname="w-fit gap-[4px] items-center"
             dropdownClassname="w-full"
@@ -162,7 +166,7 @@ export const SupplyLiquidityTab = () => {
           
           <div className="flex justify-between items-center">
             <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-              ≈ ${(parseFloat(value) * (selectedOption === 'XLM' ? 0.1 : 1) || 0).toFixed(2)} USD
+              ≈ ${(parseFloat(value) * (selectedOption === 'XLM' ? 0.1 : selectedOption === 'USDC' ? 1 : selectedOption === 'EURC' ? 1.05 : 1) || 0).toFixed(2)} USD
             </span>
             <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
               Available: {availableBalance} {selectedOption}
@@ -307,4 +311,3 @@ export const SupplyLiquidityTab = () => {
     </div>
   );
 };
-

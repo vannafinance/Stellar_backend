@@ -1,176 +1,294 @@
-import { useState } from "react";
+'use client';
+
+import { useState, useMemo, useEffect } from "react";
 import { Dropdown } from "../ui/dropdown";
 import { DropdownOptions } from "@/lib/constants";
-import { InfoCard } from "../margin/info-card";
-import { Button } from "../ui/button";
+import { STELLAR_POOLS } from "@/lib/constants/earn";
+import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
+import { motion, AnimatePresence } from "framer-motion";
 import { useUserStore } from "@/store/user";
-import Image from "next/image";
 import { useTheme } from "@/contexts/theme-context";
-
-const infoPropsData = {
-  data: {
-    youGetVETH: 100,
-    ethPerVETH: 1.002889,
-
-    currentAPY: 4.95,
-    baseAPY: 2.79,
-    bonusAPY: 0.25,
-    rewardsAPY: 1.9,
-
-    projectedMonthlyFrom: 0,
-    projectedMonthlyTo: 100000,
-
-    projectedYearlyFrom: 0,
-    projectedYearlyTo: 100000,
-  },
-
-  expandableSections: [
-    {
-      title: "More Details",
-      headingBold: false,
-      defaultExpanded: false,
-      items: [
-        {
-          id: "baseAPY",
-          name: "Base APY (%)",
-        },
-        {
-          id: "bonusAPY",
-          name: "Bonus APY (%)",
-        },
-        {
-          id: "rewardsAPY",
-          name: "Rewards APY (%)",
-        },
-        {
-          id: "youGetVETH",
-          name: "You Get (vETH)",
-        },
-        {
-          id: "ethPerVETH",
-          name: "ETH per vETH",
-        },
-        {
-          id: "currentAPY",
-          name: "Current APY (%)",
-        },
-        {
-          id: "projectedMonthlyFrom",
-          name: "Projected Monthly Earnings (From)",
-        },
-        {
-          id: "projectedMonthlyTo",
-          name: "Projected Monthly Earnings (To)",
-        },
-        {
-          id: "projectedYearlyFrom",
-          name: "Projected Yearly Earnings (From)",
-        },
-        {
-          id: "projectedYearlyTo",
-          name: "Projected Yearly Earnings (To)",
-        },
-      ],
-    },
-  ],
-
-  showExpandable: true,
-};
+import { useWithdrawLiquidity, usePoolData, useUserPositions } from "@/hooks/use-earn";
+import { AssetType } from "@/lib/stellar-utils";
+import { useSelectedPoolStore } from "@/store/selected-pool-store";
 
 export const WithdrawLiquidity = () => {
   const { isDark } = useTheme();
-  const [selectedOption, setSelectedOption] = useState<string>("USDT");
-  const [valueInUSD, setValueInUSD] = useState<number>(0);
-  const [value, setValue] = useState<number>(0);
+  const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
+  const [selectedOption, setSelectedOption] = useState<string>(selectedAsset);
+  const [value, setValue] = useState<string>("");
+  const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
+  
   const userAddress = useUserStore((state) => state.address);
+  
+  const { withdraw, isLoading, message, clearMessage } = useWithdrawLiquidity();
+  const { pools } = usePoolData();
+  const { positions, refresh: refreshPositions, isLoading: isLoadingPositions } = useUserPositions();
+
+  // Sync with selected pool store
+  useEffect(() => {
+    setSelectedOption(selectedAsset);
+  }, [selectedAsset]);
+
+  // Refresh positions when user connects or asset changes
+  useEffect(() => {
+    if (userAddress) {
+      refreshPositions();
+    }
+  }, [userAddress, selectedOption, refreshPositions]);
+
+  // Get pool stats and user position for selected asset
+  const selectedPool = pools[selectedOption as keyof typeof pools];
+  const selectedPoolConfig = STELLAR_POOLS[selectedOption as keyof typeof STELLAR_POOLS];
+  const userPosition = positions[selectedOption as keyof typeof positions];
+
+  // Calculate available vToken balance
+  const vTokenBalance = useMemo(() => {
+    return userPosition?.vTokenBalance || '0';
+  }, [userPosition]);
+
+  // Calculate estimated underlying tokens to receive
+  const estimatedTokens = useMemo(() => {
+    const vTokenAmount = parseFloat(value) || 0;
+    if (vTokenAmount <= 0) return '0';
+    
+    const exchangeRate = parseFloat(selectedPool?.exchangeRate || '1');
+    return (vTokenAmount * exchangeRate).toFixed(7);
+  }, [value, selectedPool]);
+
+  // Handle percentage button click
+  const handlePercentageClick = (percent: number) => {
+    setSelectedPercentage(percent);
+    const maxAmount = parseFloat(vTokenBalance) || 0;
+    const calculatedAmount = (maxAmount * percent / 100).toFixed(7);
+    setValue(calculatedAmount);
+  };
+
+  // Handle withdraw action
+  const handleWithdraw = async () => {
+    const numAmount = parseFloat(value);
+    if (numAmount > 0 && userAddress) {
+      const result = await withdraw(numAmount, selectedOption as AssetType);
+      if (result.success) {
+        setValue("");
+        setSelectedPercentage(null);
+        refreshPositions();
+      }
+    }
+  };
+
+  // Get button text
+  const getButtonText = () => {
+    if (!userAddress) return "Connect Wallet";
+    if (isLoading) return "Processing...";
+    if (!value || parseFloat(value) <= 0) return "Enter Amount";
+    if (parseFloat(value) > parseFloat(vTokenBalance)) return "Insufficient Balance";
+    return `Withdraw ${estimatedTokens} ${selectedOption}`;
+  };
+
+  const isButtonDisabled = 
+    !userAddress || 
+    isLoading || 
+    !value || 
+    parseFloat(value) <= 0 || 
+    parseFloat(value) > parseFloat(vTokenBalance);
 
   return (
-    <>
-      <form className={`flex gap-[16px] items-start w-full h-fit border-[1px] rounded-[16px] p-[16px] ${
-        isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"
+    <div className="flex flex-col gap-4">
+      {/* Asset Selection & Amount Input */}
+      <div className={`flex flex-col gap-4 w-full h-fit border rounded-[16px] p-4 ${
+        isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-gray-200"
       }`}>
-        <div className="w-full h-full flex flex-col gap-[44px] justify-between">
-          <div className="w-fit h-fit flex items-center gap-[4px]">
-            <span className="w-[20px] h-[20px]">
-              <Image src={"/icons/eth-icon.png"} alt="vETH token icon" width={20} height={20} />
+        {/* Asset Selector */}
+        <div className="flex justify-between items-center">
+          <label className={`text-sm font-medium ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+            Withdraw Asset
+          </label>
+          <div className="flex items-center gap-2">
+            <Dropdown
+              items={DropdownOptions}
+              setSelectedOption={(option) => {
+                const optionString = typeof option === 'string' ? option : option.toString();
+                setSelectedOption(optionString);
+                useSelectedPoolStore.getState().set({ selectedAsset: optionString as AssetType });
+              }}
+              selectedOption={selectedOption}
+              classname="w-fit gap-[4px] items-center"
+              dropdownClassname="w-full"
+            />
+            <span className={`text-sm font-medium ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+              → v{selectedOption}
             </span>
-            <h3 className={`text-[14px] font-semibold ${
-              isDark ? "text-white" : "text-[#111111]"
-            }`}>
-              vETH
-            </h3>
-          </div>
-          <div className="w-full h-fit flex flex-col gap-[8px]">
-            <div className="w-full h-fit">
-              <label htmlFor="withdraw-amount" className="sr-only">
-                Withdraw Amount
-              </label>
-              <input
-                id="withdraw-amount"
-                onChange={(e) => setValue(Number(e.target.value))}
-                value={value}
-                type="number"
-                placeholder="Enter amount"
-                className={`w-fit h-fit placeholder:text-[#C7C7C7] text-[16px] font-medium outline-none ${
-                  isDark ? "text-white bg-[#111111]" : "bg-white"
-                }`}
-                aria-describedby="withdraw-usd-value"
-              />
-            </div>
-            <output id="withdraw-usd-value" className={`w-full h-fit text-[10px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              {valueInUSD.toFixed(2)}
-            </output>
           </div>
         </div>
-        <div className="w-fit h-fit flex flex-col items-end self-end">
-          <fieldset className="w-fit h-fit flex flex-col items-end gap-[4px]">
-            <legend className={`text-[10px] font-semibold ${
-              isDark ? "text-[#919191]" : "text-[#363636]"
-            }`}>
-              Transfer to:
-            </legend>
 
-            <span
-              className="text-center w-[28px] h-fit rounded-[4px] p-[4px] text-[12px] font-medium bg-[#F1EBFD] text-[#703AE6]"
-              role="status"
-              aria-label="Protocol Balance"
-            >
-              PB
-            </span>
-            <output className={`w-fit h-fit text-[10px] flex gap-[4px] font-semibold ${
-              isDark ? "text-white" : ""
-            }`}>
-              Balance:{" "}
-              <span className={`font-semibold text-[10px] ${
-                isDark ? "text-white" : "text-[#363636]"
-              }`}>
-                {value.toFixed(2)}
+        {/* vToken Amount Input */}
+        <div className="flex flex-col gap-2">
+          <div className={`p-3 rounded-xl ${isDark ? "bg-[#1a1a1a]" : "bg-gray-50"}`}>
+            <div className="flex justify-between items-center mb-2">
+              <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                Burn vTokens
               </span>
-            </output>
-          </fieldset>
+              <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                Balance: {parseFloat(vTokenBalance).toFixed(4)} v{selectedOption}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <input
+                type="number"
+                value={value}
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  setSelectedPercentage(null);
+                }}
+                placeholder="0.00"
+                step="0.0000001"
+                min="0"
+                className={`w-full text-xl font-bold outline-none bg-transparent ${
+                  isDark ? "text-white placeholder-gray-600" : "text-gray-900 placeholder-gray-400"
+                }`}
+              />
+              <span className={`text-sm font-semibold ${isDark ? "text-[#703AE6]" : "text-[#703AE6]"}`}>
+                v{selectedOption}
+              </span>
+            </div>
+          </div>
         </div>
-      </form>
-      <section className="flex flex-col gap-[8px]" aria-label="Withdraw Details">
-        <InfoCard
-          data={infoPropsData.data}
-          expandableSections={infoPropsData.expandableSections}
-          showExpandable={infoPropsData.showExpandable}
-        />
-      </section>
-      <Button
-        text={
-          !userAddress
-            ? "Connect Wallet"
-            : value === 0
-            ? "Enter Amount"
-            : "Withdraw Liquidity"
-        }
-        size="large"
-        type="gradient"
-        disabled={value === 0 ? true : false}
-      />
-    </>
+
+        {/* Percentage Buttons */}
+        <div className="flex gap-2">
+          {DEPOSIT_PERCENTAGES.map((percent) => (
+            <button
+              key={percent}
+              type="button"
+              onClick={() => handlePercentageClick(percent)}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                selectedPercentage === percent
+                  ? `${PERCENTAGE_COLORS[percent]} text-white`
+                  : isDark
+                  ? "bg-[#222222] text-gray-300 hover:bg-[#333333]"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {percent}%
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Pool Stats Card */}
+      <div className={`rounded-[16px] p-4 ${
+        isDark ? "bg-[#111111] border border-[#333333]" : "bg-gray-50 border border-gray-200"
+      }`}>
+        <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
+          Your Position
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Your vTokens</span>
+            <span className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
+              {parseFloat(vTokenBalance).toFixed(4)} v{selectedOption}
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Exchange Rate</span>
+            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
+              1 v{selectedOption} = {selectedPool?.exchangeRate || '1.0000'} {selectedOption}
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Pool Utilization</span>
+            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
+              {selectedPool?.utilizationRate || '0'}%
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Available Liquidity</span>
+            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
+              {parseFloat(selectedPool?.availableLiquidity || '0').toLocaleString()} {selectedOption}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* You Will Receive Card */}
+      {value && parseFloat(value) > 0 && (
+        <div className={`rounded-[16px] p-4 border-2 border-dashed ${
+          isDark ? "bg-[#0D1117] border-green-500/30" : "bg-green-50 border-green-200"
+        }`}>
+          <div className="flex justify-between items-center">
+            <div className="flex flex-col">
+              <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                You will receive
+              </span>
+              <span className={`text-xl font-bold text-green-500`}>
+                {estimatedTokens} {selectedOption}
+              </span>
+            </div>
+            <div className={`p-2 rounded-full ${isDark ? "bg-green-500/20" : "bg-green-100"}`}>
+              <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+          <p className={`text-xs mt-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+            Burning v{selectedOption} tokens will return your deposited {selectedOption} plus accrued interest.
+          </p>
+        </div>
+      )}
+
+      {/* Message Display */}
+      <AnimatePresence>
+        {message.text && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className={`p-4 rounded-xl flex items-start gap-3 ${
+              message.type === 'success' 
+                ? 'bg-green-500/10 border border-green-500/20 text-green-500' 
+                : message.type === 'error' 
+                ? 'bg-red-500/10 border border-red-500/20 text-red-500' 
+                : 'bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]'
+            }`}
+          >
+            {message.type === 'success' && (
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+            {message.type === 'error' && (
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            {message.type === 'info' && (
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+            <span className="text-sm">{message.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Withdraw Button */}
+      <button
+        onClick={handleWithdraw}
+        disabled={isButtonDisabled}
+        className={`w-full py-4 rounded-xl font-semibold text-white transition-all ${
+          isButtonDisabled
+            ? "bg-gray-500 cursor-not-allowed opacity-50"
+            : "bg-gradient-to-r from-green-500 to-emerald-500 hover:opacity-90 cursor-pointer"
+        }`}
+      >
+        {getButtonText()}
+      </button>
+
+      {/* Contract Info */}
+      <div className={`text-xs text-center ${isDark ? "text-gray-600" : "text-gray-400"}`}>
+        Contract: {selectedPoolConfig?.lendingProtocol.slice(0, 8)}...{selectedPoolConfig?.lendingProtocol.slice(-8)}
+      </div>
+    </div>
   );
 };

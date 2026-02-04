@@ -14,8 +14,9 @@ import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
 import { AccountStats } from "@/components/margin/account-stats";
+import { CreateMarginAccount } from "@/components/margin/create-margin-account";
 import { Position } from "@/lib/types";
-import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useMarginAccountInfoStore, checkUserMarginAccount, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
 import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
@@ -90,6 +91,30 @@ const Margin = () => {
   const hasMarginAccount = useMarginAccountInfoStore(
     (state) => state.hasMarginAccount
   );
+  const marginAccountAddress = useMarginAccountInfoStore(
+    (state) => state.marginAccountAddress
+  );
+
+  // Check for margin account when user address changes
+  useEffect(() => {
+    if (userAddress) {
+      checkUserMarginAccount(userAddress);
+    }
+  }, [userAddress]);
+
+  // Refresh borrowed balances when margin account is available
+  useEffect(() => {
+    if (hasMarginAccount && marginAccountAddress) {
+      refreshBorrowedBalances(marginAccountAddress);
+      
+      // Set up periodic refresh every 30 seconds
+      const interval = setInterval(() => {
+        refreshBorrowedBalances(marginAccountAddress);
+      }, 30000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [hasMarginAccount, marginAccountAddress]);
 
 
   // Format data for InfoCard component
@@ -187,11 +212,23 @@ const Margin = () => {
 
         {/* Two column layout: Leverage form and Info card */}
         <div className="flex gap-[36px] relative" ref={leverageCollateralRef}>
-          {/* Left: Leverage collateral form */}
-          <LeverageCollateral
-            switchToRepayTab={switchToRepayTab}
-            onTabSwitched={() => setSwitchToRepayTab(false)}
-          />
+          {/* Left: Leverage collateral form or Create Account */}
+          {hasMarginAccount ? (
+            <LeverageCollateral
+              switchToRepayTab={switchToRepayTab}
+              onTabSwitched={() => setSwitchToRepayTab(false)}
+            />
+          ) : (
+            <motion.div
+              className="w-full"
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            >
+              <CreateMarginAccount />
+            </motion.div>
+          )}
 
           {/* Right: Margin account info card - sticky */}
           <motion.aside
@@ -258,11 +295,39 @@ const Margin = () => {
                 },
               ]}
             />
+
+            {/* Margin Account Status */}
+            {userAddress && marginAccountAddress && (
+              <motion.div
+                className={`p-4 rounded-lg border ${
+                  isDark 
+                    ? "bg-green-900/10 border-green-700/30" 
+                    : "bg-green-50 border-green-200"
+                }`}
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.3, delay: 0.2 }}
+              >
+                <div className="text-xs space-y-1">
+                  <p className={`font-medium ${
+                    isDark ? "text-green-400" : "text-green-700"
+                  }`}>
+                    Active Margin Account
+                  </p>
+                  <p className={`font-mono ${
+                    isDark ? "text-green-300" : "text-green-600"
+                  }`}>
+                    {marginAccountAddress.slice(0, 8)}...{marginAccountAddress.slice(-6)}
+                  </p>
+                </div>
+              </motion.div>
+            )}
           </motion.aside>
         </div>
 
-        {/* Positions table section */}
-        {userAddress && (
+        {/* Positions table section - only show if user has margin account */}
+        {userAddress && hasMarginAccount && (
           <motion.section
             className="w-full h-fit "
             initial={{ opacity: 0, y: 30 }}

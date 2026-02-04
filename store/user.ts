@@ -4,7 +4,12 @@ import createNewStore from "@/zustand/index"
 export interface User {
   address: string | null;
   isConnected: boolean;
-  balance: string;
+  balance: string; // Native XLM balance
+  tokenBalances: {
+    XLM: string;
+    USDC: string;
+    EURC: string;
+  };
   depositedBalances: {
     XLM: string;
     USDC: string;
@@ -19,6 +24,11 @@ const initialState: User = {
   address: null,
   isConnected: false,
   balance: '0',
+  tokenBalances: {
+    XLM: '0',
+    USDC: '0',
+    EURC: '0',
+  },
   depositedBalances: {
     XLM: '0',
     USDC: '0',
@@ -32,6 +42,16 @@ const initialState: User = {
 export const useUserStore = createNewStore(initialState, {
   name: "user-store",
   devTools: true,
-  persist: true,
+  persist: {
+    name: "user-store",
+    version: 1,
+    migrate: (persistedState: any, version: number) => {
+      // Always reset isLoading to false on load to prevent stuck "Connecting..." state
+      return {
+        ...persistedState,
+        isLoading: false,
+      };
+    },
+  },
 });
 

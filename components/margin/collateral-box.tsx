@@ -16,6 +16,7 @@ import {
   BALANCE_TYPE_OPTIONS,
 } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+import { useUserStore } from "@/store/user";
 
 interface Collateral {
   id?: string; // Add id prop
@@ -32,6 +33,10 @@ interface Collateral {
 
 const CollateralComponent = (props: Collateral) => {
   const { isDark } = useTheme();
+  
+  // Get wallet balances from user store
+  const tokenBalances = useUserStore((state) => state.tokenBalances);
+  
   // Determine editing mode
   const isEditing = props.isEditing ?? props.collaterals === null;
   const isStandard = !isEditing;
@@ -333,7 +338,11 @@ const CollateralComponent = (props: Collateral) => {
                   transition={{ duration: 0.1 }}
                   aria-label="View unified balance breakdown"
                 >
-                  Unified Balance: {collateral.unifiedBalance}{" "}
+                  Unified Balance: {
+                    selectedBalanceType === "WB" ? 
+                      tokenBalances[selectedCurrency as keyof typeof tokenBalances] || "0" : 
+                      collateral.unifiedBalance
+                  }{" "}
                   {collateral.asset}
                 </motion.button>
               )}
@@ -421,7 +430,11 @@ const CollateralComponent = (props: Collateral) => {
                 transition={{ duration: 0.1 }}
                 aria-label="View unified balance breakdown"
               >
-                Unified Balance: {collateral.unifiedBalance} {collateral.asset}
+                Unified Balance: {
+                  collateral.balanceType.toLowerCase() === "wb" ? 
+                    tokenBalances[collateral.asset as keyof typeof tokenBalances] || "0" : 
+                    collateral.unifiedBalance
+                } {collateral.asset}
               </motion.button>
             </div>
 

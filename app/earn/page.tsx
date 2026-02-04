@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Chart } from "@/components/earn/chart";
 import { Table } from "@/components/earn/table";
@@ -10,12 +10,24 @@ import { ACCOUNT_STATS_ITEMS } from "@/lib/constants/margin";
 import { useUserStore } from "@/store/user";
 import { RewardsTable } from "@/components/earn/rewards-table";
 import { useEarnVaultStore } from "@/store/earn-vault-store";
+import { setSelectedPool } from "@/store/selected-pool-store";
+import { AssetType } from "@/lib/stellar-utils";
 
 export default function Earn() {
   const userAddress = useUserStore((state) => state.address);
   const setSelectedVault = useEarnVaultStore((state) => state.set);
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("vaults");
+  
+  // Set default pool selection on mount
+  useEffect(() => {
+    setSelectedPool('XLM', {
+      id: 'XLM',
+      chain: 'XLM',
+      title: 'XLM',
+      tag: 'Active'
+    });
+  }, []);
   
   // Tab-based data - you can pass different data for each tab
   const getTableDataForTab = (tabId: string) => {
@@ -37,10 +49,21 @@ export default function Earn() {
       const id = cells[0]?.title;
       
       if (id) {
-        // Save selected vault data to store
+        // Set selected pool in the store
+        const assetType = id.toUpperCase();
+        if (assetType === 'XLM' || assetType === 'USDC' || assetType === 'EURC') {
+          setSelectedPool(assetType as AssetType, {
+            id: id,
+            chain: assetType,
+            title: assetType,
+            tag: cells[0]?.tag || "Active"
+          });
+        }
+        
+        // Save selected vault data to store (Stellar blockchain)
         const vaultData = {
           id: id,
-          chain: cells[0]?.chain || "ETH",
+          chain: cells[0]?.chain || "XLM", // Default to Stellar
           title: cells[0]?.title || "",
           tag: cells[0]?.tag || "Active",
           assetsSupplied: {

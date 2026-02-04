@@ -14,7 +14,15 @@ export const tradeItems = [
     {title:"Defi Greeks", link: "/trade/defi-greeks" },
 ]
 
+// Stellar blockchain supported assets
 export const DropdownOptions = [
+  "XLM",
+  "USDC",
+  "EURC",
+];
+
+// Legacy ETH options (deprecated)
+export const LegacyDropdownOptions = [
   "USDT",
   "USDC",
   "ETH",
@@ -30,8 +38,13 @@ export const DropdownOptions = [
 
 
 export const iconPaths: Record<string, string> = {
-  USDT: "/icons/usdt-icon.svg",
+  // Stellar assets - using USDC icon as placeholder for missing icons
+  // TODO: Add proper XLM and EURC icons to /public/icons/
+  XLM: "/icons/stellar.svg", // Placeholder - replace with "/icons/xlm-icon.png" when available
   USDC: "/icons/usdc-icon.svg",
+  EURC: "/icons/eurc.svg", // Placeholder - replace with "/icons/eurc-icon.png" when available
+  // Legacy ETH assets (for backwards compatibility)
+  USDT: "/icons/usdt-icon.svg",
   ETH: "/icons/eth-icon.png",
   BNB: "/icons/bnb-icon.png",
   SCROLL: "/icons/scroll-icon.png",

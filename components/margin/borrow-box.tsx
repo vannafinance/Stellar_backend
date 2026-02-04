@@ -7,6 +7,8 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { MAX_LEVERAGE, MODE_CONFIG } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+import { useUserStore } from "@/store/user";
+import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 type Mode = "Deposit" | "Borrow";
 
@@ -27,6 +29,11 @@ export const BorrowBox = ({
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
   const config = MODE_CONFIG[mode];
+
+  // Store access
+  const tokenBalances = useUserStore((state) => state.tokenBalances);
+  const borrowedBalances = useMarginAccountInfoStore((state) => state.borrowedBalances);
+  const isLoadingBorrowedBalances = useMarginAccountInfoStore((state) => state.isLoadingBorrowedBalances);
 
   // Form state
   const [selectedOptions, setSelectedOptions] = useState<
@@ -196,7 +203,9 @@ export const BorrowBox = ({
               </motion.button>
               <div className={`text-[12px] font-medium ${
                 isDark ? "text-[#919191]" : "text-neutral-400"
-              }`}>18000 USDC</div> 
+              }`}>
+                Unified Balance: {tokenBalances[selectedOptions[0] as keyof typeof tokenBalances] || tokenBalances.XLM} {selectedOptions[0] || 'XLM'}
+              </div> 
               </div>
               
             </motion.div>
@@ -240,13 +249,17 @@ export const BorrowBox = ({
                             isDark ? "text-white" : ""
                           }`}>
                             <div>
-                              {inputValue > 0 ? inputValue : "0"}{" "}
+                              {borrowedBalances[selectedOption] ? 
+                                parseFloat(borrowedBalances[selectedOption].amount).toFixed(4) : 
+                                (inputValue > 0 ? inputValue : "0")}{" "}
                                 {selectedOption}
                             </div>
                             <div className={`text-[10px] ${
                               isDark ? "text-[#919191]" : "text-[#111111]"
                             }`}>
-                              {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD
+                              {borrowedBalances[selectedOption] ? 
+                                parseFloat(borrowedBalances[selectedOption].usdValue).toFixed(2) : 
+                                (inputValue > 0 ? inputValue.toFixed(2) : "0.00")} USD
                             </div>
                           </div>
                         </div>
@@ -300,13 +313,17 @@ export const BorrowBox = ({
                           isDark ? "text-white" : ""
                         }`}>
                           <div>
-                            {inputValue > 0 ? inputValue : "0"}{" "}
+                            {borrowedBalances[selectedOption] ? 
+                              parseFloat(borrowedBalances[selectedOption].amount).toFixed(4) : 
+                              (inputValue > 0 ? inputValue : "0")}{" "}
                             {selectedOption}
                           </div>
                           <div className={`text-[10px] ${
                             isDark ? "text-[#919191]" : "text-[#111111]"
                           }`}>
-                            {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD
+                            {borrowedBalances[selectedOption] ? 
+                              parseFloat(borrowedBalances[selectedOption].usdValue).toFixed(2) : 
+                              (inputValue > 0 ? inputValue.toFixed(2) : "0.00")} USD
                           </div>
                         </div>
                       </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatedTabs } from "../ui/animated-tabs";
-import { SupplyLiquidityTab } from "./supply-liquidity-tab";
+import { SupplyLiquidityTab } from "./supply-liquidity-tab-new";
 import { WithdrawLiquidity } from "./withdraw-liqudity";
 import { useTheme } from "@/contexts/theme-context";
 
