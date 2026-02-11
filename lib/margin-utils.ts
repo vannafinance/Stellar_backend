@@ -651,6 +651,71 @@ export class MarginAccountService {
   }
 
   /**
+   * Check if a token is properly configured in the Registry
+   */
+  static async isTokenConfigured(tokenSymbol: string): Promise<{ configured: boolean; error?: string }> {
+    try {
+      console.log(`🔍 Checking if ${tokenSymbol} is configured in Registry...`);
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const userAddress = await getAddress();
+      if (userAddress.error) {
+        return { configured: false, error: 'Failed to get user address' };
+      }
+
+      const sourceAccount = await server.getAccount(userAddress.address);
+      const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.REGISTRY);
+
+      // Build function name based on token
+      let functionName: string;
+      if (tokenSymbol === 'XLM') {
+        functionName = 'get_xlm_contract_adddress'; // Note: typo in contract
+      } else if (tokenSymbol === 'USDC') {
+        functionName = 'get_usdc_contract_address';
+      } else if (tokenSymbol === 'EURC') {
+        functionName = 'get_eurc_contract_address';
+      } else {
+        return { configured: false, error: `Unknown token: ${tokenSymbol}` };
+      }
+
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(contract.call(functionName))
+        .setTimeout(30)
+        .build();
+
+      const simulationResult = await server.simulateTransaction(transaction);
+
+      if (simulationResult.error) {
+        console.warn(`⚠️ ${tokenSymbol} not configured in Registry:`, simulationResult.error);
+        return { 
+          configured: false, 
+          error: `${tokenSymbol} token contract address not set in Registry. Please configure it first.` 
+        };
+      }
+
+      if (simulationResult.result) {
+        console.log(`✅ ${tokenSymbol} is configured in Registry`);
+        return { configured: true };
+      }
+
+      return { configured: false, error: 'Unable to verify token configuration' };
+    } catch (error: any) {
+      console.error(`❌ Error checking token configuration:`, error);
+      if (error.message?.includes('UnreachableCodeReached') || 
+          error.message?.includes('Failed to fetch')) {
+        return { 
+          configured: false, 
+          error: `${tokenSymbol} token not configured in Registry. Admin must set the token contract address.` 
+        };
+      }
+      return { configured: false, error: error.message };
+    }
+  }
+
+  /**
    * Deposit collateral tokens to margin account
    */
   static async depositCollateralTokens(
@@ -663,6 +728,17 @@ export class MarginAccountService {
       
       // Pre-flight checks
       console.log('🔍 Running pre-flight checks...');
+      
+      // Check 0: Token configuration in Registry
+      const configCheck = await this.isTokenConfigured(tokenSymbol);
+      if (!configCheck.configured) {
+        return {
+          success: false,
+          error: `⚠️ Configuration Issue: ${configCheck.error}\n\n` +
+                 `The ${tokenSymbol} token contract address needs to be set in the Registry contract.\n` +
+                 `Please contact the admin or use XLM which is already configured.`
+        };
+      }
       
       // Check 1: Is collateral allowed for this token?
       const isCollateralAllowed = await this.isCollateralAllowed(tokenSymbol);
@@ -1109,6 +1185,13 @@ export class MarginAccountService {
     marginAccountAddress: string
   ): Promise<{ success: boolean; data?: Record<string, { amount: string; usdValue: string }>; error?: string }> {
     try {
+      // Validate address before making any blockchain calls
+      if (!marginAccountAddress || typeof marginAccountAddress !== 'string' || marginAccountAddress.length < 10) {
+        return {
+          success: false,
+          error: 'Invalid margin account address'
+        };
+      }
       console.log('📊 Getting borrowed balances for margin account:', marginAccountAddress);
       
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
@@ -1203,6 +1286,173 @@ export class MarginAccountService {
       return {
         success: false,
         error: error?.message || 'Failed to get borrowed balances'
+      };
+    }
+  }
+
+  /**
+   * Get collateral balances for a margin account
+   * @param marginAccountAddress - The margin account address
+   * @returns Object with collateral token balances
+   */
+  static async getCollateralBalances(
+    marginAccountAddress: string
+  ): Promise<{ success: boolean; data?: Record<string, { amount: string; usdValue: string }>; error?: string }> {
+    try {
+      // Validate address before making any blockchain calls
+      if (!marginAccountAddress || typeof marginAccountAddress !== 'string' || marginAccountAddress.length < 10) {
+        return {
+          success: false,
+          error: 'Invalid margin account address'
+        };
+      }
+      console.log('📊 Getting collateral balances for margin account:', marginAccountAddress);
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const contract = new StellarSdk.Contract(marginAccountAddress);
+
+      const balances: Record<string, { amount: string; usdValue: string }> = {};
+
+      // Query collateral balances for each token
+      for (const tokenSymbol of ['XLM', 'USDC', 'EURC']) {
+        try {
+          const userAddress = await getAddress();
+          if (userAddress.error) continue;
+
+          const sourceAccount = await server.getAccount(userAddress.address);
+
+          const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+            fee: StellarSdk.BASE_FEE,
+            networkPassphrase: NETWORK_PASSPHRASE,
+          })
+            .addOperation(
+              contract.call(
+                'get_collateral_token_balance',
+                StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' })
+              )
+            )
+            .setTimeout(30)
+            .build();
+
+          const simulationResult = await server.simulateTransaction(transaction);
+
+          if (simulationResult.result) {
+            const balance = StellarSdk.scValToNative(simulationResult.result.retval);
+            const balanceInToken = parseFloat(balance.toString()) / Math.pow(10, 18);
+            
+            balances[tokenSymbol] = {
+              amount: balanceInToken.toFixed(7),
+              usdValue: (balanceInToken * 1).toFixed(2) // Placeholder for price conversion
+            };
+          }
+        } catch (error) {
+          console.warn(`Could not get ${tokenSymbol} collateral balance:`, error);
+          balances[tokenSymbol] = { amount: '0', usdValue: '0' };
+        }
+      }
+
+      return { success: true, data: balances };
+    } catch (error: any) {
+      console.error('❌ Error getting collateral balances:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to get collateral balances'
+      };
+    }
+  }
+
+  /**
+   * Repay borrowed tokens to margin account
+   * @param marginAccountAddress - The margin account address
+   * @param tokenSymbol - Token symbol to repay (XLM, USDC, EURC)
+   * @param repayAmountWad - Amount to repay in WAD format
+   * @returns Result with success status and transaction hash
+   */
+  static async repayLoan(
+    marginAccountAddress: string,
+    tokenSymbol: string,
+    repayAmountWad: string
+  ): Promise<{ success: boolean; hash?: string; error?: string }> {
+    try {
+      console.log('💳 Repaying loan:', { marginAccountAddress, tokenSymbol, repayAmountWad });
+
+      const userAddress = await getAddress();
+      if (userAddress.error) {
+        return {
+          success: false,
+          error: 'Failed to get user address'
+        };
+      }
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(userAddress.address);
+
+      // Create contract instance for AccountManager
+      const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.ACCOUNT_MANAGER);
+
+      // Build the transaction to call repay
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: (parseInt(StellarSdk.BASE_FEE) * 50).toString(),
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          contract.call(
+            'repay',
+            StellarSdk.nativeToScVal(repayAmountWad, { type: 'u256' }),
+            StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' }),
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' })
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      console.log('🔧 Preparing repay transaction...');
+      const preparedTx = await server.prepareTransaction(transaction);
+
+      const signResult = await signTransaction(preparedTx.toXDR(), {
+        networkPassphrase: NETWORK_PASSPHRASE,
+      });
+
+      const signedTx = StellarSdk.TransactionBuilder.fromXDR(
+        signResult.signedTxXdr,
+        NETWORK_PASSPHRASE
+      );
+
+      console.log('📤 Sending repay transaction...');
+      const result = await server.sendTransaction(signedTx as StellarSdk.Transaction);
+
+      if (result.status === 'PENDING') {
+        console.log('⏳ Repay transaction pending...');
+        const finalResult = await this.pollTransactionStatus(server, result.hash);
+
+        if (finalResult.status === 'SUCCESS') {
+          console.log('✅ Repay transaction successful');
+          return {
+            success: true,
+            hash: result.hash
+          };
+        } else {
+          return {
+            success: false,
+            error: `Repay transaction failed: ${finalResult.status}`
+          };
+        }
+      } else if (result.status === 'ERROR') {
+        return {
+          success: false,
+          error: 'Repay transaction failed with ERROR status'
+        };
+      } else {
+        return {
+          success: false,
+          error: `Unexpected status: ${result.status}`
+        };
+      }
+    } catch (error: any) {
+      console.error('❌ Error repaying loan:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to repay loan'
       };
     }
   }

@@ -23,6 +23,7 @@ export const CreateMarginAccount = ({ onAccountCreated }: CreateMarginAccountPro
 
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [isCheckingAccount, setIsCheckingAccount] = useState(false);
 
   // Check for existing margin account on mount and when user changes
   useEffect(() => {
@@ -30,10 +31,14 @@ export const CreateMarginAccount = ({ onAccountCreated }: CreateMarginAccountPro
       // Reset any previous creation state when switching users
       resetCreationState();
       // Check for existing margin account (now async)
-      checkUserMarginAccount(userAddress).catch(console.error);
+      setIsCheckingAccount(true);
+      checkUserMarginAccount(userAddress)
+        .catch(console.error)
+        .finally(() => setIsCheckingAccount(false));
     } else {
       // If no user address (wallet disconnected), reset creation state
       resetCreationState();
+      setIsCheckingAccount(false);
     }
   }, [userAddress]);
 
@@ -86,6 +91,27 @@ export const CreateMarginAccount = ({ onAccountCreated }: CreateMarginAccountPro
         <div className="flex items-center justify-center py-8">
           <p className={`text-lg ${isDark ? "text-gray-300" : "text-gray-600"}`}>
             Please connect your wallet to continue
+          </p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Show loading state while checking for existing account
+  if (isCheckingAccount) {
+    return (
+      <motion.div
+        className={`w-full p-6 rounded-xl border ${
+          isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+        }`}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <div className="flex flex-col items-center justify-center py-8 gap-4">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className={`text-lg ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+            Checking for existing margin account...
           </p>
         </div>
       </motion.div>

@@ -118,15 +118,6 @@ export const useWallet = () => {
       if (result.success) {
         console.log('Wallet connected successfully:', result.address);
         
-        // Clear any existing margin account data when connecting new wallet
-        if (typeof window !== 'undefined') {
-          const currentData = localStorage.getItem('vanna_margin_accounts');
-          if (currentData) {
-            console.log('Clearing previous margin account data for new wallet connection');
-            localStorage.removeItem('vanna_margin_accounts');
-          }
-        }
-        
         // Set address and connected state immediately - don't wait for balance refresh
         useUserStore.getState().set({
           address: result.address,
@@ -155,12 +146,10 @@ export const useWallet = () => {
   }, [refreshBalances]);
 
   const disconnectWallet = useCallback(() => {
-    console.log('Disconnecting wallet and clearing margin account data');
+    console.log('Disconnecting wallet (keeping margin account data in localStorage)');
     
-    // Clear margin account data on disconnect
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('vanna_margin_accounts');
-    }
+    // Don't clear localStorage - margin accounts should persist across wallet connections
+    // Only clear the in-memory state
     
     useUserStore.getState().set({
       address: null,

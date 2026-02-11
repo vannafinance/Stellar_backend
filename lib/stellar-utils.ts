@@ -257,6 +257,7 @@ export class ContractService {
     assetType: AssetType = ASSET_TYPES.XLM
   ): Promise<string> {
     try {
+      console.log(`[getDepositedBalance] Fetching balance for ${assetType}, address:`, address);
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
       const sourceAccount = await server.getAccount(address);
       
@@ -277,6 +278,7 @@ export class ContractService {
           throw new Error('Unsupported asset type');
       }
       
+      console.log(`[getDepositedBalance] Using vToken contract:`, contractAddress);
       const contract = new StellarSdk.Contract(contractAddress);
       
       const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
@@ -293,23 +295,28 @@ export class ContractService {
         .build();
 
       const simulationResponse = await server.simulateTransaction(transaction);
+      console.log(`[getDepositedBalance] Simulation response:`, simulationResponse);
       
       if (StellarSdk.rpc.Api.isSimulationSuccess(simulationResponse)) {
         const result = simulationResponse.result;
         if (result && result.retval) {
           const balance = StellarSdk.scValToNative(result.retval);
+          console.log(`[getDepositedBalance] Raw balance from contract:`, balance);
           // Convert from token decimals to regular decimal
           // vTokens typically have 7 decimals for Stellar
           const balanceDecimal = Number(balance) / 1e7;
+          console.log(`[getDepositedBalance] Converted balance:`, balanceDecimal.toFixed(7));
           return balanceDecimal.toFixed(7);
         } else {
+          console.log(`[getDepositedBalance] No retval in result, returning 0`);
           return '0';
         }
       } else {
+        console.error(`[getDepositedBalance] Simulation failed:`, simulationResponse);
         return '0';
       }
     } catch (error: any) {
-      console.error('Error fetching deposited balance:', error);
+      console.error(`[getDepositedBalance] Error fetching deposited balance for ${assetType}:`, error);
       return 'Error';
     }
   }

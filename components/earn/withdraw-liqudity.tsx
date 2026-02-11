@@ -33,6 +33,7 @@ export const WithdrawLiquidity = () => {
   // Refresh positions when user connects or asset changes
   useEffect(() => {
     if (userAddress) {
+      console.log('Refreshing positions for asset:', selectedOption);
       refreshPositions();
     }
   }, [userAddress, selectedOption, refreshPositions]);
@@ -42,10 +43,30 @@ export const WithdrawLiquidity = () => {
   const selectedPoolConfig = STELLAR_POOLS[selectedOption as keyof typeof STELLAR_POOLS];
   const userPosition = positions[selectedOption as keyof typeof positions];
 
+  // Log for debugging
+  useEffect(() => {
+    console.log('User position for', selectedOption, ':', userPosition);
+    console.log('All positions:', positions);
+  }, [selectedOption, userPosition, positions]);
+
   // Calculate available vToken balance
   const vTokenBalance = useMemo(() => {
-    return userPosition?.vTokenBalance || '0';
-  }, [userPosition]);
+    const balance = userPosition?.vTokenBalance || '0';
+    console.log('Calculated vTokenBalance for', selectedOption, ':', balance);
+    return balance;
+  }, [userPosition, selectedOption]);
+
+  // Show loading state while positions are being fetched
+  if (isLoadingPositions && !userPosition) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className={`text-center ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#703AE6] mx-auto mb-2"></div>
+          <p>Loading positions...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Calculate estimated underlying tokens to receive
   const estimatedTokens = useMemo(() => {

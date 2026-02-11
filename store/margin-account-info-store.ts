@@ -52,7 +52,19 @@ const initialState: MarginAccountInfoStateType = {
 export const useMarginAccountInfoStore = createNewStore(initialState, {
   name: "margin-account-info-store",
   devTools: true,
-  persist: true,
+  persist: {
+    name: "margin-account-info-store",
+    version: 1,
+    migrate: (persistedState: any, version: number) => {
+      // Always reset loading states on page load
+      return {
+        ...persistedState,
+        isCreatingAccount: false,
+        isLoadingBorrowedBalances: false,
+        // Keep hasMarginAccount and marginAccountAddress persisted
+      };
+    },
+  },
 });
 
 // Action functions
@@ -300,6 +312,12 @@ export const updateAccountData = (data: Partial<MarginAccountInfoStateType>) => 
 
 export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
   try {
+    // Validate margin account address before making any calls
+    if (!marginAccountAddress || typeof marginAccountAddress !== 'string' || marginAccountAddress.length < 10) {
+      console.warn('⚠️ Invalid margin account address, skipping balance refresh');
+      return;
+    }
+    
     useMarginAccountInfoStore.getState().set({ isLoadingBorrowedBalances: true });
     
     const result = await MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress);

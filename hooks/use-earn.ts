@@ -99,6 +99,7 @@ export const useUserPositions = () => {
 
   const fetchUserPositions = useCallback(async () => {
     if (!address || !isConnected) {
+      console.log('Not fetching positions - address or connection missing');
       useEarnPoolStore.getState().set({
         userPositions: {
           XLM: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
@@ -117,23 +118,38 @@ export const useUserPositions = () => {
       return;
     }
 
+    console.log('Fetching user positions for address:', address);
     useEarnPoolStore.getState().set({ isLoadingPositions: true });
     setError(null);
 
     try {
       // Fetch vToken balances (these are deposited amounts)
+      console.log('Fetching vToken balances...');
       const [xlmVBalance, usdcVBalance, eurcVBalance] = await Promise.all([
         ContractService.getDepositedBalance(address, ASSET_TYPES.XLM),
         ContractService.getDepositedBalance(address, ASSET_TYPES.USDC),
         ContractService.getDepositedBalance(address, ASSET_TYPES.EURC),
       ]);
 
+      console.log('vToken balances fetched:', {
+        XLM: xlmVBalance,
+        USDC: usdcVBalance,
+        EURC: eurcVBalance,
+      });
+
       // Fetch borrow balances
+      console.log('Fetching borrow balances...');
       const [xlmBorrow, usdcBorrow, eurcBorrow] = await Promise.all([
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.XLM),
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.USDC),
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.EURC),
       ]);
+
+      console.log('Borrow balances fetched:', {
+        XLM: xlmBorrow,
+        USDC: usdcBorrow,
+        EURC: eurcBorrow,
+      });
 
       // Update earn pool store
       useEarnPoolStore.getState().set({
@@ -174,6 +190,8 @@ export const useUserPositions = () => {
           EURC: eurcVBalance,
         },
       });
+      
+      console.log('User positions updated successfully');
     } catch (err: any) {
       console.error('Error fetching user positions:', err);
       setError(err.message || 'Failed to fetch user positions');

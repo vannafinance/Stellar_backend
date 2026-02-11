@@ -52,8 +52,7 @@ const Margin = () => {
   }, [switchToRepayTab]);
 
   const userAddress = useUserStore((state) => state.address);
-
-  
+  const isConnected = useUserStore((state) => state.isConnected);
 
   // Account statistics state
   const [accountStats, setAccountStats] = useState({
@@ -95,26 +94,31 @@ const Margin = () => {
     (state) => state.marginAccountAddress
   );
 
-  // Check for margin account when user address changes
+  // Check for margin account when user address changes or wallet connects
   useEffect(() => {
-    if (userAddress) {
-      checkUserMarginAccount(userAddress);
+    if (userAddress && isConnected) {
+      // Check for existing margin account whenever wallet connects
+      checkUserMarginAccount(userAddress).catch(console.error);
     }
-  }, [userAddress]);
+    // Note: We don't clear margin account on disconnect to preserve localStorage data
+  }, [userAddress, isConnected]);
 
   // Refresh borrowed balances when margin account is available
   useEffect(() => {
-    if (hasMarginAccount && marginAccountAddress) {
+    // Only refresh if wallet is connected, has margin account, and has valid address
+    if (isConnected && hasMarginAccount && marginAccountAddress && marginAccountAddress.length > 10) {
       refreshBorrowedBalances(marginAccountAddress);
       
       // Set up periodic refresh every 30 seconds
       const interval = setInterval(() => {
-        refreshBorrowedBalances(marginAccountAddress);
+        if (isConnected && marginAccountAddress) {
+          refreshBorrowedBalances(marginAccountAddress);
+        }
       }, 30000);
       
       return () => clearInterval(interval);
     }
-  }, [hasMarginAccount, marginAccountAddress]);
+  }, [isConnected, hasMarginAccount, marginAccountAddress]);
 
 
   // Format data for InfoCard component
@@ -215,11 +219,13 @@ const Margin = () => {
           {/* Left: Leverage collateral form or Create Account */}
           {hasMarginAccount ? (
             <LeverageCollateral
+              key={`leverage-${marginAccountAddress}`}
               switchToRepayTab={switchToRepayTab}
               onTabSwitched={() => setSwitchToRepayTab(false)}
             />
           ) : (
             <motion.div
+              key={`create-${userAddress}`}
               className="w-full"
               initial={{ opacity: 0, x: -20 }}
               whileInView={{ opacity: 1, x: 0 }}
