@@ -13,9 +13,28 @@ import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { setSelectedPool } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { useEarnPage } from "@/hooks/use-earn";
+import { depositData, netApyData } from "@/lib/constants/earn";
 
 // Liquidation threshold used across the protocol (80% collateral factor)
 const LIQUIDATION_THRESHOLD = 0.8;
+
+// USD prices for testnet tokens
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, EURC: 1.0 };
+
+/**
+ * Scale a reference series so its last data point equals `liveEndValue`.
+ * Preserves the original chart shape — only the magnitude changes.
+ */
+const scaleSeries = (
+  template: Array<{ date: string; amount: number }>,
+  liveEndValue: number
+): Array<{ date: string; amount: number }> => {
+  if (liveEndValue <= 0 || template.length === 0) return template;
+  const lastTemplate = template[template.length - 1].amount;
+  if (lastTemplate === 0) return template;
+  const scale = liveEndValue / lastTemplate;
+  return template.map((p) => ({ date: p.date, amount: parseFloat((p.amount * scale).toFixed(2)) }));
+};
 
 // Format a raw token amount into a compact human-readable string (e.g. 1250000 → "1.3M")
 const formatTokenAmount = (amount: number): string => {
@@ -199,6 +218,38 @@ export default function Earn() {
     };
   }, [userAddress, totalDeposited, totalBorrowed]);
 
+  // ─── Live Chart Data ─────────────────────────────────────────────────────────
+  // Scale the static historical series so the last point equals the current live value.
+  // totalDepositedUSD = sum of each asset's deposited amount × its USD price.
+  // netApyEarningsUSD = totalDepositedUSD × weightedAPY / 100  (annual run-rate earnings).
+  const liveDepositData = useMemo(() => {
+    const totalDepositedUSD = (["XLM", "USDC", "EURC"] as const).reduce((sum, asset) => {
+      const deposited = parseFloat(userPositions[asset]?.deposited || "0");
+      return sum + deposited * TOKEN_PRICES[asset];
+    }, 0);
+    return scaleSeries(depositData, totalDepositedUSD);
+  }, [userPositions]);
+
+  const liveNetApyData = useMemo(() => {
+    const totalDepositedUSD = (["XLM", "USDC", "EURC"] as const).reduce((sum, asset) => {
+      const deposited = parseFloat(userPositions[asset]?.deposited || "0");
+      return sum + deposited * TOKEN_PRICES[asset];
+    }, 0);
+    // Weighted average APY across assets with non-zero deposits
+    let weightedAPY = 0;
+    let weightTotal = 0;
+    (["XLM", "USDC", "EURC"] as const).forEach((asset) => {
+      const deposited = parseFloat(userPositions[asset]?.deposited || "0");
+      if (deposited > 0) {
+        weightTotal += deposited;
+        weightedAPY += deposited * parseFloat(pools[asset]?.supplyAPY || "0");
+      }
+    });
+    const avgAPY = weightTotal > 0 ? weightedAPY / weightTotal : 0;
+    const annualEarnings = totalDepositedUSD * (avgAPY / 100);
+    return scaleSeries(netApyData, annualEarnings);
+  }, [userPositions, pools]);
+
   // ─── Vaults Table ────────────────────────────────────────────────────────────
   // Each row reflects live pool-level stats fetched from the lending contracts.
   const liveVaultsTableBody = useMemo(
@@ -283,10 +334,10 @@ export default function Earn() {
         <section className="p-[40px] w-full h-fit flex gap-[24px]" aria-label="User Dashboard">
           <div className="flex gap-[16px] w-full h-fit">
             <article className="w-[437.33px] h-fit">
-              <Chart containerWidth="w-[437.33px]" containerHeight="h-[331px]" type="overall-deposit" />
+              <Chart containerWidth="w-[437.33px]" containerHeight="h-[331px]" type="overall-deposit" liveData={liveDepositData} />
             </article>
             <article className="w-[437.33px] h-fit">
-              <Chart containerWidth="w-[437.33px]" containerHeight="h-[331px]" type="net-apy" />
+              <Chart containerWidth="w-[437.33px]" containerHeight="h-[331px]" type="net-apy" liveData={liveNetApyData} />
             </article>
             <aside className="w-full h-fit">
               <RewardsTable />
