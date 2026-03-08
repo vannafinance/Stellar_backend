@@ -1,53 +1,62 @@
 'use client';
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { StatsCard } from "../ui/stats-card";
 import { getPercentage } from "@/lib/utils/helper";
 import { formatValue } from "@/lib/utils/format-value";
 import { useTheme } from "@/contexts/theme-context";
 import { usePoolData } from "@/hooks/use-earn";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
-import { useSelectedPoolStore, setSelectedPool } from "@/store/selected-pool-store";
-import { AssetType } from "@/lib/stellar-utils";
+import { useSelectedPoolStore } from "@/store/selected-pool-store";
+import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 
-// Stellar contract addresses
+const abbrev = (addr: string) => `${addr.slice(0, 8)}...${addr.slice(-8)}`;
+
+// Build contract address list from the real CONTRACT_ADDRESSES constants
 const getAddresses = (selectedAsset: string) => {
   const pool = STELLAR_POOLS[selectedAsset as keyof typeof STELLAR_POOLS];
+
+  const lendingKey = `LENDING_PROTOCOL_${selectedAsset}` as keyof typeof CONTRACT_ADDRESSES;
+  const vTokenKey  = `V${selectedAsset}_TOKEN`           as keyof typeof CONTRACT_ADDRESSES;
+
+  const lendingAddr = (CONTRACT_ADDRESSES[lendingKey] as string) || pool?.lendingProtocol || "";
+  const vTokenAddr  = (CONTRACT_ADDRESSES[vTokenKey]  as string) || pool?.vToken          || "";
+
   return [
     {
       heading: `${selectedAsset} Lending Protocol`,
-      address: pool?.lendingProtocol ? `${pool.lendingProtocol.slice(0, 8)}...${pool.lendingProtocol.slice(-8)}` : "N/A",
-      fullAddress: pool?.lendingProtocol || "",
+      address: lendingAddr ? abbrev(lendingAddr) : "N/A",
+      fullAddress: lendingAddr,
       tooltip: `Main lending contract for ${selectedAsset}`,
     },
     {
       heading: `v${selectedAsset} Token`,
-      address: pool?.vToken ? `${pool.vToken.slice(0, 8)}...${pool.vToken.slice(-8)}` : "N/A",
-      fullAddress: pool?.vToken || "",
+      address: vTokenAddr ? abbrev(vTokenAddr) : "N/A",
+      fullAddress: vTokenAddr,
       tooltip: `Receipt token for ${selectedAsset} deposits`,
     },
     {
       heading: "Oracle Contract",
-      address: "CAKQ...XSGP",
-      fullAddress: "CAKQHGWUTQSQFUNVNZ6EJ6DQMJFEJYXSGP",
+      address: abbrev(CONTRACT_ADDRESSES.ORACLE),
+      fullAddress: CONTRACT_ADDRESSES.ORACLE,
       tooltip: "Price oracle for asset valuations",
     },
     {
       heading: "Rate Model Contract",
-      address: "CBUQ...7MVT",
-      fullAddress: "CBUQMWPWRVXL3VPBTPTQN6X7QYEV7MVT",
+      address: abbrev(CONTRACT_ADDRESSES.RATE_MODEL),
+      fullAddress: CONTRACT_ADDRESSES.RATE_MODEL,
       tooltip: "Interest rate calculation model",
     },
     {
       heading: "Risk Engine",
-      address: "CAYD...KPQT",
-      fullAddress: "CAYDZPJVCF5KQELKPQT",
+      address: abbrev(CONTRACT_ADDRESSES.RISK_ENGINE),
+      fullAddress: CONTRACT_ADDRESSES.RISK_ENGINE,
       tooltip: "Risk management and liquidation parameters",
     },
     {
       heading: "Registry Contract",
-      address: "CBWX...4RLJ",
-      fullAddress: "CBWX6FG7FHT7P5C4RLJ",
+      address: abbrev(CONTRACT_ADDRESSES.REGISTRY),
+      fullAddress: CONTRACT_ADDRESSES.REGISTRY,
       tooltip: "Protocol registry for all contracts",
     },
   ];
@@ -81,9 +90,8 @@ export const Details = () => {
     };
   }, [selectedPool, selectedAsset]);
 
-  // Max values for percentage calculations
+  // Max value for pie chart percentage calculation
   const maxToken = Math.max(totalSupplied.inToken, 100000);
-  const maxUsd = Math.max(totalSupplied.inUsd, 100000);
 
   // Stats items from pool data
   const items = useMemo(() => [

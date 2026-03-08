@@ -1,24 +1,144 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Chart } from "@/components/earn/chart";
 import { Table } from "@/components/earn/table";
 import { AccountStats } from "@/components/margin/account-stats";
-import { tableBody, tableHeadings } from "@/lib/constants/earn";
+import { tableHeadings } from "@/lib/constants/earn";
 import { ACCOUNT_STATS_ITEMS } from "@/lib/constants/margin";
 import { useUserStore } from "@/store/user";
 import { RewardsTable } from "@/components/earn/rewards-table";
 import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { setSelectedPool } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
+import { useEarnPage } from "@/hooks/use-earn";
+
+// Liquidation threshold used across the protocol (80% collateral factor)
+const LIQUIDATION_THRESHOLD = 0.8;
+
+// Format a raw token amount into a compact human-readable string (e.g. 1250000 → "1.3M")
+const formatTokenAmount = (amount: number): string => {
+  if (amount <= 0) return "0";
+  if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M`;
+  if (amount >= 1_000) return `${(amount / 1_000).toFixed(2)}K`;
+  return amount.toFixed(4);
+};
+
+// Build a single pool table row from live on-chain pool stats
+const buildPoolRow = (
+  assetSymbol: string,
+  pool: {
+    totalSupply: string;
+    totalBorrowed: string;
+    utilizationRate: string;
+    supplyAPY: string;
+    borrowAPY: string;
+    isLoading?: boolean;
+  },
+  collateralIcons: string[]
+) => {
+  const totalSupply = parseFloat(pool.totalSupply) || 0;
+  const totalBorrowed = parseFloat(pool.totalBorrowed) || 0;
+  const utilizationRate = parseFloat(pool.utilizationRate) || 0;
+  const supplyAPY = parseFloat(pool.supplyAPY) || 0;
+  const borrowAPY = parseFloat(pool.borrowAPY) || 0;
+
+  return {
+    cell: [
+      { chain: assetSymbol, title: assetSymbol, tag: "Active" },
+      {
+        title: `${formatTokenAmount(totalSupply)} ${assetSymbol}`,
+        tag: `${totalSupply.toFixed(4)} ${assetSymbol}`,
+      },
+      {
+        title: `${supplyAPY.toFixed(2)}%`,
+        tag: `${supplyAPY.toFixed(2)}%`,
+      },
+      {
+        title: `${formatTokenAmount(totalBorrowed)} ${assetSymbol}`,
+        tag: `${totalBorrowed.toFixed(4)} ${assetSymbol}`,
+      },
+      {
+        title: `${borrowAPY.toFixed(2)}%`,
+        tag: `${borrowAPY.toFixed(2)}%`,
+      },
+      {
+        title: `${utilizationRate.toFixed(2)}%`,
+        tag: `${utilizationRate.toFixed(2)}%`,
+      },
+      {
+        onlyIcons: collateralIcons,
+        tag: "Collateral",
+        clickable: "toggle",
+      },
+    ],
+  };
+};
+
+// Build a positions row showing user's deposited/borrowed amount for an asset
+const buildPositionRow = (
+  assetSymbol: string,
+  position: {
+    deposited: string;
+    borrowed: string;
+    vTokenBalance: string;
+    earnedInterest: string;
+    accruedDebt: string;
+  },
+  pool: {
+    supplyAPY: string;
+    borrowAPY: string;
+    utilizationRate: string;
+  }
+) => {
+  const deposited = parseFloat(position.deposited) || 0;
+  const borrowed = parseFloat(position.borrowed) || 0;
+  const supplyAPY = parseFloat(pool.supplyAPY) || 0;
+  const borrowAPY = parseFloat(pool.borrowAPY) || 0;
+  const utilizationRate = parseFloat(pool.utilizationRate) || 0;
+
+  return {
+    cell: [
+      { chain: assetSymbol, title: assetSymbol, tag: "Active" },
+      {
+        title: `${formatTokenAmount(deposited)} ${assetSymbol}`,
+        tag: `${deposited.toFixed(4)} ${assetSymbol}`,
+      },
+      {
+        title: `${supplyAPY.toFixed(2)}%`,
+        tag: `${supplyAPY.toFixed(2)}%`,
+      },
+      {
+        title: `${formatTokenAmount(borrowed)} ${assetSymbol}`,
+        tag: `${borrowed.toFixed(4)} ${assetSymbol}`,
+      },
+      {
+        title: `${borrowAPY.toFixed(2)}%`,
+        tag: `${borrowAPY.toFixed(2)}%`,
+      },
+      {
+        title: `${utilizationRate.toFixed(2)}%`,
+        tag: `${utilizationRate.toFixed(2)}%`,
+      },
+      {
+        onlyIcons: [assetSymbol],
+        tag: "Collateral",
+        clickable: "toggle",
+      },
+    ],
+  };
+};
 
 export default function Earn() {
   const userAddress = useUserStore((state) => state.address);
   const setSelectedVault = useEarnVaultStore((state) => state.set);
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("vaults");
-  
+
+  // Live data from on-chain contracts (auto-refreshes every 30s)
+  const { pools, userPositions, totalDeposited, totalBorrowed } = useEarnPage();
+
   // Set default pool selection on mount
   useEffect(() => {
     setSelectedPool('XLM', {
@@ -28,76 +148,135 @@ export default function Earn() {
       tag: 'Active'
     });
   }, []);
-  
-  // Tab-based data - you can pass different data for each tab
-  const getTableDataForTab = (tabId: string) => {
-    // For now, using same data for both tabs
-    // You can customize this to return different data based on tabId
-    if (tabId === "vaults") {
-      return tableBody;
-    } else if (tabId === "positions") {
-      // Return empty data for positions tab to test empty state
-      return { rows: [] };
+
+  // ─── Account Stats ───────────────────────────────────────────────────────────
+  // All values derived from the user's live on-chain positions.
+  // Units are native token amounts (XLM/USDC/EURC) summed without USD conversion
+  // since we do not have a live price feed on testnet.
+  const accountStats = useMemo(() => {
+    if (!userAddress) {
+      return {
+        netHealthFactor: "-",
+        collateralLeftBeforeLiquidation: "-",
+        netAvailableCollateral: "-",
+      };
     }
+
+    // Health Factor = (total deposited × liquidation threshold) / total borrowed
+    // A value > 1 means the position is healthy; < 1 means it can be liquidated.
+    let netHealthFactor: string | number;
+    if (totalBorrowed <= 0) {
+      netHealthFactor = totalDeposited > 0 ? "∞" : "-";
+    } else {
+      netHealthFactor = parseFloat(
+        ((totalDeposited * LIQUIDATION_THRESHOLD) / totalBorrowed).toFixed(2)
+      );
+    }
+
+    // Collateral Left Before Liquidation =
+    //   deposited − (borrowed / liquidation_threshold)
+    //   i.e. how much collateral can drop before the position becomes liquidatable
+    let collateralLeftBeforeLiquidation: string | number;
+    if (totalDeposited <= 0) {
+      collateralLeftBeforeLiquidation = "-";
+    } else if (totalBorrowed <= 0) {
+      collateralLeftBeforeLiquidation = parseFloat(totalDeposited.toFixed(4));
+    } else {
+      const gap = totalDeposited - totalBorrowed / LIQUIDATION_THRESHOLD;
+      collateralLeftBeforeLiquidation = parseFloat(gap.toFixed(4));
+    }
+
+    // Net Available Collateral = deposited − borrowed
+    const netAvailableCollateral =
+      totalDeposited > 0
+        ? parseFloat((totalDeposited - totalBorrowed).toFixed(4))
+        : "-";
+
+    return {
+      netHealthFactor,
+      collateralLeftBeforeLiquidation,
+      netAvailableCollateral,
+    };
+  }, [userAddress, totalDeposited, totalBorrowed]);
+
+  // ─── Vaults Table ────────────────────────────────────────────────────────────
+  // Each row reflects live pool-level stats fetched from the lending contracts.
+  const liveVaultsTableBody = useMemo(
+    () => ({
+      rows: [
+        buildPoolRow("XLM", pools.XLM, ["XLM", "USDC", "EURC"]),
+        buildPoolRow("USDC", pools.USDC, ["USDC", "XLM", "EURC"]),
+        buildPoolRow("EURC", pools.EURC, ["EURC", "USDC", "XLM"]),
+      ],
+    }),
+    [pools]
+  );
+
+  // ─── Positions Table ─────────────────────────────────────────────────────────
+  // Shows only the assets where the user has a non-zero deposited balance.
+  const livePositionsTableBody = useMemo(() => {
+    if (!userAddress) return { rows: [] };
+
+    const assetKeys = ["XLM", "USDC", "EURC"] as const;
+    const rows = assetKeys
+      .filter(
+        (asset) => parseFloat(userPositions[asset]?.deposited || "0") > 0 ||
+                   parseFloat(userPositions[asset]?.borrowed || "0") > 0
+      )
+      .map((asset) =>
+        buildPositionRow(asset, userPositions[asset], pools[asset])
+      );
+
+    return { rows };
+  }, [userAddress, userPositions, pools]);
+
+  // Tab-based table data
+  const getTableDataForTab = (tabId: string) => {
+    if (tabId === "vaults") return liveVaultsTableBody;
+    if (tabId === "positions") return livePositionsTableBody;
     return { rows: [] };
   };
 
-  // Handle row click - navigate to earn detail page
+  // ─── Row Click Handler ────────────────────────────────────────────────────────
   const handleRowClick = useCallback(
-    (row: any, rowIndex: number) => {
+    (row: any) => {
       const cells = row.cell;
       const id = cells[0]?.title;
-      
+
       if (id) {
-        // Set selected pool in the store
         const assetType = id.toUpperCase();
-        if (assetType === 'XLM' || assetType === 'USDC' || assetType === 'EURC') {
+        if (assetType === "XLM" || assetType === "USDC" || assetType === "EURC") {
           setSelectedPool(assetType as AssetType, {
             id: id,
             chain: assetType,
             title: assetType,
-            tag: cells[0]?.tag || "Active"
+            tag: cells[0]?.tag || "Active",
           });
         }
-        
-        // Save selected vault data to store (Stellar blockchain)
+
         const vaultData = {
           id: id,
-          chain: cells[0]?.chain || "XLM", // Default to Stellar
+          chain: cells[0]?.chain || "XLM",
           title: cells[0]?.title || "",
           tag: cells[0]?.tag || "Active",
-          assetsSupplied: {
-            title: cells[1]?.title || "",
-            tag: cells[1]?.tag || "",
-          },
-          supplyApy: {
-            title: cells[2]?.title || "",
-            tag: cells[2]?.tag || "",
-          },
-          assetsBorrowed: {
-            title: cells[3]?.title || "",
-            tag: cells[3]?.tag || "",
-          },
-          borrowApy: {
-            title: cells[4]?.title || "",
-            tag: cells[4]?.tag || "",
-          },
-          utilizationRate: {
-            title: cells[5]?.title || "",
-            tag: cells[5]?.tag || "",
-          },
+          assetsSupplied: { title: cells[1]?.title || "", tag: cells[1]?.tag || "" },
+          supplyApy: { title: cells[2]?.title || "", tag: cells[2]?.tag || "" },
+          assetsBorrowed: { title: cells[3]?.title || "", tag: cells[3]?.tag || "" },
+          borrowApy: { title: cells[4]?.title || "", tag: cells[4]?.tag || "" },
+          utilizationRate: { title: cells[5]?.title || "", tag: cells[5]?.tag || "" },
           collateral: {
             onlyIcons: cells[6]?.onlyIcons || [],
             tag: cells[6]?.tag || "Collateral",
           },
         };
-        
+
         setSelectedVault({ selectedVault: vaultData });
         router.push(`/earn/${id}`);
       }
     },
     [router, setSelectedVault]
   );
+
   return (
     <main>
       {userAddress && (
@@ -119,11 +298,7 @@ export default function Earn() {
       <section className="h-[206px] w-full pt-[40px] px-[40px]" aria-label="Account Statistics">
         <AccountStats
           items={ACCOUNT_STATS_ITEMS.slice(0, 3)}
-          values={{
-            netHealthFactor: !userAddress ? "-" : 1.0,
-            collateralLeftBeforeLiquidation: !userAddress ? "-" : 1000,
-            netAvailableCollateral: !userAddress ? "-" : 1000,
-          }}
+          values={accountStats}
         />
       </section>
 

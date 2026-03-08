@@ -1,6 +1,13 @@
 import createNewStore from "@/zustand/index";
 import { MarginAccountService, type MarginAccount } from "@/lib/margin-utils";
 
+// Approximate USD prices for testnet display (XLM oracle price ≈ $0.10)
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.10, USDC: 1.00, EURC: 1.00 };
+
+// Liquidation threshold from RiskEngine contract: BALANCE_TO_BORROW_THRESHOLD = 1.1 * WAD
+// Account is liquidatable when: (totalCollateral / totalDebt) < 1.1
+const LIQUIDATION_THRESHOLD = 1.1;
+
 // Types
 export interface BorrowedBalance {
   amount: string;
@@ -312,32 +319,87 @@ export const updateAccountData = (data: Partial<MarginAccountInfoStateType>) => 
 
 export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
   try {
-    // Validate margin account address before making any calls
     if (!marginAccountAddress || typeof marginAccountAddress !== 'string' || marginAccountAddress.length < 10) {
       console.warn('⚠️ Invalid margin account address, skipping balance refresh');
       return;
     }
-    
+
     useMarginAccountInfoStore.getState().set({ isLoadingBorrowedBalances: true });
-    
-    const result = await MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress);
-    
-    if (result.success && result.data) {
-      useMarginAccountInfoStore.getState().set({ 
-        borrowedBalances: result.data,
-        isLoadingBorrowedBalances: false 
-      });
-    } else {
-      console.error('❌ Failed to refresh borrowed balances:', result.error);
-      useMarginAccountInfoStore.getState().set({ 
-        isLoadingBorrowedBalances: false 
+
+    // Fetch borrowed balances AND collateral balances in parallel
+    const [borrowedResult, collateralResult] = await Promise.all([
+      MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress),
+      MarginAccountService.getCollateralBalances(marginAccountAddress),
+    ]);
+
+    let totalBorrowedValue = 0;
+    let totalCollateralValue = 0;
+    const borrowedBalances: Record<string, { amount: string; usdValue: string }> = {};
+
+    // ── Borrowed totals ───────────────────────────────────────────────────────
+    if (borrowedResult.success && borrowedResult.data) {
+      Object.entries(borrowedResult.data).forEach(([token, { amount, usdValue }]) => {
+        // Use fetched usdValue if non-zero, otherwise compute from token price
+        const fetchedUsd = parseFloat(usdValue);
+        const price = TOKEN_PRICES[token.toUpperCase()] ?? 1;
+        const computed = parseFloat(amount) * price;
+        const usd = fetchedUsd > 0 ? fetchedUsd : computed;
+        totalBorrowedValue += usd;
+        borrowedBalances[token] = { amount, usdValue: usd.toFixed(2) };
       });
     }
-  } catch (error: any) {
-    console.error('❌ Error refreshing borrowed balances:', error);
-    useMarginAccountInfoStore.getState().set({ 
-      isLoadingBorrowedBalances: false 
+
+    // ── Collateral totals ─────────────────────────────────────────────────────
+    if (collateralResult.success && collateralResult.data) {
+      Object.entries(collateralResult.data).forEach(([token, { amount }]) => {
+        const price = TOKEN_PRICES[token.toUpperCase()] ?? 1;
+        totalCollateralValue += parseFloat(amount) * price;
+      });
+    }
+
+    // ── Derived calculations (matching RiskEngine contract math) ──────────────
+    //
+    //  Health Factor = totalCollateral / totalDebt
+    //  Contract constant: BALANCE_TO_BORROW_THRESHOLD = 1.1
+    //  Account is liquidatable when Health Factor < 1.1
+    const avgHealthFactor =
+      totalBorrowedValue > 0
+        ? totalCollateralValue / totalBorrowedValue
+        : totalCollateralValue > 0 ? 999 : 0;
+
+    //  Collateral Left Before Liquidation:
+    //    = totalCollateral - (totalDebt × LIQUIDATION_THRESHOLD)
+    //    i.e. how much collateral value can fall before HF hits 1.1
+    const collateralLeftBeforeLiquidation = Math.max(
+      0,
+      totalCollateralValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
+    );
+
+    //  Net Available Collateral = collateral - debt (unencumbered equity)
+    const netAvailableCollateral = Math.max(0, totalCollateralValue - totalBorrowedValue);
+
+    //  Total Value = net equity (collateral minus debt)
+    const totalValue = netAvailableCollateral;
+
+    //  Borrow rate: use a flat 6.5% placeholder (matches lending pool borrow APY)
+    const borrowRate = totalBorrowedValue > 0 ? 6.5 : 0;
+
+    useMarginAccountInfoStore.getState().set({
+      borrowedBalances,
+      totalBorrowedValue,
+      totalCollateralValue,
+      totalValue,
+      avgHealthFactor,
+      borrowRate,
+      // Expose computed sub-stats so the page can read them directly
+      // (stored in the same interface — repurpose unused fields)
+      debtLimit: collateralLeftBeforeLiquidation,
+      minDebt: netAvailableCollateral,
+      isLoadingBorrowedBalances: false,
     });
+  } catch (error: any) {
+    console.error('❌ Error refreshing balances:', error);
+    useMarginAccountInfoStore.getState().set({ isLoadingBorrowedBalances: false });
   }
 };
 

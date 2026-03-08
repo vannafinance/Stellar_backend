@@ -13,34 +13,19 @@ import { MarginManagersTab } from "@/components/earn/margin-managers-tab";
 import { CollateralLimitsTab } from "@/components/earn/collateral-limits-tab";
 import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { iconPaths } from "@/lib/constants";
-import { formatNumber } from "@/lib/utils/format-value";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
-import { useSelectedPoolStore, setSelectedPool } from "@/store/selected-pool-store";
-import { ASSET_TYPES, AssetType } from "@/lib/stellar-utils";
+import { setSelectedPool } from "@/store/selected-pool-store";
+import { AssetType } from "@/lib/stellar-utils";
+import { usePoolData } from "@/hooks/use-earn";
 
-// Helper function to parse values with K/M/B suffixes
-const parseAmountValue = (value?: string): number => {
-  if (!value) return 0;
-  
-  // Remove $ and commas
-  const cleaned = value.replace(/[$,]/g, '').trim();
-  
-  // Check for suffix
-  const lastChar = cleaned.slice(-1).toUpperCase();
-  const numPart = cleaned.slice(0, -1);
-  
-  if (lastChar === 'K') {
-    return parseFloat(numPart) * 1000;
-  } else if (lastChar === 'M') {
-    return parseFloat(numPart) * 1000000;
-  } else if (lastChar === 'B') {
-    return parseFloat(numPart) * 1000000000;
-  } else {
-    // No suffix, just parse the number
-    return parseFloat(cleaned) || 0;
-  }
-};
+// Approximate USD prices for testnet display (no live oracle)
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, EURC: 1.0 };
+
+const fmt = (n: number, decimals = 4) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M`
+  : n >= 1_000 ? `${(n / 1_000).toFixed(2)}K`
+  : n.toFixed(decimals);
 
 const tabs = [
   { id: "your-positions", label: "Your Positions" },
@@ -101,53 +86,48 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
     return iconPaths[assetName] || "/icons/xlm-icon.png";
   }, [vaultData.title]);
 
-  // Prepare account stats items
+  // Live pool data from on-chain contracts (auto-refreshes every 30s)
+  const { pools } = usePoolData();
+
+  // Build header stats entirely from live contract data — no string parsing
   const accountStatsItems = useMemo(() => {
-    const assetName = vaultData.title;
-    
-    // Parse amounts from vault data
-    const totalSupplyAmount = parseAmountValue(
-      'assetsSupplied' in vaultData ? vaultData.assetsSupplied?.title : undefined
-    );
-    const totalBorrowedAmount = parseAmountValue(
-      'assetsBorrowed' in vaultData ? vaultData.assetsBorrowed?.title : undefined
-    );
-    
-    // Calculate Available Liquidity = Total Supply - Total Borrowed
-    const availableLiquidity = totalSupplyAmount - totalBorrowedAmount;
-    
-    const utilizationRate = parseFloat(
-      ('utilizationRate' in vaultData ? vaultData.utilizationRate?.title?.replace('%', '') : undefined) || "6.5"
-    );
-    const supplyApy = parseFloat(
-      ('supplyApy' in vaultData ? vaultData.supplyApy?.title?.replace('%', '') : undefined) || "2.5"
-    );
+    const asset = vaultData.title.toUpperCase();
+    const pool = pools[asset as keyof typeof pools];
+    const price = TOKEN_PRICES[asset] ?? 1;
+
+    const totalSupply = parseFloat(pool?.totalSupply || '0');
+    const availableLiquidity = parseFloat(pool?.availableLiquidity || '0');
+    const utilizationRate = parseFloat(pool?.utilizationRate || '0');
+    const supplyAPY = parseFloat(pool?.supplyAPY || '0');
 
     return [
       {
         id: "1",
         name: "Total Supply",
-        amount: `$${formatNumber(totalSupplyAmount || 1000)}`,
-        amountInToken: `${formatNumber(20)} ${assetName}`,
+        // USD value with approximate price + raw token amount beneath
+        amount: `$${fmt(totalSupply * price, 2)}`,
+        amountInToken: `${fmt(totalSupply)} ${asset}`,
       },
       {
         id: "2",
         name: "Available Liquidity",
-        amount: `$${formatNumber(availableLiquidity || 3400)}`,
-        amountInToken: `${formatNumber(30.4)} ${assetName}`,
+        amount: `$${fmt(availableLiquidity * price, 2)}`,
+        amountInToken: `${fmt(availableLiquidity)} ${asset}`,
       },
       {
         id: "3",
         name: "Utilization Rate",
-        amount: `${formatNumber(utilizationRate)}%`,
+        // utilizationRate = totalBorrowed / totalSupply × 100
+        amount: `${utilizationRate.toFixed(2)}%`,
       },
       {
         id: "4",
         name: "Supply APY",
-        amount: `${formatNumber(supplyApy)}%`,
+        // supplyAPY = baseRate + utilizationRate × multiplier (from use-earn hook)
+        amount: `${supplyAPY.toFixed(2)}%`,
       },
     ];
-  }, [vaultData]);
+  }, [pools, vaultData.title]);
 
   return (
     <main className="flex flex-col gap-[40px]">

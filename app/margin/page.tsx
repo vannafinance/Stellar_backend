@@ -8,20 +8,21 @@ import {
   MARGIN_ACCOUNT_MORE_DETAILS_ITEMS,
 } from "@/lib/constants/margin";
 import { motion } from "framer-motion";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
 import { AccountStats } from "@/components/margin/account-stats";
 import { CreateMarginAccount } from "@/components/margin/create-margin-account";
-import { Position } from "@/lib/types";
 import { useMarginAccountInfoStore, checkUserMarginAccount, refreshBorrowedBalances } from "@/store/margin-account-info-store";
-import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
 import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
 import { ACCOUNT_STATS_ITEMS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+
+// Liquidation threshold from RiskEngine contract (BALANCE_TO_BORROW_THRESHOLD = 1.1)
+const LIQUIDATION_THRESHOLD = 1.1;
 
 const Margin = () => {
   const { isDark } = useTheme();
@@ -53,15 +54,6 @@ const Margin = () => {
 
   const userAddress = useUserStore((state) => state.address);
   const isConnected = useUserStore((state) => state.isConnected);
-
-  // Account statistics state
-  const [accountStats, setAccountStats] = useState({
-    netHealthFactor: 567777,
-    collateralLeftBeforeLiquidation: 173663,
-    netAvailableCollateral: 1000,
-    netAmountBorrowed: 770,
-    netProfitAndLoss: 0,
-  });
 
   // Get margin account info from global store using selector to prevent unnecessary re-renders
   const totalBorrowedValue = useMarginAccountInfoStore(
@@ -120,6 +112,31 @@ const Margin = () => {
     }
   }, [isConnected, hasMarginAccount, marginAccountAddress]);
 
+
+  // ── Live account stats derived from on-chain data ───────────────────────────
+  const accountStats = useMemo(() => {
+    const netHealthFactor =
+      totalBorrowedValue > 0
+        ? totalCollateralValue / totalBorrowedValue
+        : totalCollateralValue > 0
+        ? 999
+        : 0;
+
+    const collateralLeftBeforeLiquidation = Math.max(
+      0,
+      totalCollateralValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
+    );
+
+    const netAvailableCollateral = Math.max(0, totalCollateralValue - totalBorrowedValue);
+
+    return {
+      netHealthFactor,
+      collateralLeftBeforeLiquidation,
+      netAvailableCollateral,
+      netAmountBorrowed: totalBorrowedValue,
+      netProfitAndLoss: 0,
+    };
+  }, [totalCollateralValue, totalBorrowedValue]);
 
   // Format data for InfoCard component
   const marginAccountInfo = {
