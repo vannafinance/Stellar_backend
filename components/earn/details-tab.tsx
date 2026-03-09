@@ -1,6 +1,49 @@
 'use client';
 
 import { useMemo } from "react";
+
+// Static export for use in other pages (e.g. farm detail page)
+export const items = [
+  {
+    heading: "Available Liquidity",
+    mainInfo: "—",
+    subInfo: "—",
+    tooltip: "Total assets available for borrowing",
+  },
+  {
+    heading: "Supply APY",
+    mainInfo: "—",
+    subInfo: "—",
+    tooltip: "Annual percentage yield for suppliers",
+  },
+  {
+    heading: "Borrow APY",
+    mainInfo: "—",
+    tooltip: "Annual percentage yield for borrowers",
+  },
+  {
+    heading: "Utilization Rate",
+    mainInfo: "—",
+    tooltip: "Ratio of borrowed assets to supplied assets",
+  },
+  {
+    heading: "Liquidation Penalty",
+    mainInfo: "Dynamic Range",
+    subInfo: "0–15%",
+    tooltip: "Penalty applied during liquidation events",
+  },
+  {
+    heading: "Oracle Price",
+    mainInfo: "—",
+    tooltip: "Current oracle price of the asset",
+  },
+  {
+    heading: "Exchange Rate",
+    mainInfo: "—",
+    subInfo: "—",
+    tooltip: "Exchange rate between vToken and underlying asset",
+  },
+];
 import { StatsCard } from "../ui/stats-card";
 import { getPercentage } from "@/lib/utils/helper";
 import { formatValue } from "@/lib/utils/format-value";

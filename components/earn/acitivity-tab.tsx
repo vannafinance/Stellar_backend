@@ -22,6 +22,21 @@ const tableHeadings = [
   },
 ];
 
+// Static transaction table body for use in other pages (e.g. farm detail page)
+export const transactionTableBody = {
+  rows: [] as {
+    cell: {
+      title?: string;
+      description?: string;
+      badge?: string;
+      icon?: string;
+      clickable?: string;
+      link?: string;
+      percentage?: number;
+    }[];
+  }[],
+};
+
 // Transaction table headings
 export const transactionTableHeadings = [
   {
