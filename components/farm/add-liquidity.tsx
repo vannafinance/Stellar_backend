@@ -1,120 +1,355 @@
-import Image from "next/image"
-import { useState } from "react"
-import { iconPaths } from "@/lib/constants"
-import { InfoCard } from "../margin/info-card"
-import { MARGIN_ACCOUNT_INFO_ITEMS } from "@/lib/constants/margin"
-import { useMarginAccountInfoStore } from "@/store/margin-account-info-store"
-import { useUserStore } from "@/store/user"
-import { Button } from "../ui/button"
-import { useTheme } from "@/contexts/theme-context"
+"use client";
+
+import Image from "next/image";
+import { useState, useEffect, useCallback } from "react";
+import { useTheme } from "@/contexts/theme-context";
+import { useUserStore } from "@/store/user";
+import { useFarmStore } from "@/store/farm-store";
+import { Button } from "../ui/button";
+import { BlendService, BLEND_POOL_ASSETS } from "@/lib/blend-utils";
+import { MarginAccountService } from "@/lib/margin-utils";
+import { iconPaths } from "@/lib/constants";
+
+const SUPPORTED_TOKENS = ["XLM", "USDC", "EURC"] as const;
+type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
 
 export const AddLiquidity = () => {
-  const [value, setValue] = useState<string>("")
-  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValue(e.target.value)
-  }
+  const { isDark } = useTheme();
+  const userAddress = useUserStore((state) => state.address);
+  const selectedRow = useFarmStore((state) => state.selectedRow);
+  const tabType = useFarmStore((state) => state.tabType);
 
-  const { isDark } = useTheme()
+  // Determine initial token from store (for single asset / lending rows)
+  const getInitialToken = useCallback((): TokenSymbol => {
+    if (tabType === "single" && selectedRow) {
+      const firstCell = selectedRow.cell?.[0] as any;
+      const title = (firstCell?.title as string | undefined)?.toUpperCase();
+      if (title && SUPPORTED_TOKENS.includes(title as TokenSymbol)) {
+        return title as TokenSymbol;
+      }
+    }
+    return "XLM";
+  }, [tabType, selectedRow]);
 
-  const userAddress = useUserStore(user => user.address)
+  const [selectedToken, setSelectedToken] = useState<TokenSymbol>(getInitialToken);
+  const [value, setValue] = useState<string>("");
+  // Margin account collateral balance (the XLM/USDC/EURC held inside the margin account)
+  const [marginBalance, setMarginBalance] = useState<string>("0");
+  const [loadingBalance, setLoadingBalance] = useState<boolean>(false);
+  const [txStatus, setTxStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [txHash, setTxHash] = useState<string>("");
+  const [txError, setTxError] = useState<string>("");
+  const [marginAccountAddress, setMarginAccountAddress] = useState<string | null>(null);
+  const [blendConfigured, setBlendConfigured] = useState<boolean | null>(null);
 
-  // Get margin account info from global store using selector to prevent unnecessary re-renders
-  const totalBorrowedValue = useMarginAccountInfoStore(
-    (state) => state.totalBorrowedValue
-  );
-  const totalCollateralValue = useMarginAccountInfoStore(
-    (state) => state.totalCollateralValue
-  );
-  const totalValue = useMarginAccountInfoStore((state) => state.totalValue);
-  const avgHealthFactor = useMarginAccountInfoStore(
-    (state) => state.avgHealthFactor
-  );
-  const timeToLiquidation = useMarginAccountInfoStore(
-    (state) => state.timeToLiquidation
-  );
-  const borrowRate = useMarginAccountInfoStore((state) => state.borrowRate);
-  const liquidationPremium = useMarginAccountInfoStore(
-    (state) => state.liquidationPremium
-  );
-  const liquidationFee = useMarginAccountInfoStore(
-    (state) => state.liquidationFee
-  );
-  const debtLimit = useMarginAccountInfoStore((state) => state.debtLimit);
-  const minDebt = useMarginAccountInfoStore((state) => state.minDebt);
-  const maxDebt = useMarginAccountInfoStore((state) => state.maxDebt);
+  // Check if Blend pool is configured in Registry (once on mount)
+  useEffect(() => {
+    BlendService.isBlendPoolConfigured()
+      .then(setBlendConfigured)
+      .catch(() => setBlendConfigured(false));
+  }, []);
 
-  const marginAccountInfo = {
-    totalBorrowedValue,
-    totalCollateralValue,
-    totalValue,
-    avgHealthFactor,
-    timeToLiquidation,
-    borrowRate,
-    liquidationPremium,
-    liquidationFee,
-    debtLimit,
-    minDebt,
-    maxDebt,
+  // Load margin account address whenever wallet changes
+  useEffect(() => {
+    if (!userAddress) {
+      setMarginAccountAddress(null);
+      return;
+    }
+    const stored = MarginAccountService.getStoredMarginAccount(userAddress);
+    setMarginAccountAddress(stored?.address ?? null);
+  }, [userAddress]);
+
+  // Fetch margin account collateral balance when margin account or token changes
+  const fetchMarginBalance = useCallback(async () => {
+    if (!marginAccountAddress) {
+      setMarginBalance("0");
+      return;
+    }
+    setLoadingBalance(true);
+    try {
+      const result = await MarginAccountService.getCollateralBalances(marginAccountAddress);
+      if (result.success && result.data) {
+        const tokenData = result.data[selectedToken];
+        setMarginBalance(tokenData?.amount ?? "0");
+      } else {
+        setMarginBalance("0");
+      }
+    } catch {
+      setMarginBalance("0");
+    } finally {
+      setLoadingBalance(false);
+    }
+  }, [marginAccountAddress, selectedToken]);
+
+  useEffect(() => {
+    fetchMarginBalance();
+  }, [fetchMarginBalance]);
+
+  const handleMaxClick = () => {
+    setValue(marginBalance);
+  };
+
+  const handleTokenSelect = (token: TokenSymbol) => {
+    setSelectedToken(token);
+    setValue("");
+    setTxStatus("idle");
+    setTxError("");
+  };
+
+  const handleDeposit = async () => {
+    if (!userAddress || !marginAccountAddress) return;
+    const amount = parseFloat(value);
+    if (isNaN(amount) || amount <= 0) return;
+
+    setTxStatus("loading");
+    setTxError("");
+    setTxHash("");
+
+    // Deposit from margin account → Blend pool via AccountManager.execute
+    const result = await BlendService.depositToBlendPool(
+      userAddress,
+      marginAccountAddress,
+      selectedToken,
+      amount
+    );
+
+    if (result.success) {
+      setTxStatus("success");
+      setTxHash(result.hash ?? "");
+      setValue("");
+      // Refresh margin account balance after deposit
+      fetchMarginBalance();
+    } else {
+      setTxStatus("error");
+      setTxError(result.error ?? "Deposit failed");
+    }
+  };
+
+  const poolAsset = BLEND_POOL_ASSETS.find((a) => a.symbol === selectedToken);
+  const iconPath = poolAsset?.iconPath ?? iconPaths[selectedToken] ?? "/icons/stellar.svg";
+
+  const isInputValid = parseFloat(value) > 0 && !isNaN(parseFloat(value));
+  const isOverBalance = parseFloat(value) > parseFloat(marginBalance);
+  const isSubmitDisabled =
+    !userAddress ||
+    !marginAccountAddress ||
+    blendConfigured === false ||
+    !isInputValid ||
+    isOverBalance ||
+    txStatus === "loading";
+
+  const buttonText = () => {
+    if (!userAddress) return "Connect Wallet";
+    if (!marginAccountAddress) return "Margin Account Required";
+    if (blendConfigured === false) return "Blend Pool Not Configured";
+    if (txStatus === "loading") return "Depositing...";
+    if (!isInputValid) return "Enter Amount";
+    if (isOverBalance) return "Insufficient Margin Balance";
+    return `Deposit ${selectedToken}`;
   };
 
   return (
-    <>
+    <div className="w-full h-fit flex flex-col gap-[16px]">
+      {/* Token selector tabs */}
+      <div className={`w-full h-fit flex rounded-[12px] p-[4px] gap-[4px] ${
+        isDark ? "bg-[#1A1A1A]" : "bg-[#F0F0F0]"
+      }`}>
+        {SUPPORTED_TOKENS.map((token) => (
+          <button
+            key={token}
+            type="button"
+            onClick={() => handleTokenSelect(token)}
+            className={`flex-1 flex items-center justify-center gap-[6px] py-[8px] rounded-[8px] text-[13px] font-semibold transition-all ${
+              selectedToken === token
+                ? "bg-[#703AE6] text-white"
+                : isDark
+                ? "text-[#919191] hover:text-white"
+                : "text-[#76737B] hover:text-[#111111]"
+            }`}
+          >
+            <Image
+              src={iconPaths[token] ?? "/icons/stellar.svg"}
+              alt={token}
+              width={16}
+              height={16}
+            />
+            {token}
+          </button>
+        ))}
+      </div>
+
+      {/* Amount input */}
       <div className={`w-full h-fit p-[20px] rounded-[16px] ${
         isDark ? "bg-[#111111]" : "bg-white"
       }`}>
-        <div className="w-full flex items-center gap-[20px]">
-          <div className="w-full h-full flex flex-col gap-[24px]">
-            <div className="w-full h-fit ">
-              <input 
-                type="text" 
-                placeholder="0.0" 
-                value={value} 
-                onChange={onChange} 
-                className={`w-full h-fit bg-transparent outline-none border-none text-[16px] font-medium placeholder:text-[#CCCCCC] ${
-                  isDark ? "text-white" : "text-black"
-                }`}
-              />
-            </div>
-            <div className={`w-full h-fit text-[10px] font-medium ${
+        <div className="w-full flex items-center gap-[12px]">
+          <div className="w-full h-full flex flex-col gap-[8px]">
+            <input
+              type="number"
+              placeholder="0.00"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              min="0"
+              className={`w-full h-fit bg-transparent outline-none border-none text-[20px] font-semibold placeholder:text-[#CCCCCC] ${
+                isDark ? "text-white" : "text-black"
+              } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+            />
+            <div className={`text-[11px] font-medium ${
               isDark ? "text-[#919191]" : "text-[#76737B]"
             }`}>
-              $0.00
+              {isOverBalance ? (
+                <span className="text-red-500">Exceeds margin balance</span>
+              ) : (
+                "$0.00"
+              )}
             </div>
           </div>
-          <div className="w-fit justify-end  items-end h-fit flex flex-col gap-[24px] ">
-            <div className=" w-fit justify-end items-end h-fit flex gap-[4px]">
-              <Image src={iconPaths["USDT"]} alt="USDT" width={20} height={20} />
+          <div className="flex flex-col items-end gap-[12px]">
+            <div className="flex items-center gap-[6px]">
+              <Image src={iconPath} alt={selectedToken} width={20} height={20} />
               <span className={`text-[14px] font-semibold ${
                 isDark ? "text-white" : "text-[#111111]"
-              }`}>USDT</span>
+              }`}>
+                {selectedToken}
+              </span>
             </div>
-            <div className=" justify-end items-end w-fit flex text-end h-fit gap-[4px] ">
-              <span className={`text-nowrap text-end text-[12px] font-medium ${
+            <div className="flex items-center gap-[6px]">
+              <span className={`text-[11px] font-medium ${
                 isDark ? "text-[#919191]" : "text-[#5C5B5B]"
-              }`}>Margin Balance:</span>
-              <span className={`text-nowrap text-end text-[12px] font-medium underline cursor-pointer ${
-                isDark ? "text-[#919191]" : "text-[#5C5B5B]"
-              }`}>7000 USD</span>
+              }`}>
+                {loadingBalance
+                  ? "Loading..."
+                  : `Margin: ${parseFloat(marginBalance).toFixed(4)}`}
+              </span>
+              {!loadingBalance && (
+                <button
+                  type="button"
+                  onClick={handleMaxClick}
+                  className="text-[11px] font-semibold text-[#703AE6] underline cursor-pointer"
+                >
+                  Max
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
-      {(Number(value) > 0) && (
-        <div>
-          <InfoCard
-            data={marginAccountInfo}
-            items={[...MARGIN_ACCOUNT_INFO_ITEMS]}
-          />
+
+      {/* Info box */}
+      {isInputValid && (
+        <div className={`w-full h-fit rounded-[12px] p-[16px] flex flex-col gap-[10px] ${
+          isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
+        }`}>
+          <div className="flex justify-between items-center">
+            <span className={`text-[12px] font-medium ${
+              isDark ? "text-[#919191]" : "text-[#76737B]"
+            }`}>
+              From
+            </span>
+            <span className={`text-[12px] font-semibold ${
+              isDark ? "text-[#919191]" : "text-[#76737B]"
+            }`}>
+              Margin Account
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className={`text-[12px] font-medium ${
+              isDark ? "text-[#919191]" : "text-[#76737B]"
+            }`}>
+              You will supply
+            </span>
+            <span className={`text-[12px] font-semibold ${
+              isDark ? "text-white" : "text-[#111111]"
+            }`}>
+              {parseFloat(value).toFixed(4)} {selectedToken}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className={`text-[12px] font-medium ${
+              isDark ? "text-[#919191]" : "text-[#76737B]"
+            }`}>
+              Protocol
+            </span>
+            <span className={`text-[12px] font-semibold text-[#703AE6]`}>
+              Blend
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className={`text-[12px] font-medium ${
+              isDark ? "text-[#919191]" : "text-[#76737B]"
+            }`}>
+              Supply APY
+            </span>
+            <span className={`text-[12px] font-semibold ${
+              isDark ? "text-white" : "text-[#111111]"
+            }`}>
+              —
+            </span>
+          </div>
         </div>
       )}
 
-      <Button 
-        disabled={!userAddress || (Number(value) <= 0) ? true : false} 
-        type="gradient" 
-        size="large" 
-        text={!userAddress ? "Connect Wallet" : Number(value) > 0 ? "Add Liquidity" : "Enter Amount"}
-      />
-    </>
-  )
-}
+      {/* Blend pool not configured warning */}
+      {blendConfigured === false && (
+        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-orange-500/30 ${
+          isDark ? "bg-orange-500/10" : "bg-orange-50"
+        }`}>
+          <p className="text-[12px] font-medium text-orange-600">
+            Blend pool is not yet configured in the Registry. Please ask the admin to call <code>set_blend_pool_address</code>.
+          </p>
+        </div>
+      )}
 
+      {/* Margin account warning */}
+      {userAddress && !marginAccountAddress && (
+        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-yellow-500/30 ${
+          isDark ? "bg-yellow-500/10" : "bg-yellow-50"
+        }`}>
+          <p className="text-[12px] font-medium text-yellow-600">
+            A margin account is required to supply to Blend. Please create one in the Margin section.
+          </p>
+        </div>
+      )}
+
+      {/* Zero margin balance hint */}
+      {userAddress && marginAccountAddress && !loadingBalance && parseFloat(marginBalance) === 0 && (
+        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-blue-500/30 ${
+          isDark ? "bg-blue-500/10" : "bg-blue-50"
+        }`}>
+          <p className="text-[12px] font-medium text-blue-600">
+            No {selectedToken} collateral in your margin account. Deposit {selectedToken} as collateral first from the Margin section.
+          </p>
+        </div>
+      )}
+
+      {/* Transaction status */}
+      {txStatus === "success" && (
+        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-green-500/30 ${
+          isDark ? "bg-green-500/10" : "bg-green-50"
+        }`}>
+          <p className="text-[12px] font-medium text-green-600">
+            Deposit successful!{" "}
+            {txHash && (
+              <span className="break-all text-[11px] opacity-70">{txHash}</span>
+            )}
+          </p>
+        </div>
+      )}
+      {txStatus === "error" && (
+        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-red-500/30 ${
+          isDark ? "bg-red-500/10" : "bg-red-50"
+        }`}>
+          <p className="text-[12px] font-medium text-red-600">{txError}</p>
+        </div>
+      )}
+
+      <Button
+        disabled={isSubmitDisabled}
+        type="gradient"
+        size="large"
+        text={buttonText()}
+        onClick={handleDeposit}
+      />
+    </div>
+  );
+};

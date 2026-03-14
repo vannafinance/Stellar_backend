@@ -12,6 +12,7 @@
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^14.4.3",
     "chart.js": "^4.5.1",
+    "classnames": "^2.5.1",
     "framer-motion": "^12.23.24",
     "gsap": "^3.13.0",
     "lightweight-charts": "^5.1.0",
@@ -20,6 +21,7 @@
     "react": "19.2.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.0",
+    "react-hook-form": "^7.71.2",
     "react-hot-toast": "^2.6.0",
     "viem": "^2.39.0",
     "zustand": "^5.0.9"
