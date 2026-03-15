@@ -9,6 +9,8 @@ import { Button } from "../ui/button";
 import { BlendService, BLEND_POOL_ASSETS } from "@/lib/blend-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
+import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
+import { useBlendPoolStats } from "@/hooks/use-farm";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC", "EURC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
@@ -33,9 +35,10 @@ export const AddLiquidity = () => {
 
   const [selectedToken, setSelectedToken] = useState<TokenSymbol>(getInitialToken);
   const [value, setValue] = useState<string>("");
-  // Margin account collateral balance (the XLM/USDC/EURC held inside the margin account)
-  const [marginBalance, setMarginBalance] = useState<string>("0");
-  const [loadingBalance, setLoadingBalance] = useState<boolean>(false);
+  // Borrowed balances from margin account (amounts available to route into Blend)
+  const borrowedBalances = useMarginAccountInfoStore((s) => s.borrowedBalances);
+  const isLoadingBorrowedBalances = useMarginAccountInfoStore((s) => s.isLoadingBorrowedBalances);
+  const { stats: poolStats } = useBlendPoolStats();
   const [txStatus, setTxStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState<string>("");
   const [txError, setTxError] = useState<string>("");
@@ -59,34 +62,15 @@ export const AddLiquidity = () => {
     setMarginAccountAddress(stored?.address ?? null);
   }, [userAddress]);
 
-  // Fetch margin account collateral balance when margin account or token changes
-  const fetchMarginBalance = useCallback(async () => {
-    if (!marginAccountAddress) {
-      setMarginBalance("0");
-      return;
-    }
-    setLoadingBalance(true);
-    try {
-      const result = await MarginAccountService.getCollateralBalances(marginAccountAddress);
-      if (result.success && result.data) {
-        const tokenData = result.data[selectedToken];
-        setMarginBalance(tokenData?.amount ?? "0");
-      } else {
-        setMarginBalance("0");
-      }
-    } catch {
-      setMarginBalance("0");
-    } finally {
-      setLoadingBalance(false);
-    }
+  // Refresh borrowed balances when margin account or token changes
+  useEffect(() => {
+    if (!marginAccountAddress) return;
+    refreshBorrowedBalances(marginAccountAddress);
   }, [marginAccountAddress, selectedToken]);
 
-  useEffect(() => {
-    fetchMarginBalance();
-  }, [fetchMarginBalance]);
-
   const handleMaxClick = () => {
-    setValue(marginBalance);
+    const available = borrowedBalances[selectedToken]?.amount ?? "0";
+    setValue(available);
   };
 
   const handleTokenSelect = (token: TokenSymbol) => {
@@ -117,8 +101,8 @@ export const AddLiquidity = () => {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
       setValue("");
-      // Refresh margin account balance after deposit
-      fetchMarginBalance();
+      // Refresh borrowed balances after deposit
+      refreshBorrowedBalances(marginAccountAddress);
     } else {
       setTxStatus("error");
       setTxError(result.error ?? "Deposit failed");
@@ -129,7 +113,8 @@ export const AddLiquidity = () => {
   const iconPath = poolAsset?.iconPath ?? iconPaths[selectedToken] ?? "/icons/stellar.svg";
 
   const isInputValid = parseFloat(value) > 0 && !isNaN(parseFloat(value));
-  const isOverBalance = parseFloat(value) > parseFloat(marginBalance);
+  const availableBorrowed = borrowedBalances[selectedToken]?.amount ?? "0";
+  const isOverBalance = parseFloat(value) > parseFloat(availableBorrowed);
   const isSubmitDisabled =
     !userAddress ||
     !marginAccountAddress ||
@@ -144,7 +129,7 @@ export const AddLiquidity = () => {
     if (blendConfigured === false) return "Blend Pool Not Configured";
     if (txStatus === "loading") return "Depositing...";
     if (!isInputValid) return "Enter Amount";
-    if (isOverBalance) return "Insufficient Margin Balance";
+    if (isOverBalance) return "Insufficient Borrowed Balance";
     return `Deposit ${selectedToken}`;
   };
 
@@ -198,7 +183,7 @@ export const AddLiquidity = () => {
               isDark ? "text-[#919191]" : "text-[#76737B]"
             }`}>
               {isOverBalance ? (
-                <span className="text-red-500">Exceeds margin balance</span>
+                <span className="text-red-500">Exceeds borrowed balance</span>
               ) : (
                 "$0.00"
               )}
@@ -217,11 +202,11 @@ export const AddLiquidity = () => {
               <span className={`text-[11px] font-medium ${
                 isDark ? "text-[#919191]" : "text-[#5C5B5B]"
               }`}>
-                {loadingBalance
+                {isLoadingBorrowedBalances
                   ? "Loading..."
-                  : `Margin: ${parseFloat(marginBalance).toFixed(4)}`}
+                  : `Borrowed: ${parseFloat(availableBorrowed).toFixed(4)}`}
               </span>
-              {!loadingBalance && (
+              {!isLoadingBorrowedBalances && (
                 <button
                   type="button"
                   onClick={handleMaxClick}
@@ -249,7 +234,7 @@ export const AddLiquidity = () => {
             <span className={`text-[12px] font-semibold ${
               isDark ? "text-[#919191]" : "text-[#76737B]"
             }`}>
-              Margin Account
+              Margin Borrow Balance
             </span>
           </div>
           <div className="flex justify-between items-center">
@@ -283,7 +268,7 @@ export const AddLiquidity = () => {
             <span className={`text-[12px] font-semibold ${
               isDark ? "text-white" : "text-[#111111]"
             }`}>
-              —
+              {poolStats[selectedToken]?.supplyAPY ?? "—"}%
             </span>
           </div>
         </div>
@@ -312,12 +297,12 @@ export const AddLiquidity = () => {
       )}
 
       {/* Zero margin balance hint */}
-      {userAddress && marginAccountAddress && !loadingBalance && parseFloat(marginBalance) === 0 && (
+      {userAddress && marginAccountAddress && !isLoadingBorrowedBalances && parseFloat(availableBorrowed) === 0 && (
         <div className={`w-full h-fit rounded-[12px] p-[12px] border border-blue-500/30 ${
           isDark ? "bg-blue-500/10" : "bg-blue-50"
         }`}>
           <p className="text-[12px] font-medium text-blue-600">
-            No {selectedToken} collateral in your margin account. Deposit {selectedToken} as collateral first from the Margin section.
+            No borrowed {selectedToken} available in your margin account. Borrow {selectedToken} first from the Margin section.
           </p>
         </div>
       )}

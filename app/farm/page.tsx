@@ -15,7 +15,8 @@ import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useFarmStore } from "@/store/farm-store";
 import { useBlendPoolStats, useUserBlendPositions } from "@/hooks/use-farm";
-import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
+import { useEffect } from "react";
 
 export default function FarmPage() {
   const [activeFilterTab, setActiveFilterTab] = useState<string>("lending-single-assets");
@@ -29,6 +30,12 @@ export default function FarmPage() {
   const { positions: userPositions } = useUserBlendPositions();
   const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
   const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
+  const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
+
+  useEffect(() => {
+    if (!marginAccountAddress) return;
+    refreshBorrowedBalances(marginAccountAddress);
+  }, [marginAccountAddress]);
 
   // Build real single-asset table rows from live pool data
   const singleAssetTableBody = useMemo(() => {

@@ -20,7 +20,7 @@ export const StatsCard = ({
   address,
 }: StatsCardProps) => {
   const { isDark } = useTheme();
-  if (pie && percentage) {
+  if (pie && percentage !== undefined) {
     return (
       <div className={`w-full h-fit rounded-[12px] py-[32px] px-[20px] flex ${
         isDark ? "bg-[#222222]" : "bg-[#FFFFFF]"

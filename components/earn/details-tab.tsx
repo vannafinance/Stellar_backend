@@ -45,7 +45,6 @@ export const items = [
   },
 ];
 import { StatsCard } from "../ui/stats-card";
-import { getPercentage } from "@/lib/utils/helper";
 import { formatValue } from "@/lib/utils/format-value";
 import { useTheme } from "@/contexts/theme-context";
 import { usePoolData } from "@/hooks/use-earn";
@@ -133,8 +132,11 @@ export const Details = () => {
     };
   }, [selectedPool, selectedAsset]);
 
-  // Max value for pie chart percentage calculation
-  const maxToken = Math.max(totalSupplied.inToken, 100000);
+  // Percentage helpers for pie charts (supply is always 100% when non-zero)
+  const suppliedPercent = totalSupplied.inToken > 0 ? 100 : 0;
+  const borrowedPercent = totalSupplied.inToken > 0
+    ? Math.min((totalBorrowed.inToken / totalSupplied.inToken) * 100, 100)
+    : 0;
 
   // Stats items from pool data
   const items = useMemo(() => [
@@ -236,7 +238,7 @@ export const Details = () => {
           isDark ? "bg-[#222222]" : "bg-[#FFFFFF]"
         }`} aria-label="Supply and Borrow Overview">
           <StatsCard
-            percentage={getPercentage(totalSupplied.inToken, maxToken)}
+            percentage={suppliedPercent}
             heading="Total Supplied"
             mainInfo={`${formatValue(totalSupplied.inToken, {
               type: "number",
@@ -249,7 +251,7 @@ export const Details = () => {
             pie={true}
           />
           <StatsCard
-            percentage={getPercentage(totalBorrowed.inToken, maxToken)}
+            percentage={borrowedPercent}
             heading="Total Borrowed"
             mainInfo={`${formatValue(totalBorrowed.inToken, {
               type: "number",

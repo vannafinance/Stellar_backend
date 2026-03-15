@@ -777,13 +777,17 @@ export class BlendService {
     marginAccountAddress: string,
     blendPoolAddress?: string
   ): Promise<BlendEvent[]> {
-    const poolAddress = blendPoolAddress ?? CONTRACT_ADDRESSES.BLEND_POOL;
+    const registryPoolAddress = await BlendService.getBlendPoolAddressFromRegistry();
+    const poolAddress = blendPoolAddress ?? registryPoolAddress ?? CONTRACT_ADDRESSES.BLEND_POOL;
     const assetMap: Record<string, string> = {
       [CONTRACT_ADDRESSES.BLEND_XLM]: 'XLM',
       [CONTRACT_ADDRESSES.BLEND_USDC]: 'USDC',
     };
 
     try {
+      if (!poolAddress || typeof poolAddress !== 'string') {
+        return [];
+      }
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
 
       // Get current ledger to set a reasonable start ledger (last ~30 days ≈ 518400 ledgers)
@@ -796,26 +800,26 @@ export class BlendService {
       const withdrawTopic = StellarSdk.xdr.ScVal.scvSymbol('withdraw').toXDR('base64');
 
       // Fetch supply events (all for pool, filter by account below)
-      const supplyEventsResp = await server.getEvents({
-        startLedger,
-        filters: [{
-          type: 'contract',
-          contractIds: [poolAddress],
-          topics: [[supplyTopic]],
-        }],
-        limit: 200,
-      } as any);
+      const safeGetEvents = async (topic: string) => {
+        try {
+          const resp = await server.getEvents({
+            startLedger,
+            filters: [{
+              type: 'contract',
+              contractIds: [poolAddress],
+              topics: [[topic]],
+            }],
+            limit: 200,
+          } as any);
+          if ((resp as any)?.error) return [];
+          return (resp as any)?.events ?? [];
+        } catch {
+          return [];
+        }
+      };
 
-      // Fetch withdraw events
-      const withdrawEventsResp = await server.getEvents({
-        startLedger,
-        filters: [{
-          type: 'contract',
-          contractIds: [poolAddress],
-          topics: [[withdrawTopic]],
-        }],
-        limit: 200,
-      } as any);
+      const supplyEvents = await safeGetEvents(supplyTopic);
+      const withdrawEvents = await safeGetEvents(withdrawTopic);
 
       const parseEvents = (events: any[], eventType: 'supply' | 'withdraw'): BlendEvent[] => {
         const results: BlendEvent[] = [];
@@ -844,15 +848,15 @@ export class BlendService {
       };
 
       const events: BlendEvent[] = [
-        ...parseEvents((supplyEventsResp as any)?.events ?? [], 'supply'),
-        ...parseEvents((withdrawEventsResp as any)?.events ?? [], 'withdraw'),
+        ...parseEvents(supplyEvents, 'supply'),
+        ...parseEvents(withdrawEvents, 'withdraw'),
       ];
 
       // Sort by timestamp descending
       events.sort((a, b) => b.timestamp - a.timestamp);
       return events;
     } catch (err: any) {
-      console.error('[BlendService] getBlendEvents error:', err);
+      console.warn('[BlendService] getBlendEvents error:', err?.message ?? err);
       return [];
     }
   }
