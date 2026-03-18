@@ -7,10 +7,13 @@ import { useUserStore } from "@/store/user";
 import { useFarmStore } from "@/store/farm-store";
 import { Button } from "../ui/button";
 import { BlendService, BLEND_POOL_ASSETS } from "@/lib/blend-utils";
+import { AquariusService, AquariusPoolStats } from "@/lib/aquarius-utils";
+import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useBlendPoolStats } from "@/hooks/use-farm";
+import { useBlendStore } from "@/store/blend-store";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC", "EURC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
@@ -20,6 +23,15 @@ export const AddLiquidity = () => {
   const userAddress = useUserStore((state) => state.address);
   const selectedRow = useFarmStore((state) => state.selectedRow);
   const tabType = useFarmStore((state) => state.tabType);
+  const isAquariusPool =
+    tabType === "multi" &&
+    ((selectedRow?.cell?.[1] as any)?.title?.toLowerCase?.() === "aquarius" ||
+      (selectedRow?.cell?.[0] as any)?.tags?.includes?.("Aquarius"));
+
+  const aquariusTokens =
+    (selectedRow?.cell?.[0] as any)?.titles?.map((t: string) => t.toUpperCase()) ?? ["XLM", "USDC"];
+  const tokenA = aquariusTokens[0] ?? "XLM";
+  const tokenB = aquariusTokens[1] ?? "USDC";
 
   // Determine initial token from store (for single asset / lending rows)
   const getInitialToken = useCallback((): TokenSymbol => {
@@ -33,8 +45,12 @@ export const AddLiquidity = () => {
     return "XLM";
   }, [tabType, selectedRow]);
 
+  const triggerBlendRefresh = useBlendStore((s) => s.triggerRefresh);
+
   const [selectedToken, setSelectedToken] = useState<TokenSymbol>(getInitialToken);
   const [value, setValue] = useState<string>("");
+  const [amountA, setAmountA] = useState<string>("");
+  const [amountB, setAmountB] = useState<string>("");
   // Borrowed balances from margin account (amounts available to route into Blend)
   const borrowedBalances = useMarginAccountInfoStore((s) => s.borrowedBalances);
   const isLoadingBorrowedBalances = useMarginAccountInfoStore((s) => s.isLoadingBorrowedBalances);
@@ -44,13 +60,54 @@ export const AddLiquidity = () => {
   const [txError, setTxError] = useState<string>("");
   const [marginAccountAddress, setMarginAccountAddress] = useState<string | null>(null);
   const [blendConfigured, setBlendConfigured] = useState<boolean | null>(null);
+  const [aquariusRegistryMissing, setAquariusRegistryMissing] = useState(false);
+  const [aquariusPoolStats, setAquariusPoolStats] = useState<AquariusPoolStats | null>(null);
+  // Current Blend supply balance for the selected token
+  const [blendBalance, setBlendBalance] = useState<string>("0");
+  const [loadingBlendBalance, setLoadingBlendBalance] = useState(false);
 
-  // Check if Blend pool is configured in Registry (once on mount)
+  // Check protocol configuration (once on mount)
   useEffect(() => {
-    BlendService.isBlendPoolConfigured()
-      .then(setBlendConfigured)
-      .catch(() => setBlendConfigured(false));
-  }, []);
+    if (!isAquariusPool) {
+      BlendService.isBlendPoolConfigured()
+        .then(setBlendConfigured)
+        .catch(() => setBlendConfigured(false));
+    } else {
+      // Always usable via hardcoded fallback — check Registry separately for info only
+      AquariusService.isAquariusConfigured()
+        .then((configured) => setAquariusRegistryMissing(!configured))
+        .catch(() => setAquariusRegistryMissing(true));
+      // Fetch pool stats for ratio calculation
+      AquariusService.getAquariusPoolStats(CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL)
+        .then(setAquariusPoolStats)
+        .catch(() => setAquariusPoolStats(null));
+    }
+  }, [isAquariusPool]);
+
+  // Auto-calculate tokenB when user types tokenA (and vice versa)
+  const handleAmountAChange = (val: string) => {
+    setAmountA(val);
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed > 0 && aquariusPoolStats) {
+      const rA = parseFloat(aquariusPoolStats.reserveA);
+      const rB = parseFloat(aquariusPoolStats.reserveB);
+      if (rA > 0) setAmountB((parsed * rB / rA).toFixed(7));
+    } else if (val === '') {
+      setAmountB('');
+    }
+  };
+
+  const handleAmountBChange = (val: string) => {
+    setAmountB(val);
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed > 0 && aquariusPoolStats) {
+      const rA = parseFloat(aquariusPoolStats.reserveA);
+      const rB = parseFloat(aquariusPoolStats.reserveB);
+      if (rB > 0) setAmountA((parsed * rA / rB).toFixed(7));
+    } else if (val === '') {
+      setAmountA('');
+    }
+  };
 
   // Load margin account address whenever wallet changes
   useEffect(() => {
@@ -68,16 +125,63 @@ export const AddLiquidity = () => {
     refreshBorrowedBalances(marginAccountAddress);
   }, [marginAccountAddress, selectedToken]);
 
+  // Fetch current Blend supply balance for selected token
+  useEffect(() => {
+    if (!marginAccountAddress) {
+      setBlendBalance("0");
+      return;
+    }
+    setLoadingBlendBalance(true);
+    BlendService.getUserBlendBalance(marginAccountAddress, selectedToken)
+      .then((info) => setBlendBalance(info.underlyingBalance))
+      .catch(() => setBlendBalance("0"))
+      .finally(() => setLoadingBlendBalance(false));
+  }, [marginAccountAddress, selectedToken]);
+
+
   const handleMaxClick = () => {
-    const available = borrowedBalances[selectedToken]?.amount ?? "0";
-    setValue(available);
+    setValue(availableToDeployStr);
   };
 
   const handleTokenSelect = (token: TokenSymbol) => {
     setSelectedToken(token);
     setValue("");
+    setAmountA("");
+    setAmountB("");
     setTxStatus("idle");
     setTxError("");
+  };
+
+  const handleAddLiquidity = async () => {
+    if (!userAddress || !marginAccountAddress) return;
+
+    const amtA = parseFloat(amountA);
+    const amtB = parseFloat(amountB);
+    if (isNaN(amtA) || isNaN(amtB) || amtA <= 0 || amtB <= 0) return;
+
+    setTxStatus("loading");
+    setTxError("");
+    setTxHash("");
+
+    const result = await AquariusService.addLiquidity(
+      userAddress,
+      marginAccountAddress,
+      tokenA,
+      tokenB,
+      amtA,
+      amtB
+    );
+
+    if (result.success) {
+      setTxStatus("success");
+      setTxHash(result.hash ?? "");
+      setAmountA("");
+      setAmountB("");
+      refreshBorrowedBalances(marginAccountAddress);
+    } else {
+      setTxStatus("error");
+      setTxError(result.error ?? "Add liquidity failed");
+    }
   };
 
   const handleDeposit = async () => {
@@ -103,6 +207,14 @@ export const AddLiquidity = () => {
       setValue("");
       // Refresh borrowed balances after deposit
       refreshBorrowedBalances(marginAccountAddress);
+      // Refresh Blend positions (positions table + events) after a short delay
+      // to allow the RPC node to reflect the confirmed transaction state
+      setTimeout(() => {
+        triggerBlendRefresh();
+        BlendService.getUserBlendBalance(marginAccountAddress, selectedToken)
+          .then((info) => setBlendBalance(info.underlyingBalance))
+          .catch(() => {});
+      }, 3000);
     } else {
       setTxStatus("error");
       setTxError(result.error ?? "Deposit failed");
@@ -113,8 +225,12 @@ export const AddLiquidity = () => {
   const iconPath = poolAsset?.iconPath ?? iconPaths[selectedToken] ?? "/icons/stellar.svg";
 
   const isInputValid = parseFloat(value) > 0 && !isNaN(parseFloat(value));
-  const availableBorrowed = borrowedBalances[selectedToken]?.amount ?? "0";
-  const isOverBalance = parseFloat(value) > parseFloat(availableBorrowed);
+  const totalBorrowed = parseFloat(borrowedBalances[selectedToken]?.amount ?? "0");
+  const blendDeployed = parseFloat(blendBalance);
+  // Available to deploy = borrowed funds not yet sent to any protocol
+  const availableToDeployNum = Math.max(0, totalBorrowed - blendDeployed);
+  const availableToDeployStr = availableToDeployNum.toFixed(7);
+  const isOverBalance = parseFloat(value) > availableToDeployNum;
   const isSubmitDisabled =
     !userAddress ||
     !marginAccountAddress ||
@@ -129,9 +245,117 @@ export const AddLiquidity = () => {
     if (blendConfigured === false) return "Blend Pool Not Configured";
     if (txStatus === "loading") return "Depositing...";
     if (!isInputValid) return "Enter Amount";
-    if (isOverBalance) return "Insufficient Borrowed Balance";
+    if (isOverBalance) return "Insufficient Available Balance";
     return `Deposit ${selectedToken}`;
   };
+
+  if (isAquariusPool) {
+    const availableA = borrowedBalances[tokenA]?.amount ?? "0";
+    const availableB = borrowedBalances[tokenB]?.amount ?? "0";
+    const isInputValid = parseFloat(amountA) > 0 && parseFloat(amountB) > 0;
+    const isOverA = parseFloat(amountA) > parseFloat(availableA);
+    const isOverB = parseFloat(amountB) > parseFloat(availableB);
+    const isSubmitDisabled =
+      !userAddress ||
+      !marginAccountAddress ||
+      !isInputValid ||
+      isOverA ||
+      isOverB ||
+      txStatus === "loading";
+
+    const buttonText = () => {
+      if (!userAddress) return "Connect Wallet";
+      if (!marginAccountAddress) return "Margin Account Required";
+      if (txStatus === "loading") return "Adding Liquidity...";
+      if (!isInputValid) return "Enter Amounts";
+      if (isOverA || isOverB) return "Insufficient Borrowed Balance";
+      return `Add ${tokenA}/${tokenB}`;
+    };
+
+    return (
+      <div className="w-full h-fit flex flex-col gap-[16px]">
+        <div className={`w-full h-fit p-[20px] rounded-[16px] ${
+          isDark ? "bg-[#111111]" : "bg-white"
+        }`}>
+          {aquariusPoolStats && (
+            <div className={`text-[11px] font-medium mb-[4px] ${isDark ? "text-[#919191]" : "text-[#76737B]"}`}>
+              1 {tokenB} ≈ {(parseFloat(aquariusPoolStats.reserveA) / parseFloat(aquariusPoolStats.reserveB)).toFixed(4)} {tokenA}
+              &nbsp;·&nbsp;
+              1 {tokenA} ≈ {(parseFloat(aquariusPoolStats.reserveB) / parseFloat(aquariusPoolStats.reserveA)).toFixed(4)} {tokenB}
+            </div>
+          )}
+          <div className="w-full flex flex-col gap-[12px]">
+            {[tokenA, tokenB].map((token, idx) => (
+              <div
+                key={token}
+                className={`w-full h-fit flex items-center gap-[12px] p-[12px] rounded-[12px] ${
+                  isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
+                }`}
+              >
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  value={idx === 0 ? amountA : amountB}
+                  onChange={(e) => idx === 0 ? handleAmountAChange(e.target.value) : handleAmountBChange(e.target.value)}
+                  min="0"
+                  className={`w-full bg-transparent outline-none border-none text-[18px] font-semibold placeholder:text-[#CCCCCC] ${
+                    isDark ? "text-white" : "text-black"
+                  } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+                />
+                <div className="flex flex-col items-end gap-[6px]">
+                  <div className="flex items-center gap-[6px]">
+                    <Image
+                      src={iconPaths[token] ?? "/icons/stellar.svg"}
+                      alt={token}
+                      width={18}
+                      height={18}
+                    />
+                    <span className={`text-[13px] font-semibold ${
+                      isDark ? "text-white" : "text-[#111111]"
+                    }`}>
+                      {token}
+                    </span>
+                  </div>
+                  <span className={`text-[11px] font-medium ${
+                    isDark ? "text-[#919191]" : "text-[#5C5B5B]"
+                  }`}>
+                    {isLoadingBorrowedBalances
+                      ? "Loading..."
+                      : `Borrowed: ${parseFloat(idx === 0 ? availableA : availableB).toFixed(4)}`}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {aquariusRegistryMissing && (
+          <div className={`w-full h-fit p-[12px] rounded-[12px] text-[12px] ${
+            isDark ? "bg-[#1A1A1A] text-[#FFA07A]" : "bg-[#FFF8F0] text-[#C05000]"
+          }`}>
+            Registry not configured — using default Aquarius addresses. LP position tracking requires
+            the admin to run <code>set_aquarius_router_address</code> and{" "}
+            <code>set_aquarius_pool_index</code> on the Registry.
+          </div>
+        )}
+
+        <Button
+          text={buttonText()}
+          size="large"
+          type="solid"
+          disabled={isSubmitDisabled}
+          onClick={handleAddLiquidity}
+        />
+
+        {txStatus === "error" && txError && (
+          <div className="text-red-500 text-[12px]">{txError}</div>
+        )}
+        {txStatus === "success" && txHash && (
+          <div className="text-green-500 text-[12px]">Transaction submitted: {txHash}</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-fit flex flex-col gap-[16px]">
@@ -198,23 +422,32 @@ export const AddLiquidity = () => {
                 {selectedToken}
               </span>
             </div>
-            <div className="flex items-center gap-[6px]">
+            <div className="flex flex-col items-end gap-[4px]">
+              <div className="flex items-center gap-[6px]">
+                <span className={`text-[11px] font-medium ${
+                  isDark ? "text-[#919191]" : "text-[#5C5B5B]"
+                }`}>
+                  {isLoadingBorrowedBalances
+                    ? "Loading..."
+                    : `Available: ${availableToDeployNum.toFixed(4)}`}
+                </span>
+                {!isLoadingBorrowedBalances && (
+                  <button
+                    type="button"
+                    onClick={handleMaxClick}
+                    className="text-[11px] font-semibold text-[#703AE6] underline cursor-pointer"
+                  >
+                    Max
+                  </button>
+                )}
+              </div>
               <span className={`text-[11px] font-medium ${
-                isDark ? "text-[#919191]" : "text-[#5C5B5B]"
+                isDark ? "text-[#4CAF50]" : "text-[#2E7D32]"
               }`}>
-                {isLoadingBorrowedBalances
-                  ? "Loading..."
-                  : `Borrowed: ${parseFloat(availableBorrowed).toFixed(4)}`}
+                {loadingBlendBalance
+                  ? "..."
+                  : `In Blend Pool: ${parseFloat(blendBalance).toFixed(4)}`}
               </span>
-              {!isLoadingBorrowedBalances && (
-                <button
-                  type="button"
-                  onClick={handleMaxClick}
-                  className="text-[11px] font-semibold text-[#703AE6] underline cursor-pointer"
-                >
-                  Max
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -296,8 +529,28 @@ export const AddLiquidity = () => {
         </div>
       )}
 
+      {/* Position tracking info */}
+      {marginAccountAddress && (
+        <div className={`w-full h-fit rounded-[12px] p-[12px] flex flex-col gap-[6px] ${
+          isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
+        }`}>
+          <span className={`text-[11px] font-semibold ${isDark ? "text-[#CCCCCC]" : "text-[#444]"}`}>
+            Position Tracking
+          </span>
+          <p className={`text-[11px] ${isDark ? "text-[#919191]" : "text-[#76737B]"}`}>
+            Your Blend b-tokens are held by your margin account (not your wallet directly).
+            Track your position in the <strong>Current Position</strong> table below.
+          </p>
+          {availableToDeployNum === 0 && blendDeployed > 0 && (
+            <p className={`text-[11px] font-medium text-[#4CAF50]`}>
+              All borrowed {selectedToken} is deployed into Blend ({blendDeployed.toFixed(4)} {selectedToken}).
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Zero margin balance hint */}
-      {userAddress && marginAccountAddress && !isLoadingBorrowedBalances && parseFloat(availableBorrowed) === 0 && (
+      {userAddress && marginAccountAddress && !isLoadingBorrowedBalances && totalBorrowed === 0 && (
         <div className={`w-full h-fit rounded-[12px] p-[12px] border border-blue-500/30 ${
           isDark ? "bg-blue-500/10" : "bg-blue-50"
         }`}>

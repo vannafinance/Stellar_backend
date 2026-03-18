@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useSupplyLiquidity, usePoolData } from "@/hooks/use-earn";
-import { ASSET_TYPES, AssetType, ContractService } from "@/lib/stellar-utils";
+import { AssetType } from "@/lib/stellar-utils";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 
 export const SupplyLiquidityTab = () => {
@@ -23,8 +23,9 @@ export const SupplyLiquidityTab = () => {
   
   const userAddress = useUserStore((state) => state.address);
   const balance = useUserStore((state) => state.balance);
+  const storeTokenBalances = useUserStore((state) => state.tokenBalances);
   const depositedBalances = useUserStore((state) => state.depositedBalances);
-  
+
   const { supply, isLoading, message, clearMessage } = useSupplyLiquidity();
   const { pools } = usePoolData();
 
@@ -33,25 +34,10 @@ export const SupplyLiquidityTab = () => {
     setSelectedOption(selectedAsset);
   }, [selectedAsset]);
 
-  // Fetch token balances when user connects or asset changes
+  // Use balances from the user store (populated on wallet connect by refreshBalances)
   useEffect(() => {
-    const fetchTokenBalances = async () => {
-      if (userAddress) {
-        try {
-          const balances = await ContractService.getAllTokenBalances(userAddress);
-          setTokenBalances(balances);
-        } catch (error) {
-          console.error('Error fetching token balances:', error);
-          // Set to zero on error
-          setTokenBalances({ XLM: '0', USDC: '0', EURC: '0' });
-        }
-      } else {
-        setTokenBalances({ XLM: '0', USDC: '0', EURC: '0' });
-      }
-    };
-    
-    fetchTokenBalances();
-  }, [userAddress]);
+    setTokenBalances(storeTokenBalances);
+  }, [storeTokenBalances]);
 
   // Get pool stats for selected asset
   const selectedPool = pools[selectedOption as keyof typeof pools];

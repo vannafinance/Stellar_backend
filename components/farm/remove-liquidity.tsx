@@ -7,9 +7,12 @@ import { useUserStore } from "@/store/user";
 import { useFarmStore } from "@/store/farm-store";
 import { Button } from "../ui/button";
 import { BlendService, BLEND_POOL_ASSETS } from "@/lib/blend-utils";
+import { AquariusService } from "@/lib/aquarius-utils";
+import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
 import { PERCENTAGE_COLORS } from "@/lib/constants/margin";
+import { useBlendStore } from "@/store/blend-store";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC", "EURC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
@@ -19,8 +22,18 @@ const PERCENTAGE_OPTIONS = [25, 50, 75, 100] as const;
 export const RemoveLiquidity = () => {
   const { isDark } = useTheme();
   const userAddress = useUserStore((state) => state.address);
+  const triggerBlendRefresh = useBlendStore((s) => s.triggerRefresh);
   const selectedRow = useFarmStore((state) => state.selectedRow);
   const tabType = useFarmStore((state) => state.tabType);
+  const isAquariusPool =
+    tabType === "multi" &&
+    ((selectedRow?.cell?.[1] as any)?.title?.toLowerCase?.() === "aquarius" ||
+      (selectedRow?.cell?.[0] as any)?.tags?.includes?.("Aquarius"));
+
+  const aquariusTokens =
+    (selectedRow?.cell?.[0] as any)?.titles?.map((t: string) => t.toUpperCase()) ?? ["XLM", "USDC"];
+  const tokenA = aquariusTokens[0] ?? "XLM";
+  const tokenB = aquariusTokens[1] ?? "USDC";
 
   // Determine initial token from store (for single asset / lending rows)
   const getInitialToken = useCallback((): TokenSymbol => {
@@ -39,18 +52,23 @@ export const RemoveLiquidity = () => {
   const [selectedPercentage, setSelectedPercentage] = useState<number>(0);
   const [blendBalance, setBlendBalance] = useState<string>("0");
   const [loadingBalance, setLoadingBalance] = useState<boolean>(false);
+  const [lpBalance, setLpBalance] = useState<string>("0");
+  const [loadingLpBalance, setLoadingLpBalance] = useState<boolean>(false);
   const [txStatus, setTxStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState<string>("");
   const [txError, setTxError] = useState<string>("");
   const [marginAccountAddress, setMarginAccountAddress] = useState<string | null>(null);
   const [blendConfigured, setBlendConfigured] = useState<boolean | null>(null);
+  // Aquarius is always usable via hardcoded fallback — no Registry gate needed
 
   // Check if Blend pool is configured in Registry (once on mount)
   useEffect(() => {
-    BlendService.isBlendPoolConfigured()
-      .then(setBlendConfigured)
-      .catch(() => setBlendConfigured(false));
-  }, []);
+    if (!isAquariusPool) {
+      BlendService.isBlendPoolConfigured()
+        .then(setBlendConfigured)
+        .catch(() => setBlendConfigured(false));
+    }
+  }, [isAquariusPool]);
 
   // Load margin account
   useEffect(() => {
@@ -74,6 +92,23 @@ export const RemoveLiquidity = () => {
       .catch(() => setBlendBalance("0"))
       .finally(() => setLoadingBalance(false));
   }, [marginAccountAddress, selectedToken]);
+
+  useEffect(() => {
+    if (!isAquariusPool || !marginAccountAddress) {
+      setLpBalance("0");
+      return;
+    }
+    setLoadingLpBalance(true);
+    // getUserLpBalance tries tracking token first, then falls back to pool's get_user_shares()
+    AquariusService.getUserLpBalance(
+      marginAccountAddress,
+      CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL,
+      tokenA,
+      tokenB
+    )
+      .then(setLpBalance)
+      .finally(() => setLoadingLpBalance(false));
+  }, [isAquariusPool, marginAccountAddress, tokenA, tokenB]);
 
   const handleTokenSelect = (token: TokenSymbol) => {
     setSelectedToken(token);
@@ -112,10 +147,13 @@ export const RemoveLiquidity = () => {
       setTxHash(result.hash ?? "");
       setValue("");
       setSelectedPercentage(0);
-      // Refresh balance after withdrawal
-      BlendService.getUserBlendBalance(marginAccountAddress, selectedToken).then((info) =>
-        setBlendBalance(info.underlyingBalance)
-      );
+      // Refresh Blend balance locally and trigger global positions refresh
+      setTimeout(() => {
+        triggerBlendRefresh();
+        BlendService.getUserBlendBalance(marginAccountAddress, selectedToken).then((info) =>
+          setBlendBalance(info.underlyingBalance)
+        );
+      }, 3000);
     } else {
       setTxStatus("error");
       setTxError(result.error ?? "Withdrawal failed");
@@ -144,6 +182,160 @@ export const RemoveLiquidity = () => {
     if (isOverBalance) return "Insufficient Balance";
     return `Withdraw ${selectedToken}`;
   };
+
+  if (isAquariusPool) {
+    const lpAmount = parseFloat(value);
+    const lpAvailable = parseFloat(lpBalance);
+    const isInputValid = lpAmount > 0 && !isNaN(lpAmount);
+    const isOverBalance = lpAmount > lpAvailable;
+    const isSubmitDisabled =
+      !userAddress ||
+      !marginAccountAddress ||
+      !isInputValid ||
+      isOverBalance ||
+      txStatus === "loading";
+
+    const handleAquariusWithdraw = async () => {
+      if (!userAddress || !marginAccountAddress) return;
+      const amount = parseFloat(value);
+      if (isNaN(amount) || amount <= 0) return;
+
+      setTxStatus("loading");
+      setTxError("");
+      setTxHash("");
+
+      const result = await AquariusService.removeLiquidity(
+        userAddress,
+        marginAccountAddress,
+        tokenA,
+        tokenB,
+        amount
+      );
+
+      if (result.success) {
+        setTxStatus("success");
+        setTxHash(result.hash ?? "");
+        setValue("");
+        setSelectedPercentage(0);
+        // Refresh LP balance via pool contract fallback
+        AquariusService.getUserLpBalance(
+          marginAccountAddress,
+          CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL
+        ).then(setLpBalance);
+      } else {
+        setTxStatus("error");
+        setTxError(result.error ?? "Remove liquidity failed");
+      }
+    };
+
+    const buttonText = () => {
+      if (!userAddress) return "Connect Wallet";
+      if (!marginAccountAddress) return "Margin Account Required";
+      if (txStatus === "loading") return "Removing Liquidity...";
+      if (!isInputValid) return "Enter Amount";
+      if (isOverBalance) return "Insufficient LP Balance";
+      return `Remove ${tokenA}/${tokenB}`;
+    };
+
+    return (
+      <div className="w-full h-fit flex flex-col gap-[16px]">
+        <div className={`w-full h-fit rounded-[12px] p-[14px] flex justify-between items-center ${
+          isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
+        }`}>
+          <span className={`text-[12px] font-medium ${
+            isDark ? "text-[#919191]" : "text-[#76737B]"
+          }`}>
+            Your Aquarius LP Balance
+          </span>
+          <div className="flex items-center gap-[6px]">
+            <Image src={iconPaths[tokenA] ?? "/icons/stellar.svg"} alt={tokenA} width={16} height={16} />
+            <Image src={iconPaths[tokenB] ?? "/icons/stellar.svg"} alt={tokenB} width={16} height={16} />
+            <span className={`text-[13px] font-semibold ${
+              isDark ? "text-white" : "text-[#111111]"
+            }`}>
+              {loadingLpBalance
+                ? "Loading..."
+                : `${parseFloat(lpBalance).toFixed(4)} LP`}
+            </span>
+          </div>
+        </div>
+
+        <div className={`w-full h-fit flex rounded-[16px] gap-[8px] p-[20px] ${
+          isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"
+        }`}>
+          <div className="w-full h-fit flex flex-col gap-[16px]">
+            <div className="flex flex-col gap-[6px]">
+              <input
+                type="number"
+                placeholder="0.00"
+                className={`w-full h-fit text-[20px] font-semibold placeholder:text-[#CCCCCC] outline-none border-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                  isDark ? "text-white" : "text-[#111111]"
+                }`}
+                value={value}
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  setSelectedPercentage(0);
+                }}
+                min="0"
+              />
+              <div className={`text-[11px] font-medium ${
+                isDark ? "text-[#919191]" : "text-[#76737B]"
+              }`}>
+                {isOverBalance ? (
+                  <span className="text-red-500">Exceeds LP balance</span>
+                ) : (
+                  "$0.00"
+                )}
+              </div>
+            </div>
+            <div className="flex gap-[8px]">
+              {PERCENTAGE_OPTIONS.map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPercentage(pct);
+                    const balance = parseFloat(lpBalance);
+                    if (!isNaN(balance) && balance > 0) {
+                      setValue(((balance * pct) / 100).toFixed(7));
+                    }
+                  }}
+                  className={`px-[10px] py-[6px] rounded-[8px] text-[12px] font-semibold ${
+                    selectedPercentage === pct
+                      ? "bg-[#703AE6] text-white"
+                      : isDark
+                      ? "bg-[#1A1A1A] text-[#C7C7C7]"
+                      : "bg-[#F2F2F2] text-[#555555]"
+                  }`}
+                  style={{
+                    boxShadow: selectedPercentage === pct ? `0 0 0 1px ${PERCENTAGE_COLORS[pct]}` : "none",
+                  }}
+                >
+                  {pct}%
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+
+        <Button
+          text={buttonText()}
+          size="large"
+          type="solid"
+          disabled={isSubmitDisabled}
+          onClick={handleAquariusWithdraw}
+        />
+
+        {txStatus === "error" && txError && (
+          <div className="text-red-500 text-[12px]">{txError}</div>
+        )}
+        {txStatus === "success" && txHash && (
+          <div className="text-green-500 text-[12px]">Transaction submitted: {txHash}</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-fit flex flex-col gap-[16px]">

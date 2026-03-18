@@ -7,7 +7,13 @@ import {
   BlendUserPosition,
   BlendEvent,
 } from '@/lib/blend-utils';
+import {
+  AquariusService,
+  AquariusPoolStats,
+  AquariusLpEvent,
+} from '@/lib/aquarius-utils';
 import { useMarginAccountInfoStore } from '@/store/margin-account-info-store';
+import { useBlendStore } from '@/store/blend-store';
 
 // ---------- Pool stats ----------
 
@@ -69,6 +75,7 @@ const EMPTY_USER: UserBlendPositions = {
 
 export const useUserBlendPositions = () => {
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
+  const refreshKey = useBlendStore((s) => s.refreshKey);
   const [positions, setPositions] = useState<UserBlendPositions>(EMPTY_USER);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,9 +105,10 @@ export const useUserBlendPositions = () => {
     }
   }, [marginAccountAddress]);
 
+  // Re-fetch whenever marginAccountAddress changes OR a transaction triggers a refresh
   useEffect(() => {
     fetch();
-  }, [fetch]);
+  }, [fetch, refreshKey]);
 
   return { positions, isLoading, error, refresh: fetch };
 };
@@ -109,6 +117,7 @@ export const useUserBlendPositions = () => {
 
 export const useBlendEvents = (tokenSymbol?: string) => {
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
+  const refreshKey = useBlendStore((s) => s.refreshKey);
   const [events, setEvents] = useState<BlendEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,11 +142,126 @@ export const useBlendEvents = (tokenSymbol?: string) => {
     }
   }, [marginAccountAddress, tokenSymbol]);
 
+  // Re-fetch whenever marginAccountAddress/token changes OR a transaction triggers a refresh
   useEffect(() => {
     fetch();
-  }, [fetch]);
+  }, [fetch, refreshKey]);
 
   return { events, isLoading, error, refresh: fetch };
+};
+
+// ---------- Aquarius pool stats ----------
+
+export const useAquariusPoolStats = (poolAddress: string | null) => {
+  const [stats, setStats] = useState<AquariusPoolStats | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!poolAddress) return;
+    setIsLoading(true);
+    AquariusService.getAquariusPoolStats(poolAddress)
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setIsLoading(false));
+    const interval = setInterval(() => {
+      AquariusService.getAquariusPoolStats(poolAddress).then(setStats).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [poolAddress]);
+
+  return { stats, isLoading };
+};
+
+// ---------- Aquarius LP position ----------
+
+export const useAquariusLpPosition = (
+  marginAccountAddress: string | null,
+  poolAddress: string | null
+) => {
+  const refreshKey = useBlendStore((s) => s.refreshKey);
+  const [lpBalance, setLpBalance] = useState('0');
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!marginAccountAddress || !poolAddress) {
+      setLpBalance('0');
+      return;
+    }
+    setIsLoading(true);
+    AquariusService.getUserLpBalance(marginAccountAddress, poolAddress)
+      .then(setLpBalance)
+      .catch(() => setLpBalance('0'))
+      .finally(() => setIsLoading(false));
+  }, [marginAccountAddress, poolAddress, refreshKey]);
+
+  return { lpBalance, isLoading };
+};
+
+// ---------- Aquarius LP events ----------
+
+export const useAquariusEvents = (poolAddress: string | null) => {
+  const refreshKey = useBlendStore((s) => s.refreshKey);
+  const [events, setEvents] = useState<AquariusLpEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!poolAddress) {
+      setEvents([]);
+      return;
+    }
+    setIsLoading(true);
+    AquariusService.getAquariusEvents(poolAddress)
+      .then(setEvents)
+      .catch(() => setEvents([]))
+      .finally(() => setIsLoading(false));
+  }, [poolAddress, refreshKey]);
+
+  return { events, isLoading };
+};
+
+// ---------- Aquarius LP chart helper ----------
+// Builds cumulative LP balance chart from deposit/withdraw events.
+export const buildLpChartData = (
+  events: AquariusLpEvent[],
+  currentLpBalance: number
+): Array<{ date: string; amount: number }> => {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  if (events.length === 0) {
+    if (currentLpBalance <= 0) return [];
+    const past = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    return [
+      { date: past.toISOString().split('T')[0], amount: currentLpBalance },
+      { date: todayStr, amount: currentLpBalance },
+    ];
+  }
+
+  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
+  let running = 0;
+  const points: Array<{ date: string; amount: number }> = [];
+
+  const firstTs = sorted[0].timestamp;
+  if (firstTs) {
+    const startDate = new Date(firstTs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    points.push({ date: startDate, amount: 0 });
+  }
+
+  for (const ev of sorted) {
+    const delta = parseFloat(ev.shareAmount);
+    running += ev.type === 'deposit' ? delta : -delta;
+    running = Math.max(0, running);
+    const date = ev.timestamp
+      ? new Date(ev.timestamp).toISOString().split('T')[0]
+      : todayStr;
+    points.push({ date, amount: parseFloat(running.toFixed(7)) });
+  }
+
+  if (currentLpBalance > 0) {
+    points.push({ date: todayStr, amount: parseFloat(currentLpBalance.toFixed(7)) });
+  }
+
+  return points;
 };
 
 // ---------- Chart data helper ----------

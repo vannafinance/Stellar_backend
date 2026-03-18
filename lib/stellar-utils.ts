@@ -35,6 +35,14 @@ export const CONTRACT_ADDRESSES = {
   // Blend testnet asset contracts (used as reserve assets inside the Blend pool)
   BLEND_XLM: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',        // XLM (matches our registry)
   BLEND_USDC: 'CAQCFVLOBK5GIULPNZRGATJJMIZL5BSP7X5YJVMGCPTUEPFM4AVSRCJU',       // Blend testnet USDC
+
+  // ── Aquarius AMM Testnet Addresses ──
+  // Real router (found from pool's ["Router"] storage key)
+  AQUARIUS_ROUTER: 'CBCFTQSPDBAIZ6R6PJQKSQWKNKWH2QIV3I4J72SHWBIK3ADRRAM5A6GD',
+  // XLM/USDC pool (TokenA=CAZRY5 Aquarius USDC, TokenB=CDLZFC XLM)
+  AQUARIUS_XLM_USDC_POOL: 'CD3LFMMLBQ6RBJUD3Z2LFDFE6544WDRMWHEZYPI5YDVESYRSO2TT32BX',
+  // Aquarius USDC token contract (issuer GAHPYWLK6...)
+  AQUARIUS_USDC: 'CAZRY5GSFBFXD7H6GAFBA5YGYQTDXU4QKWKMYFWBAZFUCURN3WKX6LF5',
 } as const;
 
 // Asset Types
@@ -47,7 +55,9 @@ export const ASSET_TYPES = {
 // Asset Issuers (Stellar Testnet)
 export const ASSET_ISSUERS = {
   USDC: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  USDC_AQUARIUS: 'GAHPYWLK6YRN7CVYZOO4H3VDRZ7PVF5UJGLZCSPAEIKJE2XSWF5LAGER',
   EURC: 'GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2',
+  AQUA: 'GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA',
 } as const;
 
 export type AssetType = typeof ASSET_TYPES[keyof typeof ASSET_TYPES];
@@ -681,8 +691,12 @@ export class ContractService {
           xlmBalance = parseFloat(balance.balance).toFixed(7);
         } else if (balance.asset_type === 'credit_alphanum4' || balance.asset_type === 'credit_alphanum12') {
           const assetBalance = balance as StellarSdk.Horizon.HorizonApi.BalanceLineAsset;
-          if (assetBalance.asset_code === 'USDC' && assetBalance.asset_issuer === ASSET_ISSUERS.USDC) {
-            usdcBalance = parseFloat(assetBalance.balance).toFixed(7);
+          if (assetBalance.asset_code === 'USDC' && (
+            assetBalance.asset_issuer === ASSET_ISSUERS.USDC ||
+            assetBalance.asset_issuer === ASSET_ISSUERS.USDC_AQUARIUS
+          )) {
+            // Sum both Circle USDC and Aquarius USDC balances
+            usdcBalance = (parseFloat(usdcBalance) + parseFloat(assetBalance.balance)).toFixed(7);
           } else if (assetBalance.asset_code === 'EURC' && assetBalance.asset_issuer === ASSET_ISSUERS.EURC) {
             eurcBalance = parseFloat(assetBalance.balance).toFixed(7);
           }

@@ -470,6 +470,37 @@ export class BlendService {
   }
 
   /**
+   * Fetch the tracking token contract address from the Registry.
+   * This is the contract that stores b-token balances for margin accounts.
+   * Users can add this token contract to their wallet to monitor their Blend positions.
+   */
+  static async getTrackingTokenContractAddress(): Promise<string | null> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      const registryContract = new StellarSdk.Contract(CONTRACT_ADDRESSES.REGISTRY);
+
+      const tx = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(registryContract.call('get_tracking_token_contract_addr'))
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+      if (!StellarSdk.rpc.Api.isSimulationSuccess(sim) || !sim.result?.retval) {
+        return null;
+      }
+      return StellarSdk.scValToNative(sim.result.retval) as string;
+    } catch (error: any) {
+      console.error('[BlendService] getTrackingTokenContractAddress error:', error);
+      return null;
+    }
+  }
+
+  /**
    * Check if the Blend pool is configured.
    * Always returns true since we have a known testnet fallback address (CONTRACT_ADDRESSES.BLEND_POOL).
    */

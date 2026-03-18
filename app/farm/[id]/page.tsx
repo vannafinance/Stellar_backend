@@ -21,7 +21,12 @@ import {
   useUserBlendPositions,
   useBlendEvents,
   buildSupplyChartData,
+  useAquariusPoolStats,
+  useAquariusLpPosition,
+  useAquariusEvents,
+  buildLpChartData,
 } from "@/hooks/use-farm";
+import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 const UI_TABS = [
@@ -56,11 +61,29 @@ export default function FarmDetailPage() {
     return null;
   }, [id]);
 
-  // Real data hooks
+  // Row type detection (multi-asset = Aquarius, single = Blend)
+  const selectedRow = useFarmStore((state) => state.selectedRow);
+  const tabType = useFarmStore((state) => state.tabType);
+
+  // Detect Aquarius pool early so hooks can be called unconditionally
+  const isAquariusEarly =
+    tabType === 'multi' ||
+    (id && !['xlm', 'usdc', 'eurc'].includes(id.toLowerCase()));
+
+  const aquariusPoolAddress = isAquariusEarly
+    ? CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL
+    : null;
+
+  // Real data hooks — Blend (single-asset)
   const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
   const { positions: userPositions, isLoading: posLoading } = useUserBlendPositions();
   const { events, isLoading: eventsLoading } = useBlendEvents(tokenSymbol ?? undefined);
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
+
+  // Real data hooks — Aquarius (multi-asset)
+  const { stats: aqStats, isLoading: aqStatsLoading } = useAquariusPoolStats(aquariusPoolAddress);
+  const { lpBalance } = useAquariusLpPosition(marginAccountAddress, aquariusPoolAddress);
+  const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress);
 
   // Pool stats for this token
   const reserveData = tokenSymbol ? poolStats[tokenSymbol] : null;
@@ -171,9 +194,104 @@ export default function FarmDetailPage() {
     ];
   }, [reserveData, tokenSymbol]);
 
-  // Row and tab type from store / URL
-  const selectedRow = useFarmStore((state) => state.selectedRow);
-  const tabType = useFarmStore((state) => state.tabType);
+  // ── Aquarius computed values ──
+  const myLpBalance = parseFloat(lpBalance ?? '0');
+
+  // Aquarius stats strip
+  const aquariusStatsItems = useMemo(() => [
+    {
+      id: "reserveA",
+      name: "XLM Reserve",
+      amount: aqStatsLoading ? "..." : aqStats ? `${parseFloat(aqStats.reserveA).toLocaleString(undefined, { maximumFractionDigits: 2 })} XLM` : "N/A",
+    },
+    {
+      id: "reserveB",
+      name: "USDC Reserve",
+      amount: aqStatsLoading ? "..." : aqStats ? `${parseFloat(aqStats.reserveB).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC` : "N/A",
+    },
+    {
+      id: "fee",
+      name: "Fee Rate",
+      amount: aqStatsLoading ? "..." : aqStats ? aqStats.feeFraction : "N/A",
+    },
+    {
+      id: "totalShares",
+      name: "Total LP Shares",
+      amount: aqStatsLoading ? "..." : aqStats ? parseFloat(aqStats.totalShares).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "N/A",
+    },
+  ], [aqStats, aqStatsLoading]);
+
+  // Aquarius LP chart data
+  const aqChartData = useMemo(
+    () => buildLpChartData(aqEvents, myLpBalance),
+    [aqEvents, myLpBalance]
+  );
+
+  // Aquarius current position table
+  const aquariusPositionHeadings = [
+    { label: "Pool", id: "pool" },
+    { label: "LP Shares", id: "lp-shares" },
+    { label: "XLM Deposited", id: "xlm" },
+    { label: "USDC Deposited", id: "usdc" },
+    { label: "Fee Rate", id: "fee-rate" },
+  ];
+
+  const aquariusCurrentPositionBody = useMemo(() => {
+    if (myLpBalance <= 0) return { rows: [] };
+    // Estimate underlying assets proportional to LP share
+    const totalSharesNum = parseFloat(aqStats?.totalShares ?? '0');
+    const ratio = totalSharesNum > 0 ? myLpBalance / totalSharesNum : 0;
+    const xlmShare = (parseFloat(aqStats?.reserveA ?? '0') * ratio).toFixed(4);
+    const usdcShare = (parseFloat(aqStats?.reserveB ?? '0') * ratio).toFixed(4);
+    return {
+      rows: [{
+        cell: [
+          { chain: 'XLM', title: 'XLM / USDC', tags: ['Aquarius', 'LP'] },
+          { title: `${myLpBalance.toFixed(4)} LP` },
+          { title: `${xlmShare} XLM` },
+          { title: `${usdcShare} USDC` },
+          { title: aqStats?.feeFraction ?? '—' },
+        ],
+      }],
+    };
+  }, [myLpBalance, aqStats]);
+
+  // Aquarius position history table
+  const aquariusHistoryBody = useMemo(() => {
+    if (aqEvents.length === 0) return { rows: [] };
+    return {
+      rows: aqEvents.map((ev) => ({
+        cell: [
+          {
+            title: ev.timestamp ? new Date(ev.timestamp).toLocaleDateString() : '—',
+            description: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '',
+          },
+          {
+            title: ev.type === 'deposit' ? 'Add Liquidity' : 'Remove Liquidity',
+            badge: ev.type === 'deposit' ? 'green' : 'orange',
+          },
+          { title: `${ev.shareAmount} LP` },
+          { title: 'Success', badge: 'green' },
+          ev.txHash
+            ? {
+                title: `${ev.txHash.slice(0, 8)}...${ev.txHash.slice(-4)}`,
+                clickable: 'link',
+                link: `https://stellar.expert/explorer/testnet/tx/${ev.txHash}`,
+              }
+            : { title: '—' },
+        ],
+      })),
+    };
+  }, [aqEvents]);
+
+  // Aquarius analytics cards
+  const aquariusAnalyticsItems = useMemo(() => [
+    { heading: 'XLM Reserve', mainInfo: `${parseFloat(aqStats?.reserveA ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} XLM`, subInfo: 'Current XLM reserve in pool', tooltip: 'Total XLM held by the Aquarius pool' },
+    { heading: 'USDC Reserve', mainInfo: `${parseFloat(aqStats?.reserveB ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC`, subInfo: 'Current USDC reserve in pool', tooltip: 'Total USDC held by the Aquarius pool' },
+    { heading: 'Fee Rate', mainInfo: aqStats?.feeFraction ?? '—', subInfo: 'Swap fee per trade', tooltip: '0.30% fee split between LPs' },
+    { heading: 'Total LP Shares', mainInfo: parseFloat(aqStats?.totalShares ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 }), subInfo: 'Total outstanding LP tokens', tooltip: 'Sum of all LP shares minted' },
+    { heading: 'Your LP Balance', mainInfo: myLpBalance.toFixed(4), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
+  ], [aqStats, myLpBalance]);
 
   const findRowFromId = useCallback((searchId: string) => {
     for (const row of singleAssetTableBody.rows) {
@@ -258,11 +376,9 @@ export default function FarmDetailPage() {
       </header>
 
       {/* Pool stats strip */}
-      {!isMultiAsset && (
-        <section className="w-full h-fit">
-          <AccountStatsGhost items={statsItems} />
-        </section>
-      )}
+      <section className="w-full h-fit">
+        <AccountStatsGhost items={isMultiAsset ? aquariusStatsItems : statsItems} />
+      </section>
 
       {/* Main content */}
       <section className="w-full h-fit flex gap-[20px]">
@@ -271,41 +387,85 @@ export default function FarmDetailPage() {
 
           {activeUiTab === "all-transactions" ? (
             <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
-              {/* Supply chart */}
-              <Chart
-                type="farm"
-                heading={chartHeading}
-                uptrend={myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined}
-                liveData={chartLiveData.length > 0 ? chartLiveData : undefined}
-              />
+              {/* Chart */}
+              {isMultiAsset ? (
+                <Chart
+                  type="farm"
+                  heading="My LP Position"
+                  uptrend={myLpBalance > 0 ? `${myLpBalance.toFixed(4)} LP shares` : undefined}
+                  liveData={aqChartData.length > 0 ? aqChartData : undefined}
+                />
+              ) : (
+                <Chart
+                  type="farm"
+                  heading={chartHeading}
+                  uptrend={myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined}
+                  liveData={chartLiveData.length > 0 ? chartLiveData : undefined}
+                />
+              )}
 
               {/* My position + history table */}
-              <Table
-                filterDropdownPosition="right"
-                tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
-                heading={{
-                  heading: "My Position",
-                  tabsItems: [
-                    { id: "current-position", label: "Current Position" },
-                    { id: "position-history", label: "Position History" }
-                  ],
-                  tabType: "solid"
-                }}
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                filters={{ filters: ["All"], customizeDropdown: true }}
-                tableHeadings={activeTab === 'current-position' ? positionTableHeadings : transactionTableHeadings}
-                tableBody={tableBodyData}
-              />
+              {isMultiAsset ? (
+                <Table
+                  filterDropdownPosition="right"
+                  tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
+                  heading={{
+                    heading: "My Position",
+                    tabsItems: [
+                      { id: "current-position", label: "Current Position" },
+                      { id: "position-history", label: "Position History" },
+                    ],
+                    tabType: "solid",
+                  }}
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                  filters={{ filters: ["All"], customizeDropdown: true }}
+                  tableHeadings={
+                    activeTab === "current-position"
+                      ? aquariusPositionHeadings
+                      : transactionTableHeadings
+                  }
+                  tableBody={
+                    activeTab === "current-position"
+                      ? aquariusCurrentPositionBody
+                      : aquariusHistoryBody
+                  }
+                />
+              ) : (
+                <Table
+                  filterDropdownPosition="right"
+                  tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
+                  heading={{
+                    heading: "My Position",
+                    tabsItems: [
+                      { id: "current-position", label: "Current Position" },
+                      { id: "position-history", label: "Position History" },
+                    ],
+                    tabType: "solid",
+                  }}
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                  filters={{ filters: ["All"], customizeDropdown: true }}
+                  tableHeadings={
+                    activeTab === "current-position" ? positionTableHeadings : transactionTableHeadings
+                  }
+                  tableBody={tableBodyData}
+                />
+              )}
 
-              {/* No position hint */}
-              {!posLoading && !eventsLoading && myBTokens === 0 && activeTab === 'current-position' && marginAccountAddress && (
-                <p className={`text-center text-sm py-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {/* No position hints */}
+              {isMultiAsset && myLpBalance <= 0 && activeTab === "current-position" && marginAccountAddress && (
+                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                  No active LP position. Use the form on the right to add liquidity to XLM/USDC.
+                </p>
+              )}
+              {!isMultiAsset && !posLoading && !eventsLoading && myBTokens === 0 && activeTab === "current-position" && marginAccountAddress && (
+                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                   No active position in this pool. Use the form on the right to supply {tokenSymbol}.
                 </p>
               )}
               {!marginAccountAddress && (
-                <p className={`text-center text-sm py-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                   Connect a wallet and create a margin account to see your position.
                 </p>
               )}
@@ -314,7 +474,7 @@ export default function FarmDetailPage() {
             <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
               <h2 className={`text-[20px] font-semibold ${isDark ? "text-white" : ""}`}>Statistics</h2>
               <article className="w-full h-full grid grid-cols-3 gap-x-[15px] gap-y-[15px]" aria-label="Pool Statistics">
-                {analyticsItems.map((item, idx) => (
+                {(isMultiAsset ? aquariusAnalyticsItems : analyticsItems).map((item, idx) => (
                   <StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />
                 ))}
               </article>

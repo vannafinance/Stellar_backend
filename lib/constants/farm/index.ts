@@ -12,6 +12,40 @@ export const farmTableHeadings = [
 
 export const farmTableBody = {
   rows: [
+    // Row 0: Aquarius AMM, XLM/USDC on Stellar (Testnet)
+    {
+      cell: [
+        {
+          chain: "XLM",
+          titles: ["XLM", "USDC"],
+          tags: ["Aquarius", "0.30%", "Testnet"],
+        },
+        {
+          title: "Aquarius",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+      ],
+    },
     // Row 1: V3 Protocol, 9summits Curator, Kraken Provider, ETH Chain
     {
       cell: [
@@ -501,4 +535,3 @@ export const LEVERAGE_HEALTH_STATS_ITEMS = [
     amount: "N/A",
   },
 ];
-
