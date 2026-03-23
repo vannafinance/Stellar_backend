@@ -12,6 +12,8 @@ import { WalletService } from "@/lib/stellar-utils";
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
+  const normalizeContractTokenSymbol = (symbol: string) =>
+    symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC" ? "USDC" : symbol;
   const [selectedCurrency, setSelectedCurrency] = useState<string>("XLM");
   const [valueInput, setValueInput] = useState<string>("");
   const [valueInUsd, setValueInUsd] = useState<number>(0.0);
@@ -58,7 +60,7 @@ export const TransferCollateral = () => {
     try {
       const result = await MarginAccountService.getCollateralBalances(marginAccountAddress);
       if (result.success && result.data) {
-        const tokenData = result.data[selectedCurrency];
+        const tokenData = result.data[normalizeContractTokenSymbol(selectedCurrency)];
         if (tokenData) {
           setMarginAccountBalance(parseFloat(tokenData.amount) || 0);
         }
@@ -107,7 +109,7 @@ export const TransferCollateral = () => {
       
       const result = await MarginAccountService.depositCollateralTokens(
         marginAccount,
-        selectedCurrency,
+        normalizeContractTokenSymbol(selectedCurrency),
         amountWad
       );
 

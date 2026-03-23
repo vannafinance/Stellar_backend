@@ -6,7 +6,6 @@ import { useTheme } from "@/contexts/theme-context";
 import {
   FARM_STATS_ITEMS,
   MARGIN_ACCOUNT_STATS_ITEMS,
-  farmTableBody,
   farmTableHeadings,
   singleAssetTableHeadings,
 } from "@/lib/constants/farm";
@@ -14,7 +13,7 @@ import { useUserStore } from "@/store/user";
 import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useFarmStore } from "@/store/farm-store";
-import { useBlendPoolStats, useUserBlendPositions } from "@/hooks/use-farm";
+import { useBlendPoolStats, useUserBlendPositions, useAllAquariusPoolStats } from "@/hooks/use-farm";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useEffect } from "react";
 
@@ -28,6 +27,7 @@ export default function FarmPage() {
   // Real Blend data
   const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
   const { positions: userPositions } = useUserBlendPositions();
+  const aquariusPools = useAllAquariusPoolStats();
   const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
   const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
@@ -88,6 +88,33 @@ export default function FarmPage() {
     }
     return { rows };
   }, [userPositions, poolStats]);
+
+  // Build LP/Multiple Assets table from live Aquarius pool data
+  const lpTableBody = useMemo(() => {
+    const rows = aquariusPools.map(({ pool, stats, isLoading }) => {
+      const [tokenA, tokenB] = pool.tokens;
+      const loading = isLoading;
+      const tvl = stats
+        ? `${parseFloat(stats.reserveA).toFixed(2)} ${tokenA} + ${parseFloat(stats.reserveB).toFixed(2)} ${tokenB}`
+        : loading ? '...' : '—';
+      const fee = stats ? stats.feeFraction : loading ? '...' : '—';
+      const shares = stats ? `${parseFloat(stats.totalShares).toFixed(2)} LP` : loading ? '...' : '—';
+      return {
+        cell: [
+          { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius', pool.feeFraction / 100 + '%', 'Testnet'] },
+          { title: 'Aquarius' },
+          { title: tvl },
+          { title: shares },
+          { title: fee },
+          { title: '—' },
+          { title: '—' },
+          { title: '—' },
+          { title: '—' },
+        ],
+      };
+    });
+    return { rows };
+  }, [aquariusPools]);
 
   // Live farm stats values
   const farmStatsValues = useMemo(() => {
@@ -157,8 +184,8 @@ export default function FarmPage() {
     if (activeFilterTab === "lending-single-assets") {
       return { headings: singleAssetTableHeadings, body: singleAssetTableBody };
     }
-    return { headings: farmTableHeadings, body: farmTableBody };
-  }, [activeTab, activeFilterTab, singleAssetTableBody, positionsTableBody]);
+    return { headings: farmTableHeadings, body: lpTableBody };
+  }, [activeTab, activeFilterTab, singleAssetTableBody, positionsTableBody, lpTableBody]);
 
   return (
     <div className="w-full h-fit px-[40px] pt-[40px] pb-[80px] flex flex-col gap-[40px]">

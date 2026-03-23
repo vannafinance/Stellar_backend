@@ -12,7 +12,8 @@ import { Chart } from "@/components/earn/chart";
 import { Table } from "@/components/earn/table";
 import { transactionTableHeadings } from "@/components/earn/acitivity-tab";
 import { Form } from "@/components/farm/form";
-import { farmTableBody, singleAssetTableBody } from "@/lib/constants/farm";
+import { singleAssetTableBody } from "@/lib/constants/farm";
+import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { items } from "@/components/earn/details-tab";
 import { StatsCard } from "@/components/ui/stats-card";
@@ -26,7 +27,6 @@ import {
   useAquariusEvents,
   buildLpChartData,
 } from "@/hooks/use-farm";
-import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 const UI_TABS = [
@@ -70,9 +70,15 @@ export default function FarmDetailPage() {
     tabType === 'multi' ||
     (id && !['xlm', 'usdc', 'eurc'].includes(id.toLowerCase()));
 
-  const aquariusPoolAddress = isAquariusEarly
-    ? CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL
-    : null;
+  // Match pool config from AQUARIUS_POOLS based on id (e.g. "xlm-usdc", "xlm-aqua", "xlm-usdt")
+  const matchedPool = useMemo(() => {
+    if (!isAquariusEarly) return null;
+    return AQUARIUS_POOLS.find((p) =>
+      p.tokens.join('-').toLowerCase() === id?.toLowerCase()
+    ) ?? AQUARIUS_POOLS[0];
+  }, [isAquariusEarly, id]);
+
+  const aquariusPoolAddress = matchedPool?.poolAddress ?? null;
 
   // Real data hooks — Blend (single-asset)
   const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
@@ -197,17 +203,20 @@ export default function FarmDetailPage() {
   // ── Aquarius computed values ──
   const myLpBalance = parseFloat(lpBalance ?? '0');
 
+  const poolTokenA = matchedPool?.tokens[0] ?? 'TokenA';
+  const poolTokenB = matchedPool?.tokens[1] ?? 'TokenB';
+
   // Aquarius stats strip
   const aquariusStatsItems = useMemo(() => [
     {
       id: "reserveA",
-      name: "XLM Reserve",
-      amount: aqStatsLoading ? "..." : aqStats ? `${parseFloat(aqStats.reserveA).toLocaleString(undefined, { maximumFractionDigits: 2 })} XLM` : "N/A",
+      name: `${poolTokenA} Reserve`,
+      amount: aqStatsLoading ? "..." : aqStats ? `${parseFloat(aqStats.reserveA).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${poolTokenA}` : "N/A",
     },
     {
       id: "reserveB",
-      name: "USDC Reserve",
-      amount: aqStatsLoading ? "..." : aqStats ? `${parseFloat(aqStats.reserveB).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC` : "N/A",
+      name: `${poolTokenB} Reserve`,
+      amount: aqStatsLoading ? "..." : aqStats ? `${parseFloat(aqStats.reserveB).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${poolTokenB}` : "N/A",
     },
     {
       id: "fee",
@@ -219,7 +228,7 @@ export default function FarmDetailPage() {
       name: "Total LP Shares",
       amount: aqStatsLoading ? "..." : aqStats ? parseFloat(aqStats.totalShares).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "N/A",
     },
-  ], [aqStats, aqStatsLoading]);
+  ], [aqStats, aqStatsLoading, poolTokenA, poolTokenB]);
 
   // Aquarius LP chart data
   const aqChartData = useMemo(
@@ -231,8 +240,8 @@ export default function FarmDetailPage() {
   const aquariusPositionHeadings = [
     { label: "Pool", id: "pool" },
     { label: "LP Shares", id: "lp-shares" },
-    { label: "XLM Deposited", id: "xlm" },
-    { label: "USDC Deposited", id: "usdc" },
+    { label: `${poolTokenA} Deposited`, id: "token-a" },
+    { label: `${poolTokenB} Deposited`, id: "token-b" },
     { label: "Fee Rate", id: "fee-rate" },
   ];
 
@@ -246,10 +255,10 @@ export default function FarmDetailPage() {
     return {
       rows: [{
         cell: [
-          { chain: 'XLM', title: 'XLM / USDC', tags: ['Aquarius', 'LP'] },
+          { chain: poolTokenA, title: `${poolTokenA} / ${poolTokenB}`, tags: ['Aquarius', 'LP'] },
           { title: `${myLpBalance.toFixed(4)} LP` },
-          { title: `${xlmShare} XLM` },
-          { title: `${usdcShare} USDC` },
+          { title: `${xlmShare} ${poolTokenA}` },
+          { title: `${usdcShare} ${poolTokenB}` },
           { title: aqStats?.feeFraction ?? '—' },
         ],
       }],
@@ -286,12 +295,12 @@ export default function FarmDetailPage() {
 
   // Aquarius analytics cards
   const aquariusAnalyticsItems = useMemo(() => [
-    { heading: 'XLM Reserve', mainInfo: `${parseFloat(aqStats?.reserveA ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} XLM`, subInfo: 'Current XLM reserve in pool', tooltip: 'Total XLM held by the Aquarius pool' },
-    { heading: 'USDC Reserve', mainInfo: `${parseFloat(aqStats?.reserveB ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC`, subInfo: 'Current USDC reserve in pool', tooltip: 'Total USDC held by the Aquarius pool' },
-    { heading: 'Fee Rate', mainInfo: aqStats?.feeFraction ?? '—', subInfo: 'Swap fee per trade', tooltip: '0.30% fee split between LPs' },
+    { heading: `${poolTokenA} Reserve`, mainInfo: `${parseFloat(aqStats?.reserveA ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} ${poolTokenA}`, subInfo: `Current ${poolTokenA} reserve in pool`, tooltip: `Total ${poolTokenA} held by the Aquarius pool` },
+    { heading: `${poolTokenB} Reserve`, mainInfo: `${parseFloat(aqStats?.reserveB ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} ${poolTokenB}`, subInfo: `Current ${poolTokenB} reserve in pool`, tooltip: `Total ${poolTokenB} held by the Aquarius pool` },
+    { heading: 'Fee Rate', mainInfo: aqStats?.feeFraction ?? '—', subInfo: 'Swap fee per trade', tooltip: 'Fee split between LPs' },
     { heading: 'Total LP Shares', mainInfo: parseFloat(aqStats?.totalShares ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 }), subInfo: 'Total outstanding LP tokens', tooltip: 'Sum of all LP shares minted' },
     { heading: 'Your LP Balance', mainInfo: myLpBalance.toFixed(4), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
-  ], [aqStats, myLpBalance]);
+  ], [aqStats, myLpBalance, poolTokenA, poolTokenB]);
 
   const findRowFromId = useCallback((searchId: string) => {
     for (const row of singleAssetTableBody.rows) {
@@ -301,14 +310,17 @@ export default function FarmDetailPage() {
         if (rowId === searchId.toLowerCase()) return { row, tabType: "single" as const };
       }
     }
-    for (const row of farmTableBody.rows) {
-      const firstCell = row.cell?.[0];
-      if ((firstCell as any).titles?.length > 0) {
-        const rowId = (firstCell as any).titles.join("-").toLowerCase().replace(/\s+/g, "-");
-        if (rowId === searchId.toLowerCase()) return { row, tabType: "multi" as const };
-      } else if (firstCell?.title) {
-        const rowId = firstCell.title.toLowerCase().replace(/\s+/g, "-");
-        if (rowId === searchId.toLowerCase()) return { row, tabType: "multi" as const };
+    // Match against AQUARIUS_POOLS by token pair id
+    for (const pool of AQUARIUS_POOLS) {
+      const poolId = pool.tokens.join("-").toLowerCase();
+      if (poolId === searchId.toLowerCase()) {
+        const row = {
+          cell: [
+            { chain: pool.tokens[0], titles: pool.tokens, tags: ['Aquarius', (pool.feeFraction / 100).toFixed(2) + '%', 'Testnet'] },
+            { title: 'Aquarius' },
+          ],
+        };
+        return { row, tabType: "multi" as const };
       }
     }
     return null;
@@ -456,7 +468,7 @@ export default function FarmDetailPage() {
               {/* No position hints */}
               {isMultiAsset && myLpBalance <= 0 && activeTab === "current-position" && marginAccountAddress && (
                 <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  No active LP position. Use the form on the right to add liquidity to XLM/USDC.
+                  No active LP position. Use the form on the right to add liquidity to {poolTokenA}/{poolTokenB}.
                 </p>
               )}
               {!isMultiAsset && !posLoading && !eventsLoading && myBTokens === 0 && activeTab === "current-position" && marginAccountAddress && (

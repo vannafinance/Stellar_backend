@@ -173,6 +173,40 @@ export const tableBody = {
         },
       ],
     },
+    {
+      cell: [
+        {
+          chain: "AquiresUSDC",
+          title: "AquiresUSDC",
+          tag: "Active",
+        },
+        {
+          title: "0 AquiresUSDC",
+          tag: "0.0000 AquiresUSDC",
+        },
+        {
+          title: "2.50%",
+          tag: "2.50%",
+        },
+        {
+          title: "0 AquiresUSDC",
+          tag: "0.0000 AquiresUSDC",
+        },
+        {
+          title: "4.00%",
+          tag: "4.00%",
+        },
+        {
+          title: "0.00%",
+          tag: "0.00%",
+        },
+        {
+          onlyIcons: ["USDC", "XLM", "EURC"],
+          tag: "Collateral",
+          clickable: "toggle",
+        },
+      ],
+    },
   ],
 };
 
@@ -208,8 +242,19 @@ export const STELLAR_POOLS = {
     vToken: 'CCACTGHDA5KBAY3YVJJ2SJHIYTOQ54PJFUEEDA5FUO7XLBZRCIJ2RIT6',
     nativeContract: '', // Add EURC token contract when deployed
   },
+  AQUARIUS_USDC: {
+    id: 'AQUARIUS_USDC',
+    name: 'Aquarius USD Coin',
+    symbol: 'AquiresUSDC',
+    icon: '/icons/usdc-icon.svg',
+    decimals: 7,
+    issuer: 'GAHPYWLK6YRN7CVYZOO4H3VDRZ7PVF5UJGLZCSPAEIKJE2XSWF5LAGER',
+    nativeContract: 'CAZRY5GSFBFXD7H6GAFBA5YGYQTDXU4QKWKMYFWBAZFUCURN3WKX6LF5',
+    lendingProtocol: 'CCPOBSGDA5B32GNQURBIGQ6GQFO3SU6PLGQXMMT4QV6C6XGKK5V2MCDZ',
+    vToken: 'CD7QIYFD5R22RDL4MI5PGU35M3FNWXPDIEKANJOHIC27OVGPMTECMFU4',
+  },
 } as const;
 
 // Supported assets for dropdown
-export const STELLAR_ASSETS = ['XLM', 'USDC', 'EURC'] as const;
+export const STELLAR_ASSETS = ['XLM', 'USDC', 'EURC', 'AQUARIUS_USDC'] as const;
 export type StellarAsset = typeof STELLAR_ASSETS[number];

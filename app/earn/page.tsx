@@ -19,7 +19,7 @@ import { depositData, netApyData } from "@/lib/constants/earn";
 const LIQUIDATION_THRESHOLD = 0.8;
 
 // USD prices for testnet tokens
-const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, EURC: 1.0 };
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, EURC: 1.0, AQUARIUS_USDC: 1.0 };
 
 /**
  * Scale a reference series so its last data point equals `liveEndValue`.
@@ -160,7 +160,7 @@ export default function Earn() {
 
   // Set default pool selection on mount
   useEffect(() => {
-    setSelectedPool('XLM', {
+    setSelectedPool('XLM' as AssetType, {
       id: 'XLM',
       chain: 'XLM',
       title: 'XLM',
@@ -222,23 +222,25 @@ export default function Earn() {
   // Scale the static historical series so the last point equals the current live value.
   // totalDepositedUSD = sum of each asset's deposited amount × its USD price.
   // netApyEarningsUSD = totalDepositedUSD × weightedAPY / 100  (annual run-rate earnings).
+  const ALL_ASSETS = ["XLM", "USDC", "EURC", "AQUARIUS_USDC"] as const;
+
   const liveDepositData = useMemo(() => {
-    const totalDepositedUSD = (["XLM", "USDC", "EURC"] as const).reduce((sum, asset) => {
+    const totalDepositedUSD = ALL_ASSETS.reduce((sum, asset) => {
       const deposited = parseFloat(userPositions[asset]?.deposited || "0");
-      return sum + deposited * TOKEN_PRICES[asset];
+      return sum + deposited * (TOKEN_PRICES[asset] ?? 1.0);
     }, 0);
     return scaleSeries(depositData, totalDepositedUSD);
   }, [userPositions]);
 
   const liveNetApyData = useMemo(() => {
-    const totalDepositedUSD = (["XLM", "USDC", "EURC"] as const).reduce((sum, asset) => {
+    const totalDepositedUSD = ALL_ASSETS.reduce((sum, asset) => {
       const deposited = parseFloat(userPositions[asset]?.deposited || "0");
-      return sum + deposited * TOKEN_PRICES[asset];
+      return sum + deposited * (TOKEN_PRICES[asset] ?? 1.0);
     }, 0);
     // Weighted average APY across assets with non-zero deposits
     let weightedAPY = 0;
     let weightTotal = 0;
-    (["XLM", "USDC", "EURC"] as const).forEach((asset) => {
+    ALL_ASSETS.forEach((asset) => {
       const deposited = parseFloat(userPositions[asset]?.deposited || "0");
       if (deposited > 0) {
         weightTotal += deposited;
@@ -258,6 +260,7 @@ export default function Earn() {
         buildPoolRow("XLM", pools.XLM, ["XLM", "USDC", "EURC"]),
         buildPoolRow("USDC", pools.USDC, ["USDC", "XLM", "EURC"]),
         buildPoolRow("EURC", pools.EURC, ["EURC", "USDC", "XLM"]),
+        buildPoolRow("AquiresUSDC", pools.AQUARIUS_USDC, ["USDC", "XLM", "EURC"]),
       ],
     }),
     [pools]
@@ -268,15 +271,16 @@ export default function Earn() {
   const livePositionsTableBody = useMemo(() => {
     if (!userAddress) return { rows: [] };
 
-    const assetKeys = ["XLM", "USDC", "EURC"] as const;
+    const assetKeys = ["XLM", "USDC", "EURC", "AQUARIUS_USDC"] as const;
     const rows = assetKeys
       .filter(
         (asset) => parseFloat(userPositions[asset]?.deposited || "0") > 0 ||
                    parseFloat(userPositions[asset]?.borrowed || "0") > 0
       )
-      .map((asset) =>
-        buildPositionRow(asset, userPositions[asset], pools[asset])
-      );
+      .map((asset) => {
+        const displaySymbol = asset === "AQUARIUS_USDC" ? "AquiresUSDC" : asset;
+        return buildPositionRow(displaySymbol, userPositions[asset], pools[asset]);
+      });
 
     return { rows };
   }, [userAddress, userPositions, pools]);
@@ -295,12 +299,12 @@ export default function Earn() {
       const id = cells[0]?.title;
 
       if (id) {
-        const assetType = id.toUpperCase();
-        if (assetType === "XLM" || assetType === "USDC" || assetType === "EURC") {
+        const assetType = id === "AquiresUSDC" ? "AQUARIUS_USDC" : id.toUpperCase();
+        if (assetType === "XLM" || assetType === "USDC" || assetType === "EURC" || assetType === "AQUARIUS_USDC") {
           setSelectedPool(assetType as AssetType, {
             id: id,
             chain: assetType,
-            title: assetType,
+            title: id,
             tag: cells[0]?.tag || "Active",
           });
         }

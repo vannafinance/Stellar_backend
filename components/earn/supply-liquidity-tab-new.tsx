@@ -19,7 +19,7 @@ export const SupplyLiquidityTab = () => {
   const [selectedOption, setSelectedOption] = useState<string>(selectedAsset);
   const [value, setValue] = useState<string>("");
   const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
-  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', EURC: '0' });
+  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', EURC: '0', AQUARIUS_USDC: '0' });
   
   const userAddress = useUserStore((state) => state.address);
   const balance = useUserStore((state) => state.balance);
@@ -40,22 +40,25 @@ export const SupplyLiquidityTab = () => {
   }, [storeTokenBalances]);
 
   // Get pool stats for selected asset
-  const selectedPool = pools[selectedOption as keyof typeof pools];
-  const selectedPoolConfig = STELLAR_POOLS[selectedOption as keyof typeof STELLAR_POOLS];
+  const normalizedAsset = selectedOption === 'AquiresUSDC' ? 'AQUARIUS_USDC' : selectedOption;
+  const selectedPool = pools[normalizedAsset as keyof typeof pools];
+  const selectedPoolConfig = STELLAR_POOLS[normalizedAsset as keyof typeof STELLAR_POOLS];
 
   // Calculate available balance based on selected asset
   const availableBalance = useMemo(() => {
-    if (selectedOption === 'XLM') {
+    if (normalizedAsset === 'XLM') {
       // For XLM, use native balance minus some reserve for fees
       const xlmBalance = parseFloat(balance) || 0;
       return Math.max(0, xlmBalance - 1).toFixed(7); // Keep 1 XLM for fees
-    } else if (selectedOption === 'USDC') {
+    } else if (normalizedAsset === 'USDC') {
       return tokenBalances.USDC || '0';
-    } else if (selectedOption === 'EURC') {
+    } else if (normalizedAsset === 'EURC') {
       return tokenBalances.EURC || '0';
+    } else if (normalizedAsset === 'AQUARIUS_USDC') {
+      return tokenBalances.AQUARIUS_USDC || '0';
     }
     return '0';
-  }, [selectedOption, balance, tokenBalances]);
+  }, [normalizedAsset, balance, tokenBalances]);
 
   // Handle percentage button click
   const handlePercentageClick = (percent: number) => {
@@ -69,7 +72,7 @@ export const SupplyLiquidityTab = () => {
   const handleSupply = async () => {
     const numAmount = parseFloat(value);
     if (numAmount > 0 && userAddress) {
-      const result = await supply(numAmount, selectedOption as AssetType);
+      const result = await supply(numAmount, normalizedAsset as AssetType);
       if (result.success) {
         setValue("");
         setSelectedPercentage(null);

@@ -26,6 +26,10 @@ export const CONTRACT_ADDRESSES = {
   LENDING_PROTOCOL_EURC: 'CC3Q65H5H4ELYC67PYKETI5S76SXJEPAORWKYDIDNULIHD3CBE43JLSN',
   ACCOUNT_MANAGER: 'CCXRQX5XTUXMAYA2MOIWHITDCLMQX4L3DKDX2SYJBBWFFABBWA6QY3PK',
 
+  // Aquarius USDC Lending Pool (deploy these contracts when ready)
+  LENDING_PROTOCOL_AQUARIUS_USDC: 'CCPOBSGDA5B32GNQURBIGQ6GQFO3SU6PLGQXMMT4QV6C6XGKK5V2MCDZ',
+  VAQUARIUS_USDC_TOKEN: 'CD7QIYFD5R22RDL4MI5PGU35M3FNWXPDIEKANJOHIC27OVGPMTECMFU4',
+
   // ── Blend Capital Testnet Addresses (https://github.com/blend-capital/blend-utils) ──
   // Single pool contract that handles XLM, USDC, wETH, wBTC supplies/borrows
   BLEND_POOL: 'CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF',       // TestnetV2 pool
@@ -43,6 +47,12 @@ export const CONTRACT_ADDRESSES = {
   AQUARIUS_XLM_USDC_POOL: 'CD3LFMMLBQ6RBJUD3Z2LFDFE6544WDRMWHEZYPI5YDVESYRSO2TT32BX',
   // Aquarius USDC token contract (issuer GAHPYWLK6...)
   AQUARIUS_USDC: 'CAZRY5GSFBFXD7H6GAFBA5YGYQTDXU4QKWKMYFWBAZFUCURN3WKX6LF5',
+  // Pool index (BytesN<32>) for the XLM/USDC pool — found via router.get_pools()
+  AQUARIUS_POOL_INDEX_HEX: '9ac7a9cde23ac2ada11105eeaa42e43c2ea8332ca0aa8f41f58d7160274d718e',
+  // XLM/AQUA pool
+  AQUARIUS_XLM_AQUA_POOL: 'CCSXYUVLYALKJGIIYMGYLZI447VS6TDWFTVDL43B4IKK2WERHLWUVCRC',
+  // XLM/USDT pool
+  AQUARIUS_XLM_USDT_POOL: 'CA6DAGOMK5D7GKBNWVCIEAYSTPJXLQUFWFKSZOMNEM6BVOTUBDCTIT5I',
 } as const;
 
 // Asset Types
@@ -50,6 +60,7 @@ export const ASSET_TYPES = {
   XLM: 'XLM',
   USDC: 'USDC',
   EURC: 'EURC',
+  AQUARIUS_USDC: 'AQUARIUS_USDC',
 } as const;
 
 // Asset Issuers (Stellar Testnet)
@@ -145,6 +156,13 @@ export class ContractService {
           contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
           methodName = 'deposit_eurc';
           break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC) {
+            return { success: false, error: 'AquiresUSDC lending pool not yet deployed' };
+          }
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC;
+          methodName = 'deposit_usdc';
+          break;
         default:
           throw new Error('Unsupported asset type');
       }
@@ -225,6 +243,13 @@ export class ContractService {
           contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
           methodName = 'redeem_veurc';
           break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC) {
+            return { success: false, error: 'AquiresUSDC lending pool not yet deployed' };
+          }
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC;
+          methodName = 'redeem_vusdc';
+          break;
         default:
           throw new Error('Unsupported asset type');
       }
@@ -294,6 +319,10 @@ export class ContractService {
           break;
         case ASSET_TYPES.EURC:
           contractAddress = CONTRACT_ADDRESSES.VEURC_TOKEN;
+          break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.VAQUARIUS_USDC_TOKEN) return '0';
+          contractAddress = CONTRACT_ADDRESSES.VAQUARIUS_USDC_TOKEN;
           break;
         default:
           throw new Error('Unsupported asset type');
@@ -386,10 +415,14 @@ export class ContractService {
         case ASSET_TYPES.EURC:
           contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
           break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC) return '0';
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC;
+          break;
         default:
           throw new Error('Unsupported asset type');
       }
-      
+
       // Create a temporary account for simulation
       const tempKeypair = StellarSdk.Keypair.random();
       const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
@@ -438,15 +471,19 @@ export class ContractService {
         case ASSET_TYPES.EURC:
           contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
           break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC) return '0';
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC;
+          break;
         default:
           throw new Error('Unsupported asset type');
       }
-      
+
       const tempKeypair = StellarSdk.Keypair.random();
       const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
-      
+
       const contract = new StellarSdk.Contract(contractAddress);
-      
+
       const transaction = new StellarSdk.TransactionBuilder(tempAccount, {
         fee: StellarSdk.BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
@@ -488,15 +525,19 @@ export class ContractService {
         case ASSET_TYPES.EURC:
           contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
           break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC) return '0';
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC;
+          break;
         default:
           throw new Error('Unsupported asset type');
       }
-      
+
       const tempKeypair = StellarSdk.Keypair.random();
       const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
-      
+
       const contract = new StellarSdk.Contract(contractAddress);
-      
+
       const transaction = new StellarSdk.TransactionBuilder(tempAccount, {
         fee: StellarSdk.BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
@@ -537,6 +578,10 @@ export class ContractService {
           break;
         case ASSET_TYPES.EURC:
           contractAddress = CONTRACT_ADDRESSES.VEURC_TOKEN;
+          break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.VAQUARIUS_USDC_TOKEN) return '0';
+          contractAddress = CONTRACT_ADDRESSES.VAQUARIUS_USDC_TOKEN;
           break;
         default:
           throw new Error('Unsupported asset type');
@@ -636,12 +681,16 @@ export class ContractService {
         case ASSET_TYPES.EURC:
           contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_EURC;
           break;
+        case ASSET_TYPES.AQUARIUS_USDC:
+          if (!CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC) return '0';
+          contractAddress = CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC;
+          break;
         default:
           throw new Error('Unsupported asset type');
       }
-      
+
       const contract = new StellarSdk.Contract(contractAddress);
-      
+
       const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
         fee: StellarSdk.BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
@@ -677,6 +726,7 @@ export class ContractService {
     XLM: string;
     USDC: string;
     EURC: string;
+    AQUARIUS_USDC: string;
   }> {
     try {
       const server = new StellarSdk.Horizon.Server(HORIZON_URL);
@@ -685,18 +735,17 @@ export class ContractService {
       let xlmBalance = '0';
       let usdcBalance = '0';
       let eurcBalance = '0';
+      let aquariusUsdcBalance = '0';
       
       for (const balance of account.balances) {
         if (balance.asset_type === 'native') {
           xlmBalance = parseFloat(balance.balance).toFixed(7);
         } else if (balance.asset_type === 'credit_alphanum4' || balance.asset_type === 'credit_alphanum12') {
           const assetBalance = balance as StellarSdk.Horizon.HorizonApi.BalanceLineAsset;
-          if (assetBalance.asset_code === 'USDC' && (
-            assetBalance.asset_issuer === ASSET_ISSUERS.USDC ||
-            assetBalance.asset_issuer === ASSET_ISSUERS.USDC_AQUARIUS
-          )) {
-            // Sum both Circle USDC and Aquarius USDC balances
+          if (assetBalance.asset_code === 'USDC' && assetBalance.asset_issuer === ASSET_ISSUERS.USDC) {
             usdcBalance = (parseFloat(usdcBalance) + parseFloat(assetBalance.balance)).toFixed(7);
+          } else if (assetBalance.asset_code === 'USDC' && assetBalance.asset_issuer === ASSET_ISSUERS.USDC_AQUARIUS) {
+            aquariusUsdcBalance = (parseFloat(aquariusUsdcBalance) + parseFloat(assetBalance.balance)).toFixed(7);
           } else if (assetBalance.asset_code === 'EURC' && assetBalance.asset_issuer === ASSET_ISSUERS.EURC) {
             eurcBalance = parseFloat(assetBalance.balance).toFixed(7);
           }
@@ -707,6 +756,7 @@ export class ContractService {
         XLM: xlmBalance,
         USDC: usdcBalance,
         EURC: eurcBalance,
+        AQUARIUS_USDC: aquariusUsdcBalance,
       };
     } catch (error: any) {
       console.error('Error fetching token balances:', error);
@@ -714,6 +764,7 @@ export class ContractService {
         XLM: '0',
         USDC: '0',
         EURC: '0',
+        AQUARIUS_USDC: '0',
       };
     }
   }

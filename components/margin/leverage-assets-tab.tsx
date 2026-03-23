@@ -39,6 +39,8 @@ const ensureCollateralId = (collateral: Collaterals): Collaterals => {
 
 export const LeverageAssetsTab = () => {
   const { isDark } = useTheme();
+  const normalizeContractTokenSymbol = (symbol: string) =>
+    symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC" ? "USDC" : symbol;
   // Component state
   const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
   const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
@@ -306,7 +308,7 @@ export const LeverageAssetsTab = () => {
         }
 
         const multiplier = leverage; // Use the leverage state as multiplier
-        const tokenSymbol = depositCollateral?.asset || 'XLM';
+        const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
 
         console.log('🚀 Executing deposit and borrow:', {
           userAddress,

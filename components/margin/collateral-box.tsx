@@ -33,6 +33,8 @@ interface Collateral {
 
 const CollateralComponent = (props: Collateral) => {
   const { isDark } = useTheme();
+  const getTokenBalanceKey = (symbol: string) =>
+    symbol === "AquiresUSDC" ? "AQUARIUS_USDC" : symbol;
   
   // Get wallet balances from user store
   const tokenBalances = useUserStore((state) => state.tokenBalances);
@@ -340,7 +342,7 @@ const CollateralComponent = (props: Collateral) => {
                 >
                   Unified Balance: {
                     selectedBalanceType === "WB" ? 
-                      tokenBalances[selectedCurrency as keyof typeof tokenBalances] || "0" : 
+                      tokenBalances[getTokenBalanceKey(selectedCurrency) as keyof typeof tokenBalances] || "0" : 
                       collateral.unifiedBalance
                   }{" "}
                   {collateral.asset}
@@ -432,7 +434,7 @@ const CollateralComponent = (props: Collateral) => {
               >
                 Unified Balance: {
                   collateral.balanceType.toLowerCase() === "wb" ? 
-                    tokenBalances[collateral.asset as keyof typeof tokenBalances] || "0" : 
+                    tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0" : 
                     collateral.unifiedBalance
                 } {collateral.asset}
               </motion.button>

@@ -86,8 +86,8 @@ export const useWallet = () => {
           address: null,
           isConnected: false,
           balance: '0',
-          tokenBalances: { XLM: '0', USDC: '0', EURC: '0' },
-          depositedBalances: { XLM: '0', USDC: '0', EURC: '0' },
+          tokenBalances: { XLM: '0', USDC: '0', EURC: '0', AQUARIUS_USDC: '0' },
+          depositedBalances: { XLM: '0', USDC: '0', EURC: '0', AQUARIUS_USDC: '0' },
           isLoading: false,
         });
       }
@@ -155,7 +155,8 @@ export const useWallet = () => {
       address: null,
       isConnected: false,
       balance: '0',
-      depositedBalances: { XLM: '0', USDC: '0', EURC: '0' },
+      tokenBalances: { XLM: '0', USDC: '0', EURC: '0', AQUARIUS_USDC: '0' },
+      depositedBalances: { XLM: '0', USDC: '0', EURC: '0', AQUARIUS_USDC: '0' },
       manuallyDisconnected: true, // Mark as manually disconnected to prevent auto-reconnect
       isLoading: false,
     });
@@ -204,6 +205,7 @@ export const useDeposit = () => {
           XLM: xlmDeposited,
           USDC: usdcDeposited,
           EURC: eurcDeposited,
+          AQUARIUS_USDC: '0',
         },
       });
     } catch (error) {
@@ -280,6 +282,7 @@ export const useWithdraw = () => {
           XLM: xlmDeposited,
           USDC: usdcDeposited,
           EURC: eurcDeposited,
+          AQUARIUS_USDC: '0',
         },
       });
     } catch (error) {

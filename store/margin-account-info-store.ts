@@ -113,6 +113,11 @@ export const depositAndBorrow = async (
   tokenSymbol: string = 'XLM'
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
+    const normalizedTokenSymbol =
+      tokenSymbol === 'AquiresUSDC' || tokenSymbol === 'AQUARIUS_USDC'
+        ? 'USDC'
+        : tokenSymbol;
+
     // Get current margin account
     const account = MarginAccountService.getStoredMarginAccount(userAddress);
     if (!account || !account.isActive) {
@@ -127,7 +132,7 @@ export const depositAndBorrow = async (
       account.address,
       depositAmount,
       multiplier,
-      tokenSymbol
+      normalizedTokenSymbol
     );
 
     // Refresh borrowed balances after successful deposit (even if borrow fails, deposit might still succeed)
@@ -151,10 +156,15 @@ export const borrowTokens = async (
   borrowAmount: number
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
+    const normalizedTokenSymbol =
+      tokenSymbol === 'AquiresUSDC' || tokenSymbol === 'AQUARIUS_USDC'
+        ? 'USDC'
+        : tokenSymbol;
+
     console.log('🏦 === MARGIN STORE: BORROW OPERATION ===');
     console.log('📊 Borrow parameters:', {
       userAddress,
-      tokenSymbol,
+      tokenSymbol: normalizedTokenSymbol,
       borrowAmount
     });
 
@@ -185,7 +195,7 @@ export const borrowTokens = async (
     // Execute borrow operation
     const result = await MarginAccountService.borrowTokens(
       account.address,
-      tokenSymbol,
+      normalizedTokenSymbol,
       borrowAmountWad
     );
 

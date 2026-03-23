@@ -65,6 +65,9 @@ export const AddLiquidity = () => {
   // Current Blend supply balance for the selected token
   const [blendBalance, setBlendBalance] = useState<string>("0");
   const [loadingBlendBalance, setLoadingBlendBalance] = useState(false);
+  const [marginXlmBalance, setMarginXlmBalance] = useState<string>("0");
+  const [marginUsdcBalance, setMarginUsdcBalance] = useState<string>("0");
+  const [loadingMarginBalances, setLoadingMarginBalances] = useState(false);
 
   // Check protocol configuration (once on mount)
   useEffect(() => {
@@ -125,6 +128,29 @@ export const AddLiquidity = () => {
     refreshBorrowedBalances(marginAccountAddress);
   }, [marginAccountAddress, selectedToken]);
 
+  // Fetch actual margin account token balances for Aquarius pool display
+  useEffect(() => {
+    if (!isAquariusPool || !marginAccountAddress) {
+      setMarginXlmBalance("0");
+      setMarginUsdcBalance("0");
+      return;
+    }
+    let cancelled = false;
+    setLoadingMarginBalances(true);
+    Promise.all([
+      AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'XLM'),
+      AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'USDC'),
+    ]).then(([xlm, usdc]) => {
+      if (!cancelled) {
+        setMarginXlmBalance(xlm);
+        setMarginUsdcBalance(usdc);
+      }
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setLoadingMarginBalances(false);
+    });
+    return () => { cancelled = true; };
+  }, [isAquariusPool, marginAccountAddress, txHash]);
+
   // Fetch current Blend supply balance for selected token
   useEffect(() => {
     if (!marginAccountAddress) {
@@ -177,10 +203,21 @@ export const AddLiquidity = () => {
       setTxHash(result.hash ?? "");
       setAmountA("");
       setAmountB("");
-      refreshBorrowedBalances(marginAccountAddress);
+      // Refresh actual margin account token balances after add liquidity
+      setTimeout(() => {
+        Promise.all([
+          AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'XLM'),
+          AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'USDC'),
+        ]).then(([xlm, usdc]) => {
+          setMarginXlmBalance(xlm);
+          setMarginUsdcBalance(usdc);
+        }).catch(() => {});
+        triggerBlendRefresh();
+      }, 3000);
     } else {
       setTxStatus("error");
-      setTxError(result.error ?? "Add liquidity failed");
+      const message = result.error ?? "Add liquidity failed";
+      setTxError(message);
     }
   };
 
@@ -250,8 +287,8 @@ export const AddLiquidity = () => {
   };
 
   if (isAquariusPool) {
-    const availableA = borrowedBalances[tokenA]?.amount ?? "0";
-    const availableB = borrowedBalances[tokenB]?.amount ?? "0";
+    const availableA = tokenA === "XLM" ? marginXlmBalance : marginUsdcBalance;
+    const availableB = tokenB === "USDC" ? marginUsdcBalance : marginXlmBalance;
     const isInputValid = parseFloat(amountA) > 0 && parseFloat(amountB) > 0;
     const isOverA = parseFloat(amountA) > parseFloat(availableA);
     const isOverB = parseFloat(amountB) > parseFloat(availableB);
@@ -268,7 +305,7 @@ export const AddLiquidity = () => {
       if (!marginAccountAddress) return "Margin Account Required";
       if (txStatus === "loading") return "Adding Liquidity...";
       if (!isInputValid) return "Enter Amounts";
-      if (isOverA || isOverB) return "Insufficient Borrowed Balance";
+      if (isOverA || isOverB) return "Insufficient Balance";
       return `Add ${tokenA}/${tokenB}`;
     };
 
@@ -319,9 +356,9 @@ export const AddLiquidity = () => {
                   <span className={`text-[11px] font-medium ${
                     isDark ? "text-[#919191]" : "text-[#5C5B5B]"
                   }`}>
-                    {isLoadingBorrowedBalances
+                    {loadingMarginBalances
                       ? "Loading..."
-                      : `Borrowed: ${parseFloat(idx === 0 ? availableA : availableB).toFixed(4)}`}
+                      : `Balance: ${parseFloat(idx === 0 ? availableA : availableB).toFixed(4)}`}
                   </span>
                 </div>
               </div>

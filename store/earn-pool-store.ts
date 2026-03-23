@@ -27,13 +27,15 @@ export interface EarnPoolState {
     XLM: PoolStats;
     USDC: PoolStats;
     EURC: PoolStats;
+    AQUARIUS_USDC: PoolStats;
   };
-  
+
   // User Positions
   userPositions: {
     XLM: UserPoolPosition;
     USDC: UserPoolPosition;
     EURC: UserPoolPosition;
+    AQUARIUS_USDC: UserPoolPosition;
   };
   
   // Transaction History
@@ -83,11 +85,13 @@ const initialState: EarnPoolState = {
     XLM: { ...defaultPoolStats },
     USDC: { ...defaultPoolStats },
     EURC: { ...defaultPoolStats },
+    AQUARIUS_USDC: { ...defaultPoolStats },
   },
   userPositions: {
     XLM: { ...defaultUserPosition },
     USDC: { ...defaultUserPosition },
     EURC: { ...defaultUserPosition },
+    AQUARIUS_USDC: { ...defaultUserPosition },
   },
   recentTransactions: [],
   isLoadingPools: false,
@@ -132,10 +136,11 @@ export const calculateUserTotalDeposited = (): string => {
   const xlmValue = parseFloat(userPositions.XLM.deposited) || 0;
   const usdcValue = parseFloat(userPositions.USDC.deposited) || 0;
   const eurcValue = parseFloat(userPositions.EURC.deposited) || 0;
-  
+  const aquiresUsdcValue = parseFloat(userPositions.AQUARIUS_USDC.deposited) || 0;
+
   // Note: This is a simplified calculation
   // In production, you'd need price feeds to convert to USD
-  return (xlmValue + usdcValue + eurcValue).toFixed(2);
+  return (xlmValue + usdcValue + eurcValue + aquiresUsdcValue).toFixed(2);
 };
 
 export const calculateUserTotalBorrowed = (): string => {
@@ -143,6 +148,7 @@ export const calculateUserTotalBorrowed = (): string => {
   const xlmValue = parseFloat(userPositions.XLM.borrowed) || 0;
   const usdcValue = parseFloat(userPositions.USDC.borrowed) || 0;
   const eurcValue = parseFloat(userPositions.EURC.borrowed) || 0;
-  
-  return (xlmValue + usdcValue + eurcValue).toFixed(2);
+  const aquiresUsdcValue = parseFloat(userPositions.AQUARIUS_USDC.borrowed) || 0;
+
+  return (xlmValue + usdcValue + eurcValue + aquiresUsdcValue).toFixed(2);
 };

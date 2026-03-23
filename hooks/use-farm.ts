@@ -11,6 +11,8 @@ import {
   AquariusService,
   AquariusPoolStats,
   AquariusLpEvent,
+  AQUARIUS_POOLS,
+  AquariusPoolConfig,
 } from '@/lib/aquarius-utils';
 import { useMarginAccountInfoStore } from '@/store/margin-account-info-store';
 import { useBlendStore } from '@/store/blend-store';
@@ -150,7 +152,54 @@ export const useBlendEvents = (tokenSymbol?: string) => {
   return { events, isLoading, error, refresh: fetch };
 };
 
-// ---------- Aquarius pool stats ----------
+// ---------- All Aquarius pools stats ----------
+
+export interface AquariusPoolWithStats {
+  pool: AquariusPoolConfig;
+  stats: AquariusPoolStats | null;
+  isLoading: boolean;
+}
+
+export const useAllAquariusPoolStats = (): AquariusPoolWithStats[] => {
+  const [allStats, setAllStats] = useState<Record<string, AquariusPoolStats | null>>({});
+  const [loadingKeys, setLoadingKeys] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const init: Record<string, boolean> = {};
+    AQUARIUS_POOLS.forEach((p) => { init[p.id] = true; });
+    setLoadingKeys(init);
+
+    Promise.allSettled(
+      AQUARIUS_POOLS.map((p) =>
+        AquariusService.getAquariusPoolStats(p.poolAddress).then((s) => ({ id: p.id, stats: s }))
+      )
+    ).then((results) => {
+      const statsMap: Record<string, AquariusPoolStats | null> = {};
+      results.forEach((r) => {
+        if (r.status === 'fulfilled') statsMap[r.value.id] = r.value.stats;
+      });
+      setAllStats(statsMap);
+      setLoadingKeys({});
+    });
+
+    const interval = setInterval(() => {
+      AQUARIUS_POOLS.forEach((p) => {
+        AquariusService.getAquariusPoolStats(p.poolAddress).then((s) => {
+          setAllStats((prev) => ({ ...prev, [p.id]: s }));
+        }).catch(() => {});
+      });
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return AQUARIUS_POOLS.map((p) => ({
+    pool: p,
+    stats: allStats[p.id] ?? null,
+    isLoading: loadingKeys[p.id] ?? false,
+  }));
+};
+
+// ---------- Aquarius pool stats (single) ----------
 
 export const useAquariusPoolStats = (poolAddress: string | null) => {
   const [stats, setStats] = useState<AquariusPoolStats | null>(null);

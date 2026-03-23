@@ -15,6 +15,8 @@ import { WalletService } from "@/lib/stellar-utils";
 
 export const RepayLoanTab = () => {
   const { isDark } = useTheme();
+  const normalizeContractTokenSymbol = (symbol: string) =>
+    symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC" ? "USDC" : symbol;
   // Wallet and margin account state
   const [userAddress, setUserAddress] = useState<string>("");
   const [marginAccount, setMarginAccount] = useState<string>("");
@@ -75,7 +77,7 @@ export const RepayLoanTab = () => {
     try {
       const result = await MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress);
       if (result.success && result.data) {
-        const tokenData = result.data[selectedRepayCurrency];
+        const tokenData = result.data[normalizeContractTokenSymbol(selectedRepayCurrency)];
         if (tokenData) {
           setRepayStats(prev => ({
             ...prev,
@@ -122,7 +124,7 @@ export const RepayLoanTab = () => {
       
       const result = await MarginAccountService.repayLoan(
         marginAccount,
-        selectedRepayCurrency,
+        normalizeContractTokenSymbol(selectedRepayCurrency),
         repayAmountWad
       );
 

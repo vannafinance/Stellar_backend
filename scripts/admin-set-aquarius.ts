@@ -2,15 +2,27 @@
  * Admin script: Set Aquarius router address + pool index in Registry contract.
  *
  * Usage:
- *   npx ts-node scripts/admin-set-aquarius.ts <ADMIN_SECRET_KEY> [ROUTER_CONTRACT_ID] [POOL_CONTRACT_ID] [TOKEN_B_CODE] [TOKEN_B_ISSUER] [FEE_FRACTION]
+ *   npx ts-node scripts/admin-set-aquarius.ts <KEY> [ROUTER_CONTRACT_ID] [POOL_CONTRACT_ID] [TOKEN_B_CODE] [TOKEN_B_ISSUER] [FEE_FRACTION]
+ *
+ * <KEY> can be either:
+ *   - A raw Stellar secret key (starts with 'S')
+ *   - A Stellar CLI account name (e.g. "vanna_deployer") — reads from ~/.config/stellar/identity/<name>.toml
  *
  * Notes:
  * - Pool index is derived by calling Aquarius router get_pools(tokens) and
  *   matching the pool contract ID.
- * - Uses Testnet assets: XLM + TOKEN_B (defaults to USDC).
+ * - Uses Testnet assets: XLM + TOKEN_B (defaults to Aquarius USDC issuer).
+ * - Also updates Registry native USDC mapping to TOKEN_B contract ID so
+ *   margin-account swaps resolve the same USDC token as Aquarius pool routing.
+ * - Also updates LendingProtocolUSDC native USDC so borrowed USDC matches Aquarius USDC.
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { mnemonicToSeedSync } from 'bip39';
+import { derivePath } from 'ed25519-hd-key';
 import {
   CONTRACT_ADDRESSES,
   NETWORK_PASSPHRASE,
@@ -18,9 +30,61 @@ import {
   ASSET_ISSUERS,
 } from '../lib/stellar-utils';
 
+/**
+ * Resolve a Stellar CLI account name or raw secret key to a Keypair.
+ * If `nameOrSecret` starts with 'S' and is 56 chars it's treated as a raw secret key.
+ * Otherwise it's treated as a Stellar CLI identity name and the seed phrase is read
+ * from ~/.config/stellar/identity/<name>.toml, then derived via BIP44 m/44'/148'/0'.
+ */
+function resolveKeypair(nameOrSecret: string): StellarSdk.Keypair {
+  // Raw secret key
+  if (/^S[A-Z2-7]{55}$/.test(nameOrSecret)) {
+    return StellarSdk.Keypair.fromSecret(nameOrSecret);
+  }
+
+  // Stellar CLI identity name — read the .toml file
+  const identityPath = path.join(
+    os.homedir(),
+    '.config', 'stellar', 'identity',
+    `${nameOrSecret}.toml`,
+  );
+
+  if (!fs.existsSync(identityPath)) {
+    throw new Error(
+      `Stellar CLI identity "${nameOrSecret}" not found at ${identityPath}.\n` +
+      'Pass a raw secret key (S...) or a valid Stellar CLI account name.'
+    );
+  }
+
+  const tomlContent = fs.readFileSync(identityPath, 'utf8');
+
+  // Parse seed_phrase field (simple regex — avoids TOML dependency)
+  const seedMatch = tomlContent.match(/seed_phrase\s*=\s*"([^"]+)"/);
+  const secretMatch = tomlContent.match(/secret_key\s*=\s*"([^"]+)"/);
+
+  if (secretMatch) {
+    return StellarSdk.Keypair.fromSecret(secretMatch[1]);
+  }
+
+  if (seedMatch) {
+    const mnemonic = seedMatch[1];
+    const seed = mnemonicToSeedSync(mnemonic);
+    const { key } = derivePath("m/44'/148'/0'", seed.toString('hex'));
+    return StellarSdk.Keypair.fromRawEd25519Seed(Buffer.from(key));
+  }
+
+  throw new Error(
+    `Could not find "seed_phrase" or "secret_key" in ${identityPath}`
+  );
+}
+
+// Optional: also update the USDC lending pool's native USDC address.
+// Set to false to skip (e.g. if the contract has not been upgraded yet).
+const UPDATE_LENDING_POOL_USDC = true;
+
 const DEFAULT_ROUTER = CONTRACT_ADDRESSES.AQUARIUS_ROUTER;
 const DEFAULT_TOKEN_B_CODE = 'USDC';
-const DEFAULT_TOKEN_B_ISSUER = ASSET_ISSUERS.USDC;
+const DEFAULT_TOKEN_B_ISSUER = ASSET_ISSUERS.USDC_AQUARIUS;
 const DEFAULT_FEE_FRACTION = 30;
 
 const toContractId = (asset: StellarSdk.Asset) =>
@@ -139,15 +203,16 @@ const computeStandardPoolIndex = (feeFraction: number): Buffer => {
 };
 
 const main = async () => {
-  const adminSecret = process.argv[2];
+  const keyArg = process.argv[2];
   const routerId = process.argv[3] || DEFAULT_ROUTER;
   const poolId = process.argv[4] || CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL;
   const tokenBCode = process.argv[5] || DEFAULT_TOKEN_B_CODE;
   const tokenBIssuer = process.argv[6] || DEFAULT_TOKEN_B_ISSUER;
   const feeFraction = parseInt(process.argv[7] || String(DEFAULT_FEE_FRACTION), 10);
 
-  if (!adminSecret) {
-    console.error('Usage: npx ts-node scripts/admin-set-aquarius.ts <ADMIN_SECRET_KEY> [ROUTER_CONTRACT_ID] [POOL_CONTRACT_ID] [TOKEN_B_CODE] [TOKEN_B_ISSUER]');
+  if (!keyArg) {
+    console.error('Usage: npx ts-node scripts/admin-set-aquarius.ts <KEY> [ROUTER_CONTRACT_ID] [POOL_CONTRACT_ID] [TOKEN_B_CODE] [TOKEN_B_ISSUER] [FEE_FRACTION]');
+    console.error('  <KEY> = raw secret key (S...) OR Stellar CLI account name (e.g. "vanna_deployer")');
     process.exit(1);
   }
 
@@ -155,14 +220,15 @@ const main = async () => {
     throw new Error('Router, pool contract ID, token issuer, or fee missing');
   }
 
-  const adminKeypair = StellarSdk.Keypair.fromSecret(adminSecret);
+  const adminKeypair = resolveKeypair(keyArg);
+  console.log('Admin public key:', adminKeypair.publicKey());
   const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
-  const sourceAccount = await server.getAccount(adminKeypair.publicKey());
   const registry = new StellarSdk.Contract(CONTRACT_ADDRESSES.REGISTRY);
 
   // Build token contract IDs (XLM + TOKEN_B)
   const xlmAsset = StellarSdk.Asset.native();
   const tokenBAsset = new StellarSdk.Asset(tokenBCode, tokenBIssuer);
+  const tokenBContractId = toContractId(tokenBAsset);
   const tokenIds = [toContractId(xlmAsset), toContractId(tokenBAsset)];
 
   console.log('Router:', routerId);
@@ -219,6 +285,31 @@ const main = async () => {
     registry.call('set_aquarius_pool_index', StellarSdk.xdr.ScVal.scvBytes(poolIndex)),
     'Set Aquarius pool index'
   );
+
+  await sendSingleOp(
+    registry.call(
+      'set_native_usdc_contract_address',
+      StellarSdk.nativeToScVal(tokenBContractId, { type: 'address' })
+    ),
+    'Set Registry native USDC contract address'
+  );
+
+  console.log('✓ Registry USDC now points to:', tokenBContractId);
+
+  // Also update the USDC lending pool so borrowed USDC matches Aquarius USDC.
+  // This requires the LendingProtocolUSDC contract to have been upgraded with
+  // the update_native_usdc_address function.
+  if (UPDATE_LENDING_POOL_USDC) {
+    const lendingPoolUsdc = new StellarSdk.Contract(CONTRACT_ADDRESSES.LENDING_PROTOCOL_USDC);
+    await sendSingleOp(
+      lendingPoolUsdc.call(
+        'update_native_usdc_address',
+        StellarSdk.nativeToScVal(tokenBContractId, { type: 'address' })
+      ),
+      'Update LendingProtocolUSDC native USDC address to Aquarius USDC'
+    );
+    console.log('✓ LendingProtocolUSDC USDC now points to:', tokenBContractId);
+  }
 };
 
 main().catch((err) => {

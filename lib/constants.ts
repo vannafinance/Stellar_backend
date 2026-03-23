@@ -19,6 +19,7 @@ export const DropdownOptions = [
   "XLM",
   "USDC",
   "EURC",
+  "AquiresUSDC",
 ];
 
 // Legacy ETH options (deprecated)
@@ -43,6 +44,7 @@ export const iconPaths: Record<string, string> = {
   XLM: "/icons/stellar.svg", // Placeholder - replace with "/icons/xlm-icon.png" when available
   USDC: "/icons/usdc-icon.svg",
   EURC: "/icons/eurc.svg", // Placeholder - replace with "/icons/eurc-icon.png" when available
+  AquiresUSDC: "/icons/usdc-icon.svg", // Aquarius USDC uses USDC icon
   // Legacy ETH assets (for backwards compatibility)
   USDT: "/icons/usdt-icon.svg",
   ETH: "/icons/eth-icon.png",

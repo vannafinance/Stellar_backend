@@ -22,6 +22,28 @@ export class MarginAccountService {
   // Local storage key for margin accounts
   private static STORAGE_KEY = 'vanna_margin_accounts';
 
+  private static normalizeContractTokenSymbol(tokenSymbol: string): string {
+    const normalized = tokenSymbol?.toUpperCase();
+    if (normalized === 'AQUIRESUSDC' || normalized === 'AQUARIUS_USDC') {
+      return 'USDC';
+    }
+    return normalized;
+  }
+
+  private static parseBorrowNotAllowedMessage(raw: any, tokenSymbol: string): string {
+    const text = typeof raw === 'string' ? raw : JSON.stringify(raw ?? {});
+
+    if (text.includes('is_borrow_allowed') && text.includes('false')) {
+      return `Borrow not allowed by Risk Engine for ${tokenSymbol}. Your account collateral/debt ratio is too low for this borrow amount. Please repay existing debt or add more collateral, then try again.`;
+    }
+
+    if (text.includes('InvalidAction') || text.includes('UnreachableCodeReached')) {
+      return `Borrow action rejected for ${tokenSymbol}. This usually means borrow constraints are not satisfied (health factor, debt limit, or collateral requirements).`;
+    }
+
+    return `Borrow failed for ${tokenSymbol}. Please check collateral, existing debt, and risk limits, then retry.`;
+  }
+
   /**
    * Get stored margin account for a user
    */
@@ -566,7 +588,8 @@ export class MarginAccountService {
    */
   static async isCollateralAllowed(tokenSymbol: string): Promise<boolean> {
     try {
-      console.log('🔍 Checking if collateral is allowed for:', tokenSymbol);
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      console.log('🔍 Checking if collateral is allowed for:', contractTokenSymbol);
       
       const userAddress = await getAddress();
       if (userAddress.error) {
@@ -580,7 +603,7 @@ export class MarginAccountService {
       
       const call = contract.call(
         'get_iscollateral_allowed',
-        StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' })
+        StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' })
       );
       
       const transaction = new StellarSdk.TransactionBuilder(
@@ -595,7 +618,7 @@ export class MarginAccountService {
       
       if ('result' in result && result.result) {
         const isAllowed = StellarSdk.scValToNative(result.result.retval) === true;
-        console.log(`📊 ${tokenSymbol} collateral allowed:`, isAllowed);
+        console.log(`📊 ${contractTokenSymbol} collateral allowed:`, isAllowed);
         return isAllowed;
       }
       
@@ -654,8 +677,9 @@ export class MarginAccountService {
    * Check if a token is properly configured in the Registry
    */
   static async isTokenConfigured(tokenSymbol: string): Promise<{ configured: boolean; error?: string }> {
+    const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
     try {
-      console.log(`🔍 Checking if ${tokenSymbol} is configured in Registry...`);
+      console.log(`🔍 Checking if ${contractTokenSymbol} is configured in Registry...`);
 
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
       const userAddress = await getAddress();
@@ -668,14 +692,14 @@ export class MarginAccountService {
 
       // Build function name based on token
       let functionName: string;
-      if (tokenSymbol === 'XLM') {
+      if (contractTokenSymbol === 'XLM') {
         functionName = 'get_xlm_contract_adddress'; // Note: typo in contract
-      } else if (tokenSymbol === 'USDC') {
+      } else if (contractTokenSymbol === 'USDC') {
         functionName = 'get_usdc_contract_address';
-      } else if (tokenSymbol === 'EURC') {
+      } else if (contractTokenSymbol === 'EURC') {
         functionName = 'get_eurc_contract_address';
       } else {
-        return { configured: false, error: `Unknown token: ${tokenSymbol}` };
+        return { configured: false, error: `Unknown token: ${contractTokenSymbol}` };
       }
 
       const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
@@ -688,16 +712,16 @@ export class MarginAccountService {
 
       const simulationResult = await server.simulateTransaction(transaction);
 
-      if (simulationResult.error) {
-        console.warn(`⚠️ ${tokenSymbol} not configured in Registry:`, simulationResult.error);
+      if ('error' in simulationResult && simulationResult.error) {
+        console.warn(`⚠️ ${contractTokenSymbol} not configured in Registry:`, simulationResult.error);
         return { 
           configured: false, 
-          error: `${tokenSymbol} token contract address not set in Registry. Please configure it first.` 
+          error: `${contractTokenSymbol} token contract address not set in Registry. Please configure it first.` 
         };
       }
 
-      if (simulationResult.result) {
-        console.log(`✅ ${tokenSymbol} is configured in Registry`);
+      if ('result' in simulationResult && simulationResult.result) {
+        console.log(`✅ ${contractTokenSymbol} is configured in Registry`);
         return { configured: true };
       }
 
@@ -708,7 +732,7 @@ export class MarginAccountService {
           error.message?.includes('Failed to fetch')) {
         return { 
           configured: false, 
-          error: `${tokenSymbol} token not configured in Registry. Admin must set the token contract address.` 
+          error: `${contractTokenSymbol} token not configured in Registry. Admin must set the token contract address.` 
         };
       }
       return { configured: false, error: error.message };
@@ -724,28 +748,29 @@ export class MarginAccountService {
     amountWad: string
   ): Promise<{ success: boolean; hash?: string; error?: string }> {
     try {
-      console.log('🏦 Depositing collateral tokens:', { marginAccountAddress, tokenSymbol, amountWad });
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      console.log('🏦 Depositing collateral tokens:', { marginAccountAddress, tokenSymbol: contractTokenSymbol, amountWad });
       
       // Pre-flight checks
       console.log('🔍 Running pre-flight checks...');
       
       // Check 0: Token configuration in Registry
-      const configCheck = await this.isTokenConfigured(tokenSymbol);
+      const configCheck = await this.isTokenConfigured(contractTokenSymbol);
       if (!configCheck.configured) {
         return {
           success: false,
           error: `⚠️ Configuration Issue: ${configCheck.error}\n\n` +
-                 `The ${tokenSymbol} token contract address needs to be set in the Registry contract.\n` +
+                 `The ${contractTokenSymbol} token contract address needs to be set in the Registry contract.\n` +
                  `Please contact the admin or use XLM which is already configured.`
         };
       }
       
       // Check 1: Is collateral allowed for this token?
-      const isCollateralAllowed = await this.isCollateralAllowed(tokenSymbol);
+      const isCollateralAllowed = await this.isCollateralAllowed(contractTokenSymbol);
       if (!isCollateralAllowed) {
         return {
           success: false,
-          error: `${tokenSymbol} is not allowed as collateral. Please ask the contract admin to enable this token first.`
+          error: `${contractTokenSymbol} is not allowed as collateral. Please ask the contract admin to enable this token first.`
         };
       }
       
@@ -784,7 +809,7 @@ export class MarginAccountService {
           contract.call(
             'deposit_collateral_tokens',
             StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
-            StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' }),
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' }),
             StellarSdk.nativeToScVal(amountWad, { type: 'u256' })
           )
         )
@@ -847,7 +872,8 @@ export class MarginAccountService {
     borrowAmountWad: string
   ): Promise<{ success: boolean; hash?: string; error?: string }> {
     try {
-      console.log('💰 Borrowing tokens:', { marginAccountAddress, tokenSymbol, borrowAmountWad });
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      console.log('💰 Borrowing tokens:', { marginAccountAddress, tokenSymbol: contractTokenSymbol, borrowAmountWad });
       
       const userAddress = await getAddress();
       if (userAddress.error) {
@@ -893,11 +919,19 @@ export class MarginAccountService {
             'borrow',
             StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
             StellarSdk.nativeToScVal(borrowAmountWad, { type: 'u256' }),
-            StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' })
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' })
           )
         )
         .setTimeout(60) // Reasonable timeout like successful operations
         .build();
+
+      const simulationResult = await server.simulateTransaction(transaction);
+      if ('error' in simulationResult && simulationResult.error) {
+        return {
+          success: false,
+          error: this.parseBorrowNotAllowedMessage(simulationResult, contractTokenSymbol),
+        };
+      }
 
       console.log('🔍 Preparing borrow transaction...');
       const preparedTx = await server.prepareTransaction(transaction);
@@ -946,7 +980,7 @@ export class MarginAccountService {
         });
         
         // Try to extract more meaningful error information
-        let errorMessage = 'Borrow transaction failed immediately with ERROR status';
+        let errorMessage = this.parseBorrowNotAllowedMessage(result, contractTokenSymbol);
         
         if (result.errorResult) {
           try {
@@ -1336,7 +1370,7 @@ export class MarginAccountService {
 
           const simulationResult = await server.simulateTransaction(transaction);
 
-          if (simulationResult.result) {
+          if ('result' in simulationResult && simulationResult.result) {
             const balance = StellarSdk.scValToNative(simulationResult.result.retval);
             const balanceInToken = parseFloat(balance.toString()) / Math.pow(10, 18);
             
@@ -1374,7 +1408,8 @@ export class MarginAccountService {
     repayAmountWad: string
   ): Promise<{ success: boolean; hash?: string; error?: string }> {
     try {
-      console.log('💳 Repaying loan:', { marginAccountAddress, tokenSymbol, repayAmountWad });
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      console.log('💳 Repaying loan:', { marginAccountAddress, tokenSymbol: contractTokenSymbol, repayAmountWad });
 
       const userAddress = await getAddress();
       if (userAddress.error) {
@@ -1399,7 +1434,7 @@ export class MarginAccountService {
           contract.call(
             'repay',
             StellarSdk.nativeToScVal(repayAmountWad, { type: 'u256' }),
-            StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' }),
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' }),
             StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' })
           )
         )
@@ -1467,8 +1502,9 @@ export class MarginAccountService {
     tokenSymbol: string = 'XLM'
   ): Promise<{ success: boolean; hash?: string; error?: string }> {
     try {
-      console.log('🚀 Executing deposit and borrow:', { marginAccountAddress, depositAmount, multiplier, tokenSymbol });
-      console.log(`📝 Leverage Explanation: Depositing ${depositAmount} ${tokenSymbol}, with ${multiplier}x leverage = borrowing ${depositAmount * (multiplier - 1)} ${tokenSymbol} for total ${depositAmount * multiplier} ${tokenSymbol} position`);
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      console.log('🚀 Executing deposit and borrow:', { marginAccountAddress, depositAmount, multiplier, tokenSymbol: contractTokenSymbol });
+      console.log(`📝 Leverage Explanation: Depositing ${depositAmount} ${contractTokenSymbol}, with ${multiplier}x leverage = borrowing ${depositAmount * (multiplier - 1)} ${contractTokenSymbol} for total ${depositAmount * multiplier} ${contractTokenSymbol} position`);
       
       // Convert amounts to WAD format (18 decimals) - using string multiplication for better precision
       const depositAmountWad = (BigInt(Math.floor(depositAmount * 1000000)) * BigInt(1000000000000)).toString();
@@ -1476,16 +1512,16 @@ export class MarginAccountService {
       
       console.log('💰 Amounts:', { depositAmountWad, borrowAmountWad });
       console.log('💰 In human terms:', { 
-        depositAmount: `${parseFloat(depositAmountWad) / Math.pow(10, 18)} ${tokenSymbol}`, 
-        borrowAmount: `${parseFloat(borrowAmountWad) / Math.pow(10, 18)} ${tokenSymbol}`,
-        totalPosition: `${(parseFloat(depositAmountWad) + parseFloat(borrowAmountWad)) / Math.pow(10, 18)} ${tokenSymbol}`
+        depositAmount: `${parseFloat(depositAmountWad) / Math.pow(10, 18)} ${contractTokenSymbol}`, 
+        borrowAmount: `${parseFloat(borrowAmountWad) / Math.pow(10, 18)} ${contractTokenSymbol}`,
+        totalPosition: `${(parseFloat(depositAmountWad) + parseFloat(borrowAmountWad)) / Math.pow(10, 18)} ${contractTokenSymbol}`
       });
 
       // Step 1: Deposit collateral
       console.log('🏦 Step 1: Depositing collateral...');
       const depositResult = await this.depositCollateralTokens(
         marginAccountAddress,
-        tokenSymbol,
+        contractTokenSymbol,
         depositAmountWad
       );
       
@@ -1504,7 +1540,7 @@ export class MarginAccountService {
         console.log('💰 Step 2: Borrowing additional funds...');
         const borrowResult = await this.borrowTokens(
           marginAccountAddress,
-          tokenSymbol,
+          contractTokenSymbol,
           borrowAmountWad
         );
         
