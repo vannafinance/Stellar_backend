@@ -39,8 +39,13 @@ const ensureCollateralId = (collateral: Collaterals): Collaterals => {
 
 export const LeverageAssetsTab = () => {
   const { isDark } = useTheme();
-  const normalizeContractTokenSymbol = (symbol: string) =>
-    symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC" ? "USDC" : symbol;
+  const { refreshBalances } = useWallet();
+  const normalizeContractTokenSymbol = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC") return "AQUSDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC") return "SOUSDC";
+    return symbol;
+  };
   // Component state
   const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
   const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
@@ -55,6 +60,13 @@ export const LeverageAssetsTab = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const userAddress = useUserStore((state) => state.address);
+
+  useEffect(() => {
+    if (!userAddress) return;
+    refreshBalances(userAddress).catch((err) => {
+      console.warn("Failed to refresh wallet balances on margin page:", err);
+    });
+  }, [userAddress, refreshBalances]);
 
   // Dialogue state
   type DialogueState = "none" | "create-margin" | "sign-agreement";
@@ -296,10 +308,16 @@ export const LeverageAssetsTab = () => {
       // User has margin account - execute deposit and borrow
       try {
         setIsProcessing(true);
+
+        // Refresh latest risk metrics before computing borrow size
+        if (marginAccountAddress) {
+          await refreshBorrowedBalances(marginAccountAddress);
+        }
         
         // Get deposit amount and multiplier from collaterals
         const depositCollateral = collateralList[0]; // Get first collateral
         const depositAmount = depositCollateral?.amount || 0;
+        const depositAmountUsd = depositCollateral?.amountInUsd || 0;
         
         if (depositAmount <= 0) {
           alert('Please enter a deposit amount greater than 0');
@@ -307,12 +325,57 @@ export const LeverageAssetsTab = () => {
           return;
         }
 
-        const multiplier = leverage; // Use the leverage state as multiplier
+        let multiplier = leverage; // Use the leverage state as multiplier
         const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
+
+        // Cap requested borrow by current account health to avoid guaranteed
+        // RiskEngine rejections (applies to all supported collateral symbols).
+        if (multiplier > 1) {
+          const latestMarginState = useMarginAccountInfoStore.getState().get((state) => ({
+            totalBorrowedValue: state.totalBorrowedValue,
+            totalCollateralValue: state.totalCollateralValue,
+          }));
+          const liveTotalBorrowedValue = latestMarginState.totalBorrowedValue;
+          const liveTotalCollateralValue = latestMarginState.totalCollateralValue;
+          const threshold = 1.1;
+          // Risk engine compares collateral/debt by value, so keep all math in USD.
+          const projectedCollateralUsd = liveTotalCollateralValue + depositAmountUsd;
+          const maxDebtUsd = projectedCollateralUsd / threshold;
+          const maxAdditionalBorrowUsd = Math.max(0, maxDebtUsd - liveTotalBorrowedValue);
+          const requestedBorrowUsd = depositAmountUsd * (multiplier - 1);
+
+          if (maxAdditionalBorrowUsd <= 0) {
+            alert(
+              'Borrow is blocked by Risk Engine: your current debt is already too high for your collateral. ' +
+              'Add more collateral or repay first.'
+            );
+            setIsProcessing(false);
+            return;
+          }
+
+          if (requestedBorrowUsd > maxAdditionalBorrowUsd) {
+            // Keep a safety margin below threshold because on-chain checks use strict ">"
+            // and integer math.
+            const safeMultiplier = depositAmountUsd > 0
+              ? 1 + (maxAdditionalBorrowUsd * 0.9) / depositAmountUsd
+              : 1;
+            multiplier = Math.max(1, Math.min(multiplier, safeMultiplier));
+            setLeverage(Math.max(1, Math.min(10, Number(multiplier.toFixed(2)))));
+            if (multiplier <= 1.000001) {
+              alert(
+                'Borrow amount is too high for current account health. ' +
+                'Deposit can proceed, but borrow must be near zero. Add more collateral or repay existing debt.'
+              );
+              setIsProcessing(false);
+              return;
+            }
+          }
+        }
 
         console.log('🚀 Executing deposit and borrow:', {
           userAddress,
           depositAmount,
+          depositAmountUsd,
           multiplier,
           tokenSymbol,
           marginAccountAddress
@@ -325,14 +388,25 @@ export const LeverageAssetsTab = () => {
           tokenSymbol
         );
 
-        if (result.success) {
-          console.log('✅ Deposit and borrow successful:', result.hash);
-          alert('Deposit and borrow successful! Transaction hash: ' + result.hash);
-          
-          // Refresh borrowed balances after successful transaction
+        const didDepositSucceed =
+          result.success || result.error?.includes("Deposit was successful with hash");
+
+        // Always refresh wallet + margin balances after a successful deposit phase,
+        // even when borrow fails due to risk-engine limits.
+        if (didDepositSucceed) {
+          try {
+            await refreshBalances(userAddress);
+          } catch (refreshErr) {
+            console.warn("Failed to refresh wallet balances after leverage action:", refreshErr);
+          }
           if (marginAccountAddress) {
             await refreshBorrowedBalances(marginAccountAddress);
           }
+        }
+
+        if (result.success) {
+          console.log('✅ Deposit and borrow successful:', result.hash);
+          alert('Deposit and borrow successful! Transaction hash: ' + result.hash);
         } else {
           console.error('❌ Deposit and borrow failed:', result.error);
           

@@ -84,6 +84,26 @@ export const MOCK_TOKENS: Token[] = [
     isNative: true,
     isVerified: true,
   },
+  // Soroswap testnet tokens (wrapped XLM contract + USDC contract)
+  {
+    id: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    symbol: "XLM",
+    name: "Stellar Lumens (Soroswap)",
+    logo: "/coins/xlm.png",
+    decimals: 7,
+    chain: "stellar",
+    isNative: true,
+    isVerified: true,
+  },
+  {
+    id: "CB3TLW74NBIOT3BUWOZ3TUM6RFDF6A4GVIRUQRQZABG5KPOUL4JJOV2F",
+    symbol: "USDC",
+    name: "USD Coin (Soroswap)",
+    logo: "/icons/usdc-icon.svg",
+    decimals: 7,
+    chain: "stellar",
+    isVerified: true,
+  },
   {
     id: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
     symbol: "WETH",
@@ -106,8 +126,6 @@ export const MOCK_BALANCES: Record<string, string> = {
 };
 
 export const MOCK_DEXES: DexOption[] = [
-  { id: "uniswap", name: "Uniswap", logo: "/icons/uniswap-logo.svg" },
-  { id: "aerodrome", name: "Aerodrome", logo: "/icons/aerodrome-logo.svg" },
   { id: "soroswap", name: "Soroswap", logo: "/icons/soroswap-logo.png" },
   { id: "aquarius", name: "Aquarius", logo: "/icons/aquarius-logo.png" },
 ];

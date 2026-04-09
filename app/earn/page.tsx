@@ -19,7 +19,7 @@ import { depositData, netApyData } from "@/lib/constants/earn";
 const LIQUIDATION_THRESHOLD = 0.8;
 
 // USD prices for testnet tokens
-const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, EURC: 1.0, AQUARIUS_USDC: 1.0 };
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0 };
 
 /**
  * Scale a reference series so its last data point equals `liveEndValue`.
@@ -170,7 +170,7 @@ export default function Earn() {
 
   // ─── Account Stats ───────────────────────────────────────────────────────────
   // All values derived from the user's live on-chain positions.
-  // Units are native token amounts (XLM/USDC/EURC) summed without USD conversion
+  // Units are native token amounts summed without USD conversion
   // since we do not have a live price feed on testnet.
   const accountStats = useMemo(() => {
     if (!userAddress) {
@@ -222,7 +222,7 @@ export default function Earn() {
   // Scale the static historical series so the last point equals the current live value.
   // totalDepositedUSD = sum of each asset's deposited amount × its USD price.
   // netApyEarningsUSD = totalDepositedUSD × weightedAPY / 100  (annual run-rate earnings).
-  const ALL_ASSETS = ["XLM", "USDC", "EURC", "AQUARIUS_USDC"] as const;
+  const ALL_ASSETS = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
 
   const liveDepositData = useMemo(() => {
     const totalDepositedUSD = ALL_ASSETS.reduce((sum, asset) => {
@@ -257,10 +257,10 @@ export default function Earn() {
   const liveVaultsTableBody = useMemo(
     () => ({
       rows: [
-        buildPoolRow("XLM", pools.XLM, ["XLM", "USDC", "EURC"]),
-        buildPoolRow("USDC", pools.USDC, ["USDC", "XLM", "EURC"]),
-        buildPoolRow("EURC", pools.EURC, ["EURC", "USDC", "XLM"]),
-        buildPoolRow("AquiresUSDC", pools.AQUARIUS_USDC, ["USDC", "XLM", "EURC"]),
+        buildPoolRow("XLM", pools.XLM, ["XLM", "USDC"]),
+        buildPoolRow("BLUSDC", pools.USDC, ["BLUSDC", "XLM"]),
+        buildPoolRow("AqUSDC", pools.AQUARIUS_USDC, ["USDC", "XLM"]),
+        buildPoolRow("SoUSDC", pools.SOROSWAP_USDC, ["USDC", "XLM"]),
       ],
     }),
     [pools]
@@ -271,14 +271,14 @@ export default function Earn() {
   const livePositionsTableBody = useMemo(() => {
     if (!userAddress) return { rows: [] };
 
-    const assetKeys = ["XLM", "USDC", "EURC", "AQUARIUS_USDC"] as const;
+    const assetKeys = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
     const rows = assetKeys
       .filter(
         (asset) => parseFloat(userPositions[asset]?.deposited || "0") > 0 ||
                    parseFloat(userPositions[asset]?.borrowed || "0") > 0
       )
       .map((asset) => {
-        const displaySymbol = asset === "AQUARIUS_USDC" ? "AquiresUSDC" : asset;
+        const displaySymbol = asset === "AQUARIUS_USDC" ? "AqUSDC" : asset === "SOROSWAP_USDC" ? "SoUSDC" : asset;
         return buildPositionRow(displaySymbol, userPositions[asset], pools[asset]);
       });
 
@@ -299,8 +299,15 @@ export default function Earn() {
       const id = cells[0]?.title;
 
       if (id) {
-        const assetType = id === "AquiresUSDC" ? "AQUARIUS_USDC" : id.toUpperCase();
-        if (assetType === "XLM" || assetType === "USDC" || assetType === "EURC" || assetType === "AQUARIUS_USDC") {
+        const assetType =
+          id === "AqUSDC" || id === "AquiresUSDC"
+            ? "AQUARIUS_USDC"
+            : id === "SoUSDC" || id === "SoroswapUSDC"
+              ? "SOROSWAP_USDC"
+              : id === "BLUSDC"
+                ? "USDC"
+                : id.toUpperCase();
+        if (assetType === "XLM" || assetType === "USDC" || assetType === "AQUARIUS_USDC" || assetType === "SOROSWAP_USDC") {
           setSelectedPool(assetType as AssetType, {
             id: id,
             chain: assetType,

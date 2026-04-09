@@ -19,16 +19,16 @@ import { useTheme } from "@/contexts/theme-context";
 const ITEMS_PER_PAGE = 4;
 
 const FILTER_OPTIONS = {
-  collateral: ["XLM", "USDC", "EURC"],
-  collateralFilters: ["All", "XLM", "USDC", "EURC"],
-  deposit: ["XLM", "USDC", "EURC"],
+  collateral: ["XLM", "USDC"],
+  collateralFilters: ["All", "XLM", "USDC"],
+  deposit: ["XLM", "USDC"],
   depositFilters: ["All"],
-  allChains: ["XLM", "USDC", "EURC"],
-  allChainsFilters: ["All", "XLM", "USDC", "EURC"],
+  allChains: ["XLM", "USDC"],
+  allChainsFilters: ["All", "XLM", "USDC"],
   all: ["Vault Deposit", "Vault Collateral", "Vault Total", "Vault Withdraw"],
   allFilters: ["All"],
-  vaults: ["XLM", "USDC", "EURC"],
-  vaultsFilters: ["All", "XLM", "USDC", "EURC"],
+  vaults: ["XLM", "USDC"],
+  vaultsFilters: ["All", "XLM", "USDC"],
   curator: ["Vanna"],
   curatorFilters: ["All"],
   provider: ["Stellar"],

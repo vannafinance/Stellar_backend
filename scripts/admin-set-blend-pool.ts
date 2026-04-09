@@ -7,22 +7,23 @@
  *   → HostError: Error(WasmVm, InvalidAction) / UnreachableCodeReached
  *
  * Usage:
- *   npx ts-node scripts/admin-set-blend-pool.ts <ADMIN_SECRET_KEY>
+ *   npx ts-node scripts/admin-set-blend-pool.ts <ADMIN_SECRET_KEY> [BLEND_POOL_ADDRESS]
  *
  * The admin wallet is: GAUVY7FNDKVWRMW3SYEMX6QMFSWQDKC6XIPJJKAMOEMLZPAI7XZPDV3D
  */
 
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { CONTRACT_ADDRESSES } from '../lib/stellar-utils';
 
 const SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 
-const REGISTRY_ADDRESS = 'CANOLJZH7YTQVRSNL4WFIT6EHZUK6OL7HQR2Q2UOMHFJCZH2JMHW3AR2';
-const BLEND_POOL_ADDRESS = 'CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF'; // TestnetV2
+const REGISTRY_ADDRESS = CONTRACT_ADDRESSES.REGISTRY;
 
-async function setBlendPoolAddress(adminSecretKey: string) {
+async function setBlendPoolAddress(adminSecretKey: string, blendPoolAddress: string) {
   const adminKeypair = StellarSdk.Keypair.fromSecret(adminSecretKey);
   console.log('Admin address:', adminKeypair.publicKey());
+  console.log('Blend pool address:', blendPoolAddress);
 
   const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
   const adminAccount = await server.getAccount(adminKeypair.publicKey());
@@ -36,7 +37,7 @@ async function setBlendPoolAddress(adminSecretKey: string) {
     .addOperation(
       registryContract.call(
         'set_blend_pool_address',
-        StellarSdk.nativeToScVal(BLEND_POOL_ADDRESS, { type: 'address' })
+        StellarSdk.nativeToScVal(blendPoolAddress, { type: 'address' })
       )
     )
     .setTimeout(30)
@@ -61,7 +62,7 @@ async function setBlendPoolAddress(adminSecretKey: string) {
         if (tx.status === 'SUCCESS') {
           console.log('✓ Success! Blend pool address set in Registry.');
           console.log('  Registry:', REGISTRY_ADDRESS);
-          console.log('  Blend pool:', BLEND_POOL_ADDRESS);
+          console.log('  Blend pool:', blendPoolAddress);
           return;
         } else {
           console.error('✗ Transaction failed:', tx.status);
@@ -77,12 +78,13 @@ async function setBlendPoolAddress(adminSecretKey: string) {
 }
 
 const adminSecret = process.argv[2];
+const blendPoolAddress = process.argv[3] ?? CONTRACT_ADDRESSES.BLEND_POOL;
 if (!adminSecret) {
-  console.error('Usage: npx ts-node scripts/admin-set-blend-pool.ts <ADMIN_SECRET_KEY>');
+  console.error('Usage: npx ts-node scripts/admin-set-blend-pool.ts <ADMIN_SECRET_KEY> [BLEND_POOL_ADDRESS]');
   process.exit(1);
 }
 
-setBlendPoolAddress(adminSecret).catch((err) => {
+setBlendPoolAddress(adminSecret, blendPoolAddress).catch((err) => {
   console.error('Error:', err);
   process.exit(1);
 });

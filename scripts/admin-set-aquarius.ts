@@ -12,9 +12,7 @@
  * - Pool index is derived by calling Aquarius router get_pools(tokens) and
  *   matching the pool contract ID.
  * - Uses Testnet assets: XLM + TOKEN_B (defaults to Aquarius USDC issuer).
- * - Also updates Registry native USDC mapping to TOKEN_B contract ID so
- *   margin-account swaps resolve the same USDC token as Aquarius pool routing.
- * - Also updates LendingProtocolUSDC native USDC so borrowed USDC matches Aquarius USDC.
+ * - Also updates Registry Aquarius USDC mapping + Aquarius USDC lending pool.
  */
 
 import * as fs from 'fs';
@@ -77,10 +75,6 @@ function resolveKeypair(nameOrSecret: string): StellarSdk.Keypair {
     `Could not find "seed_phrase" or "secret_key" in ${identityPath}`
   );
 }
-
-// Optional: also update the USDC lending pool's native USDC address.
-// Set to false to skip (e.g. if the contract has not been upgraded yet).
-const UPDATE_LENDING_POOL_USDC = true;
 
 const DEFAULT_ROUTER = CONTRACT_ADDRESSES.AQUARIUS_ROUTER;
 const DEFAULT_TOKEN_B_CODE = 'USDC';
@@ -241,9 +235,18 @@ const main = async () => {
     poolIndex = await getPoolIndexFromRouter(routerId, tokenIds, poolId);
     console.log('Pool index (from router, hex):', poolIndex.toString('hex'));
   } catch (err) {
-    console.warn('Router lookup failed, computing pool index from fee_fraction...');
-    poolIndex = computeStandardPoolIndex(feeFraction);
-    console.log('Pool index (computed, hex):', poolIndex.toString('hex'));
+    if (
+      CONTRACT_ADDRESSES.AQUARIUS_POOL_INDEX_HEX &&
+      CONTRACT_ADDRESSES.AQUARIUS_POOL_INDEX_HEX.length === 64
+    ) {
+      console.warn('Router lookup failed, using configured AQUARIUS_POOL_INDEX_HEX fallback...');
+      poolIndex = Buffer.from(CONTRACT_ADDRESSES.AQUARIUS_POOL_INDEX_HEX, 'hex');
+      console.log('Pool index (configured fallback, hex):', poolIndex.toString('hex'));
+    } else {
+      console.warn('Router lookup failed, computing pool index from fee_fraction...');
+      poolIndex = computeStandardPoolIndex(feeFraction);
+      console.log('Pool index (computed, hex):', poolIndex.toString('hex'));
+    }
   }
 
   const sendSingleOp = async (op: StellarSdk.xdr.Operation, label: string) => {
@@ -288,28 +291,14 @@ const main = async () => {
 
   await sendSingleOp(
     registry.call(
-      'set_native_usdc_contract_address',
+      'set_aquarius_usdc_addr',
       StellarSdk.nativeToScVal(tokenBContractId, { type: 'address' })
     ),
-    'Set Registry native USDC contract address'
+    'Set Registry Aquarius USDC contract address'
   );
 
-  console.log('✓ Registry USDC now points to:', tokenBContractId);
-
-  // Also update the USDC lending pool so borrowed USDC matches Aquarius USDC.
-  // This requires the LendingProtocolUSDC contract to have been upgraded with
-  // the update_native_usdc_address function.
-  if (UPDATE_LENDING_POOL_USDC) {
-    const lendingPoolUsdc = new StellarSdk.Contract(CONTRACT_ADDRESSES.LENDING_PROTOCOL_USDC);
-    await sendSingleOp(
-      lendingPoolUsdc.call(
-        'update_native_usdc_address',
-        StellarSdk.nativeToScVal(tokenBContractId, { type: 'address' })
-      ),
-      'Update LendingProtocolUSDC native USDC address to Aquarius USDC'
-    );
-    console.log('✓ LendingProtocolUSDC USDC now points to:', tokenBContractId);
-  }
+  console.log('✓ Registry Aquarius USDC token set to:', tokenBContractId);
+  console.log('✓ Registry Aquarius USDC lending pool is configured via frontend constants:', CONTRACT_ADDRESSES.LENDING_PROTOCOL_AQUARIUS_USDC);
 };
 
 main().catch((err) => {

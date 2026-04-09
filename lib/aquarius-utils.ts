@@ -357,10 +357,11 @@ export class AquariusService {
     return true;
   }
 
-  // Returns router address from Registry, or falls back to hardcoded constant.
+  // Returns router address from static protocol config.
   static async getEffectiveRouterAddress(): Promise<string> {
-    const fromRegistry = await AquariusService.getAquariusRouterAddressFromRegistry();
-    return fromRegistry ?? CONTRACT_ADDRESSES.AQUARIUS_ROUTER;
+    const registryRouter = await AquariusService.getAquariusRouterAddressFromRegistry();
+    if (registryRouter) return registryRouter;
+    return CONTRACT_ADDRESSES.AQUARIUS_ROUTER;
   }
 
   static getLpTrackingSymbol(tokenA: string, tokenB: string): string | null {
@@ -638,9 +639,7 @@ export class AquariusService {
    *
    * Routes through AccountManager.execute() → SmartAccount AddLiquidity handler,
    * which pulls Aquarius USDC + XLM from the margin account and deposits them into
-   * the Aquarius pool. Requires:
-   *   - Registry USDC = Aquarius USDC (run scripts/admin-set-aquarius.ts)
-   *   - LendingProtocolUSDC native USDC = Aquarius USDC (run update_native_usdc_address)
+   * the Aquarius pool.
    */
   static async addLiquidity(
     walletAddress: string,
@@ -716,8 +715,7 @@ export class AquariusService {
       if (errText.includes('Error(Contract, #404)') || errText.includes('pool not found')) {
         return {
           success: false,
-          error:
-            'Aquarius pool not found. Ensure Registry USDC = Aquarius USDC and run scripts/admin-set-aquarius.ts.',
+          error: 'Aquarius pool not found for current token/router configuration.',
         };
       }
       return { success: false, error: error?.message || 'Add liquidity failed' };
@@ -732,7 +730,6 @@ export class AquariusService {
     lpAmount: number
   ): Promise<AquariusTransactionResult> {
     try {
-      // Use Registry address if available, otherwise fall back to hardcoded constant
       const routerAddress = await AquariusService.getEffectiveRouterAddress();
 
       const pool = AQUARIUS_POOLS.find(
@@ -840,22 +837,106 @@ export class AquariusService {
   }
 
   /**
-   * Simulate a swap_chained call to get the expected output amount.
+   * Read pool reserves + fee and compute constant-product amount out for one pool index.
+   * This avoids simulating swap execution, so quotes remain available in both wallet/margin modes.
+   */
+  private static async getQuotedOutForPoolIndex(
+    tokenInContract: string,
+    amountInStroops: bigint,
+    poolIndexBytes: Buffer,
+  ): Promise<number | null> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      const routerContract = new StellarSdk.Contract(CONTRACT_ADDRESSES.AQUARIUS_ROUTER);
+
+      const getPoolTx = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          routerContract.call(
+            'get_pool',
+            StellarSdk.xdr.ScVal.scvVec(
+              POOL_SORTED_TOKENS.map((a) => StellarSdk.nativeToScVal(a, { type: 'address' }))
+            ),
+            StellarSdk.xdr.ScVal.scvBytes(poolIndexBytes),
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const poolSim = await server.simulateTransaction(getPoolTx);
+      if (!StellarSdk.rpc.Api.isSimulationSuccess(poolSim) || !poolSim.result?.retval) return null;
+      const poolAddress = StellarSdk.scValToNative(poolSim.result.retval) as string;
+      if (!poolAddress) return null;
+
+      const poolContract = new StellarSdk.Contract(poolAddress);
+      const makeSim = (method: string) =>
+        server.simulateTransaction(
+          new StellarSdk.TransactionBuilder(tempAccount, {
+            fee: StellarSdk.BASE_FEE,
+            networkPassphrase: NETWORK_PASSPHRASE,
+          })
+            .addOperation(poolContract.call(method))
+            .setTimeout(30)
+            .build()
+        );
+
+      const [resSim, feeSim] = await Promise.all([
+        makeSim('get_reserves'),
+        makeSim('get_fee_fraction'),
+      ]);
+
+      if (!StellarSdk.rpc.Api.isSimulationSuccess(resSim) || !resSim.result?.retval) return null;
+      const reserves = StellarSdk.scValToNative(resSim.result.retval) as [bigint, bigint];
+      if (!Array.isArray(reserves) || reserves.length < 2) return null;
+
+      // Token order on Aquarius pool is sorted: [USDC, XLM]
+      const reserveUsdc = BigInt(reserves[0] as unknown as bigint);
+      const reserveXlm = BigInt(reserves[1] as unknown as bigint);
+
+      const feeRaw = (StellarSdk.rpc.Api.isSimulationSuccess(feeSim) && feeSim.result?.retval)
+        ? Number(StellarSdk.scValToNative(feeSim.result.retval))
+        : 30;
+
+      const reserveIn = tokenInContract === XLM_CONTRACT ? reserveXlm : reserveUsdc;
+      const reserveOut = tokenInContract === XLM_CONTRACT ? reserveUsdc : reserveXlm;
+      if (reserveIn <= BigInt(0) || reserveOut <= BigInt(0) || amountInStroops <= BigInt(0)) return null;
+
+      // feeRaw=30 means 0.30% => denominator 10000
+      const feeDenom = BigInt(10000);
+      const feeNumer = feeDenom - BigInt(Math.max(0, Math.min(9999, feeRaw)));
+      const amountInAfterFee = (amountInStroops * feeNumer) / feeDenom;
+      if (amountInAfterFee <= BigInt(0)) return null;
+
+      const numerator = amountInAfterFee * reserveOut;
+      const denominator = reserveIn + amountInAfterFee;
+      if (denominator <= BigInt(0)) return null;
+
+      const amountOutRaw = numerator / denominator;
+      const amountOut = Number(amountOutRaw) / 1e7;
+      return Number.isFinite(amountOut) && amountOut > 0 ? amountOut : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get expected output amount from pool reserves.
    * Tries all available XLM/USDC pools on Aquarius and returns the best (highest) quote.
    * Returns the output amount in human-readable form (7 decimals), or null on error.
    */
   static async getSwapQuote(
     amountIn: number,
     tokenInSymbol: 'XLM' | 'USDC',
-    simulatorAddress: string,
+    _simulatorAddress: string,
   ): Promise<string | null> {
     try {
+      void _simulatorAddress;
       const tokenInContract = tokenInSymbol === 'XLM' ? XLM_CONTRACT : CONTRACT_ADDRESSES.AQUARIUS_USDC;
       const amountInStroops = BigInt(Math.round(amountIn * 1e7));
-
-      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
-      const sourceAccount = await server.getAccount(simulatorAddress);
-      const routerContract = new StellarSdk.Contract(CONTRACT_ADDRESSES.AQUARIUS_ROUTER);
 
       // Discover all pools for this pair and pick the one giving the best (highest) quote.
       // This ensures we always match the most liquid Aquarius pool (same as their UI).
@@ -865,40 +946,14 @@ export class AquariusService {
       let bestQuote: string | null = null;
 
       for (const poolIndexBytes of poolIndices) {
-        try {
-          const swapsChain = buildSwapsChain(tokenInContract, poolIndexBytes);
-
-          const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
-            fee: (parseInt(StellarSdk.BASE_FEE) * 20).toString(),
-            networkPassphrase: NETWORK_PASSPHRASE,
-          })
-            .addOperation(
-              routerContract.call(
-                'swap_chained',
-                StellarSdk.nativeToScVal(simulatorAddress, { type: 'address' }),
-                swapsChain,
-                StellarSdk.nativeToScVal(tokenInContract, { type: 'address' }),
-                StellarSdk.nativeToScVal(amountInStroops, { type: 'u128' }),
-                StellarSdk.nativeToScVal(BigInt(1), { type: 'u128' }),
-              )
-            )
-            .setTimeout(30)
-            .build();
-
-          const sim = await server.simulateTransaction(tx);
-          if (!StellarSdk.rpc.Api.isSimulationSuccess(sim)) continue;
-
-          const retVal = (sim as StellarSdk.rpc.Api.SimulateTransactionSuccessResponse).result?.retval;
-          if (!retVal) continue;
-
-          const raw = StellarSdk.scValToNative(retVal) as bigint;
-          const amount = Number(raw) / 1e7;
-          if (amount > bestAmount) {
-            bestAmount = amount;
-            bestQuote = amount.toFixed(7);
-          }
-        } catch {
-          continue;
+        const amount = await AquariusService.getQuotedOutForPoolIndex(
+          tokenInContract,
+          amountInStroops,
+          poolIndexBytes,
+        );
+        if (amount !== null && amount > bestAmount) {
+          bestAmount = amount;
+          bestQuote = amount.toFixed(7);
         }
       }
 
@@ -916,49 +971,25 @@ export class AquariusService {
   private static async getBestPoolIndexBytes(
     tokenInContract: string,
     amountInStroops: bigint,
-    simulatorAddress: string,
+    _simulatorAddress: string,
   ): Promise<Buffer> {
     const fallback = Buffer.from(CONTRACT_ADDRESSES.AQUARIUS_POOL_INDEX_HEX, 'hex');
     try {
-      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
-      const sourceAccount = await server.getAccount(simulatorAddress);
-      const routerContract = new StellarSdk.Contract(CONTRACT_ADDRESSES.AQUARIUS_ROUTER);
+      void _simulatorAddress;
       const poolIndices = await AquariusService.getAquariusPoolIndices();
 
       let bestAmount = 0;
       let bestIndex = poolIndices[0] ?? fallback;
 
       for (const poolIndexBytes of poolIndices) {
-        try {
-          const swapsChain = buildSwapsChain(tokenInContract, poolIndexBytes);
-          const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
-            fee: (parseInt(StellarSdk.BASE_FEE) * 20).toString(),
-            networkPassphrase: NETWORK_PASSPHRASE,
-          })
-            .addOperation(
-              routerContract.call(
-                'swap_chained',
-                StellarSdk.nativeToScVal(simulatorAddress, { type: 'address' }),
-                swapsChain,
-                StellarSdk.nativeToScVal(tokenInContract, { type: 'address' }),
-                StellarSdk.nativeToScVal(amountInStroops, { type: 'u128' }),
-                StellarSdk.nativeToScVal(BigInt(1), { type: 'u128' }),
-              )
-            )
-            .setTimeout(30)
-            .build();
-
-          const sim = await server.simulateTransaction(tx);
-          if (!StellarSdk.rpc.Api.isSimulationSuccess(sim)) continue;
-          const retVal = (sim as StellarSdk.rpc.Api.SimulateTransactionSuccessResponse).result?.retval;
-          if (!retVal) continue;
-          const amount = Number(StellarSdk.scValToNative(retVal) as bigint) / 1e7;
-          if (amount > bestAmount) {
-            bestAmount = amount;
-            bestIndex = poolIndexBytes;
-          }
-        } catch {
-          continue;
+        const amount = await AquariusService.getQuotedOutForPoolIndex(
+          tokenInContract,
+          amountInStroops,
+          poolIndexBytes,
+        );
+        if (amount !== null && amount > bestAmount) {
+          bestAmount = amount;
+          bestIndex = poolIndexBytes;
         }
       }
 
@@ -1043,16 +1074,6 @@ export class AquariusService {
     amountIn: number,
   ): Promise<AquariusTransactionResult> {
     try {
-      const registryUsdc = await AquariusService.getRegistryUsdcAddress();
-      if (registryUsdc && registryUsdc !== CONTRACT_ADDRESSES.AQUARIUS_USDC) {
-        return {
-          success: false,
-          error:
-            `Registry USDC is ${registryUsdc}, but Aquarius margin swap requires ${CONTRACT_ADDRESSES.AQUARIUS_USDC}. ` +
-            'Run scripts/admin-set-aquarius.ts (with Aquarius USDC issuer) to update Registry.',
-        };
-      }
-
       const routerAddress = await AquariusService.getEffectiveRouterAddress();
 
       const tokenOutSymbol: 'XLM' | 'USDC' = tokenInSymbol === 'XLM' ? 'USDC' : 'XLM';
@@ -1104,8 +1125,7 @@ export class AquariusService {
       if (errText.includes('Error(Contract, #404)') || errText.includes('failing with contract error")')) {
         return {
           success: false,
-          error:
-            'Aquarius pool not found for Registry USDC mapping. Set Registry USDC to Aquarius USDC (CAZRY...) and retry.',
+          error: 'Aquarius pool not found for configured Aquarius token mapping.',
         };
       }
       return { success: false, error: error?.message || 'Margin swap failed' };

@@ -8,6 +8,7 @@ export interface MarginAccount {
   owner: string;
   isActive: boolean;
   createdAt: number;
+  accountManagerAddress?: string;
 }
 
 export interface MarginAccountCreationResult {
@@ -24,8 +25,17 @@ export class MarginAccountService {
 
   private static normalizeContractTokenSymbol(tokenSymbol: string): string {
     const normalized = tokenSymbol?.toUpperCase();
-    if (normalized === 'AQUIRESUSDC' || normalized === 'AQUARIUS_USDC') {
+    if (normalized === 'BLUSDC' || normalized === 'BLEND_USDC' || normalized === 'USDC') {
+      // Use canonical USDC symbol for Blend USDC on this deployment.
+      // The contract routes USDC and BLUSDC to the same token address,
+      // but USDC avoids the BLUSDC symbol trap observed in deposit_collateral_tokens.
       return 'USDC';
+    }
+    if (normalized === 'AQUSDC' || normalized === 'AQUIRESUSDC' || normalized === 'AQUARIUS_USDC') {
+      return 'AQUSDC';
+    }
+    if (normalized === 'SOUSDC' || normalized === 'SOROSWAPUSDC' || normalized === 'SOROSWAP_USDC') {
+      return 'SOUSDC';
     }
     return normalized;
   }
@@ -37,11 +47,153 @@ export class MarginAccountService {
       return `Borrow not allowed by Risk Engine for ${tokenSymbol}. Your account collateral/debt ratio is too low for this borrow amount. Please repay existing debt or add more collateral, then try again.`;
     }
 
+    if (text.includes('Borrowing is not allowed for this user')) {
+      return `Borrow not allowed by Risk Engine for ${tokenSymbol}. Your account collateral/debt ratio is too low for this borrow amount. Please repay existing debt or add more collateral, then try again.`;
+    }
+
+    if (text.includes('price not available')) {
+      return `Borrow failed for ${tokenSymbol} because an oracle price is missing for one of your account assets. Please configure oracle pricing for all collateral/debt symbols and retry.`;
+    }
+
+    if (text.includes('trustline entry is missing for account')) {
+      const match = text.match(/trustline entry is missing for account"\s*,\s*([A-Z0-9]+)/);
+      const accountHint = match?.[1] ? ` (${match[1]})` : '';
+      return `Borrow failed for ${tokenSymbol}: lending pool treasury trustline is missing${accountHint}. This is a pool configuration issue, not your collateral ratio.`;
+    }
+
+    if (text.includes('Budget') || text.includes('ExceededLimit')) {
+      return `Borrow simulation exceeded Soroban resource limits for ${tokenSymbol}. Please retry once; if it persists, reduce borrow size slightly or increase transaction resources.`;
+    }
+
     if (text.includes('InvalidAction') || text.includes('UnreachableCodeReached')) {
       return `Borrow action rejected for ${tokenSymbol}. This usually means borrow constraints are not satisfied (health factor, debt limit, or collateral requirements).`;
     }
 
     return `Borrow failed for ${tokenSymbol}. Please check collateral, existing debt, and risk limits, then retry.`;
+  }
+
+  private static addUsdcAliases(
+    balances: Record<string, { amount: string; usdValue: string }>
+  ): Record<string, { amount: string; usdValue: string }> {
+    return balances;
+  }
+
+  private static async getMarginCollateralBalanceWad(
+    marginAccountAddress: string,
+    tokenSymbol: string
+  ): Promise<bigint> {
+    try {
+      const userAddress = await getAddress();
+      if (userAddress.error) return BigInt(0);
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(userAddress.address);
+      const marginContract = new StellarSdk.Contract(marginAccountAddress);
+
+      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          marginContract.call(
+            'get_collateral_token_balance',
+            StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' })
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+      if (!('result' in sim) || !sim.result?.retval) return BigInt(0);
+      const raw = StellarSdk.scValToNative(sim.result.retval);
+      return BigInt(raw.toString());
+    } catch {
+      return BigInt(0);
+    }
+  }
+
+  private static async waitForCollateralSync(
+    marginAccountAddress: string,
+    tokenSymbol: string,
+    minExpectedWad: bigint
+  ): Promise<boolean> {
+    const maxAttempts = 20;
+    const delayMs = 1200;
+
+    for (let i = 0; i < maxAttempts; i += 1) {
+      const current = await this.getMarginCollateralBalanceWad(marginAccountAddress, tokenSymbol);
+      if (current >= minExpectedWad) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return false;
+  }
+
+  private static async simulateBorrowAllowed(
+    marginAccountAddress: string,
+    tokenSymbol: string,
+    borrowAmountWad: bigint
+  ): Promise<boolean> {
+    if (borrowAmountWad <= BigInt(0)) return false;
+
+    try {
+      const userAddress = await getAddress();
+      if (userAddress.error) return false;
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(userAddress.address);
+      const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.ACCOUNT_MANAGER);
+
+      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          contract.call(
+            'borrow',
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+            StellarSdk.nativeToScVal(borrowAmountWad.toString(), { type: 'u256' }),
+            StellarSdk.nativeToScVal(tokenSymbol, { type: 'symbol' })
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+      return !('error' in sim);
+    } catch {
+      return false;
+    }
+  }
+
+  private static async findMaxBorrowAllowedWad(
+    marginAccountAddress: string,
+    tokenSymbol: string,
+    requestedBorrowWad: bigint
+  ): Promise<bigint> {
+    if (requestedBorrowWad <= BigInt(0)) return BigInt(0);
+
+    if (await this.simulateBorrowAllowed(marginAccountAddress, tokenSymbol, requestedBorrowWad)) {
+      return requestedBorrowWad;
+    }
+
+    let low = BigInt(0);
+    let high = requestedBorrowWad;
+    let attempts = 0;
+
+    while (low < high && attempts < 24) {
+      attempts += 1;
+      const mid = (low + high + BigInt(1)) / BigInt(2);
+      const allowed = await this.simulateBorrowAllowed(marginAccountAddress, tokenSymbol, mid);
+      if (allowed) {
+        low = mid;
+      } else {
+        high = mid - BigInt(1);
+      }
+    }
+
+    return low;
   }
 
   /**
@@ -53,7 +205,14 @@ export class MarginAccountService {
       if (!stored) return null;
       
       const accounts: Record<string, MarginAccount> = JSON.parse(stored);
-      return accounts[userAddress] || null;
+      const account = accounts[userAddress] || null;
+      if (!account) return null;
+
+      // Safety: invalidate accounts stored under an older AccountManager deployment.
+      if (account.accountManagerAddress !== CONTRACT_ADDRESSES.ACCOUNT_MANAGER) {
+        return null;
+      }
+      return account;
     } catch (error) {
       console.error('Error reading margin account from storage:', error);
       return null;
@@ -68,7 +227,10 @@ export class MarginAccountService {
       const stored = localStorage.getItem(this.STORAGE_KEY) || '{}';
       const accounts: Record<string, MarginAccount> = JSON.parse(stored);
       
-      accounts[userAddress] = marginAccount;
+      accounts[userAddress] = {
+        ...marginAccount,
+        accountManagerAddress: CONTRACT_ADDRESSES.ACCOUNT_MANAGER,
+      };
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(accounts));
     } catch (error) {
       console.error('Error storing margin account:', error);
@@ -694,10 +856,12 @@ export class MarginAccountService {
       let functionName: string;
       if (contractTokenSymbol === 'XLM') {
         functionName = 'get_xlm_contract_adddress'; // Note: typo in contract
-      } else if (contractTokenSymbol === 'USDC') {
+      } else if (contractTokenSymbol === 'BLUSDC' || contractTokenSymbol === 'USDC') {
         functionName = 'get_usdc_contract_address';
-      } else if (contractTokenSymbol === 'EURC') {
-        functionName = 'get_eurc_contract_address';
+      } else if (contractTokenSymbol === 'AQUSDC') {
+        functionName = 'get_aquarius_usdc_addr';
+      } else if (contractTokenSymbol === 'SOUSDC') {
+        functionName = 'get_soroswap_usdc_addr';
       } else {
         return { configured: false, error: `Unknown token: ${contractTokenSymbol}` };
       }
@@ -761,7 +925,7 @@ export class MarginAccountService {
           success: false,
           error: `⚠️ Configuration Issue: ${configCheck.error}\n\n` +
                  `The ${contractTokenSymbol} token contract address needs to be set in the Registry contract.\n` +
-                 `Please contact the admin or use XLM which is already configured.`
+                 `Please contact the admin to configure the new Registry deployment.`
         };
       }
       
@@ -774,14 +938,12 @@ export class MarginAccountService {
         };
       }
       
-      // Check 2: Get max asset cap
+      // Check 2: Read max asset cap when available. Some deployments omit get_max_asset_cap,
+      // so do not hard-block here and let the contract enforce limits on execution.
       const maxAssetCap = await this.getMaxAssetCap();
       console.log('📊 Max asset cap:', maxAssetCap);
       if (maxAssetCap === 0) {
-        return {
-          success: false,
-          error: 'Max asset cap is not set or is zero. Contract needs to be configured properly.'
-        };
+        console.warn('⚠️ Max asset cap unavailable/zero from view call; continuing and deferring limit checks to contract execution.');
       }
       
       console.log('✅ Pre-flight checks passed');
@@ -927,14 +1089,41 @@ export class MarginAccountService {
 
       const simulationResult = await server.simulateTransaction(transaction);
       if ('error' in simulationResult && simulationResult.error) {
-        return {
-          success: false,
-          error: this.parseBorrowNotAllowedMessage(simulationResult, contractTokenSymbol),
-        };
+        const simulationText = JSON.stringify(simulationResult.error);
+        const isBudgetLikeError =
+          simulationText.includes('Budget') ||
+          simulationText.includes('ExceededLimit') ||
+          simulationText.includes('resources') ||
+          simulationText.includes('resource');
+
+        if (!isBudgetLikeError) {
+          return {
+            success: false,
+            error: this.parseBorrowNotAllowedMessage(simulationResult, contractTokenSymbol),
+          };
+        }
+
+        // Some borrow paths can fail pre-simulation on budget but still pass when assembled/prepared.
+        console.warn('⚠️ Borrow simulation returned a budget-like error; attempting transaction assembly/prepare anyway.');
       }
 
       console.log('🔍 Preparing borrow transaction...');
-      const preparedTx = await server.prepareTransaction(transaction);
+      let preparedTx: StellarSdk.Transaction;
+      try {
+        const assembleTransaction = (StellarSdk as any)?.rpc?.assembleTransaction;
+        if (typeof assembleTransaction === 'function' && 'result' in simulationResult && simulationResult.result) {
+          const assembled = assembleTransaction(transaction, simulationResult);
+          preparedTx = assembled.build();
+        } else {
+          preparedTx = await server.prepareTransaction(transaction);
+        }
+      } catch (prepareError: any) {
+        console.error('❌ Borrow preparation failed:', prepareError);
+        return {
+          success: false,
+          error: this.parseBorrowNotAllowedMessage(prepareError, contractTokenSymbol),
+        };
+      }
       
       // Sign the transaction
       const signResult = await signTransaction(preparedTx.toXDR(), {
@@ -1013,49 +1202,10 @@ export class MarginAccountService {
   }
 
   /**
-   * Check if current user is admin
-   */
-  static async isCurrentUserAdmin(): Promise<boolean> {
-    try {
-      const userAddress = await getAddress();
-      if (userAddress.error) {
-        return false;
-      }
-      
-      // The admin address from deployment script (rohit_testnet identity)
-      const ADMIN_ADDRESS = 'GCD35D3HP7437SCURVDNFELQLADVX363SZG7VCQS3Z2IHMZOUIX5HOPL';
-      return userAddress.address === ADMIN_ADDRESS;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
    * Helper function to setup contract configuration (for admin use)
    */
   static async setupContractConfiguration(): Promise<{ success: boolean; error?: string; transactionHashes?: string[] }> {
     try {
-      // First check if user is admin
-      const isAdmin = await this.isCurrentUserAdmin();
-      if (!isAdmin) {
-        // Get the current user first
-        const userAddress = await getAddress();
-        if (userAddress.error) {
-          return {
-            success: false,
-            error: 'Failed to get user address'
-          };
-        }
-        
-        const currentUser = userAddress.address;
-        const adminAddress = 'GCD35D3HP7437SCURVDNFELQLADVX363SZG7VCQS3Z2IHMZOUIX5HOPL';
-        console.log('🚫 Admin check failed:', { currentUser, adminAddress, isAdmin });
-        return {
-          success: false,
-          error: `Only the contract admin can setup contract configuration. Current user: ${currentUser}, Admin: ${adminAddress}`
-        };
-      }
-      
       console.log('🔧 Setting up contract configuration...');
       
       const userAddress = await getAddress();
@@ -1087,17 +1237,24 @@ export class MarginAccountService {
           )
         },
         {
-          name: 'Allow USDC as collateral',
+          name: 'Allow BLUSDC as collateral',
           call: contract.call(
             'set_iscollateral_allowed',
-            StellarSdk.nativeToScVal('USDC', { type: 'symbol' })
+            StellarSdk.nativeToScVal('BLUSDC', { type: 'symbol' })
           )
         },
         {
-          name: 'Allow EURC as collateral',
+          name: 'Allow AQUSDC as collateral',
           call: contract.call(
             'set_iscollateral_allowed',
-            StellarSdk.nativeToScVal('EURC', { type: 'symbol' })
+            StellarSdk.nativeToScVal('AQUSDC', { type: 'symbol' })
+          )
+        },
+        {
+          name: 'Allow SOUSDC as collateral',
+          call: contract.call(
+            'set_iscollateral_allowed',
+            StellarSdk.nativeToScVal('SOUSDC', { type: 'symbol' })
           )
         }
       ];
@@ -1268,12 +1425,20 @@ export class MarginAccountService {
         return { success: true, data: {} };
       }
 
-      const borrowedTokens = StellarSdk.scValToNative(simulationResult.result.retval) as string[];
+      const borrowedTokensRaw = StellarSdk.scValToNative(simulationResult.result.retval) as any;
+      const borrowedTokens = Array.isArray(borrowedTokensRaw)
+        ? borrowedTokensRaw.map((t) => String(t))
+        : [];
       console.log('📊 Found borrowed tokens:', borrowedTokens);
-      
+
+      if (borrowedTokens.length === 0) {
+        console.log('📊 No borrowed tokens on-chain; skipping per-token debt probes');
+        return { success: true, data: {} };
+      }
+
       const borrowedBalances: Record<string, { amount: string; usdValue: string }> = {};
-      
-      // Get balance for each borrowed token
+
+      // Read debt only for tokens present in SmartAccount borrowed list.
       for (const token of borrowedTokens) {
         try {
           const getBalanceTx = new StellarSdk.TransactionBuilder(sourceAccount, {
@@ -1297,12 +1462,13 @@ export class MarginAccountService {
             const balanceNumber = parseFloat(balanceWad) / Math.pow(10, 18); // Convert from WAD
             
             // For now, assume 1:1 USD conversion (you can enhance this with actual price feeds)
-            const usdValue = balanceNumber.toFixed(2);
-            
-            borrowedBalances[token] = {
-              amount: balanceNumber.toFixed(6),
-              usdValue
-            };
+            if (balanceNumber > 0) {
+              const usdValue = balanceNumber.toFixed(2);
+              borrowedBalances[token] = {
+                amount: balanceNumber.toFixed(6),
+                usdValue
+              };
+            }
           }
         } catch (error) {
           console.warn(`⚠️ Failed to get balance for token ${token}:`, error);
@@ -1312,7 +1478,7 @@ export class MarginAccountService {
       console.log('📊 Current borrowed balances:', borrowedBalances);
       return {
         success: true,
-        data: borrowedBalances
+        data: this.addUsdcAliases(borrowedBalances)
       };
       
     } catch (error: any) {
@@ -1348,7 +1514,7 @@ export class MarginAccountService {
       const balances: Record<string, { amount: string; usdValue: string }> = {};
 
       // Query collateral balances for each token
-      for (const tokenSymbol of ['XLM', 'USDC', 'EURC']) {
+      for (const tokenSymbol of ['XLM', 'BLUSDC', 'AQUSDC', 'SOUSDC', 'USDC', 'EURC']) {
         try {
           const userAddress = await getAddress();
           if (userAddress.error) continue;
@@ -1385,7 +1551,7 @@ export class MarginAccountService {
         }
       }
 
-      return { success: true, data: balances };
+      return { success: true, data: this.addUsdcAliases(balances) };
     } catch (error: any) {
       console.error('❌ Error getting collateral balances:', error);
       return {
@@ -1398,7 +1564,7 @@ export class MarginAccountService {
   /**
    * Repay borrowed tokens to margin account
    * @param marginAccountAddress - The margin account address
-   * @param tokenSymbol - Token symbol to repay (XLM, USDC, EURC)
+  * @param tokenSymbol - Token symbol to repay (XLM, USDC)
    * @param repayAmountWad - Amount to repay in WAD format
    * @returns Result with success status and transaction hash
    */
@@ -1503,16 +1669,25 @@ export class MarginAccountService {
   ): Promise<{ success: boolean; hash?: string; error?: string }> {
     try {
       const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
-      console.log('🚀 Executing deposit and borrow:', { marginAccountAddress, depositAmount, multiplier, tokenSymbol: contractTokenSymbol });
-      console.log(`📝 Leverage Explanation: Depositing ${depositAmount} ${contractTokenSymbol}, with ${multiplier}x leverage = borrowing ${depositAmount * (multiplier - 1)} ${contractTokenSymbol} for total ${depositAmount * multiplier} ${contractTokenSymbol} position`);
+
+      console.log('🚀 Executing deposit and borrow:', {
+        marginAccountAddress,
+        depositAmount,
+        multiplier,
+        tokenSymbol: contractTokenSymbol,
+      });
+      console.log(
+        `📝 Leverage Explanation: Depositing ${depositAmount} ${contractTokenSymbol}, with ${multiplier}x leverage = borrowing ${depositAmount * (multiplier - 1)} ${contractTokenSymbol} for total ${depositAmount * multiplier} ${contractTokenSymbol} position`
+      );
       
       // Convert amounts to WAD format (18 decimals) - using string multiplication for better precision
       const depositAmountWad = (BigInt(Math.floor(depositAmount * 1000000)) * BigInt(1000000000000)).toString();
-      const borrowAmountWad = (BigInt(Math.floor(depositAmount * (multiplier - 1) * 1000000)) * BigInt(1000000000000)).toString();
+      const requestedBorrowAmountWad = BigInt(Math.floor(depositAmount * (multiplier - 1) * 1000000)) * BigInt(1000000000000);
+      let borrowAmountWad = requestedBorrowAmountWad.toString();
       
       console.log('💰 Amounts:', { depositAmountWad, borrowAmountWad });
       console.log('💰 In human terms:', { 
-        depositAmount: `${parseFloat(depositAmountWad) / Math.pow(10, 18)} ${contractTokenSymbol}`, 
+        depositAmount: `${parseFloat(depositAmountWad) / Math.pow(10, 18)} ${contractTokenSymbol}`,
         borrowAmount: `${parseFloat(borrowAmountWad) / Math.pow(10, 18)} ${contractTokenSymbol}`,
         totalPosition: `${(parseFloat(depositAmountWad) + parseFloat(borrowAmountWad)) / Math.pow(10, 18)} ${contractTokenSymbol}`
       });
@@ -1535,8 +1710,45 @@ export class MarginAccountService {
       // Step 2: Wait a bit for deposit to be processed
       await new Promise(resolve => setTimeout(resolve, 3000));
 
+      // Step 2.1: Ensure deposited collateral is visible in SmartAccount state
+      // before attempting borrow (avoids stale-state risk check failures).
+      const minExpectedCollateralWad = BigInt(depositAmountWad);
+      const collateralSynced = await this.waitForCollateralSync(
+        marginAccountAddress,
+        contractTokenSymbol,
+        minExpectedCollateralWad
+      );
+      if (!collateralSynced) {
+        return {
+          success: false,
+          error: `Deposit was successful (hash: ${depositResult.hash}) but collateral state is not yet synchronized on-chain. Please retry borrow in a few seconds.`
+        };
+      }
+
       // Step 3: Borrow additional funds if multiplier > 1
       if (multiplier > 1) {
+        const maxAllowedBorrowWad = await this.findMaxBorrowAllowedWad(
+          marginAccountAddress,
+          contractTokenSymbol,
+          requestedBorrowAmountWad
+        );
+
+        if (maxAllowedBorrowWad > BigInt(0) && maxAllowedBorrowWad < requestedBorrowAmountWad) {
+          console.log('⚖️ Auto-adjusted borrow to on-chain safe max', {
+            requestedBorrowWad: requestedBorrowAmountWad.toString(),
+            adjustedBorrowWad: maxAllowedBorrowWad.toString(),
+          });
+          borrowAmountWad = maxAllowedBorrowWad.toString();
+        } else if (maxAllowedBorrowWad <= BigInt(0)) {
+          // Best-effort simulation can fail for reasons other than risk checks
+          // (resource estimation, transient RPC state, etc). Do not hard-block:
+          // execute real borrow tx and rely on on-chain validation + retry fallback.
+          console.warn('⚠️ Could not determine safe max borrow from simulation; attempting requested borrow directly', {
+            requestedBorrowWad: requestedBorrowAmountWad.toString(),
+            tokenSymbol: contractTokenSymbol,
+          });
+        }
+
         console.log('💰 Step 2: Borrowing additional funds...');
         const borrowResult = await this.borrowTokens(
           marginAccountAddress,
@@ -1545,9 +1757,60 @@ export class MarginAccountService {
         );
         
         if (!borrowResult.success) {
+          const borrowError = borrowResult.error || '';
+          const isRiskRejected =
+            borrowError.includes('Borrow not allowed by Risk Engine') ||
+            borrowError.includes('Borrowing is not allowed for this user');
+
+          // Fallback: if risk engine rejects the target borrow amount, retry with reduced
+          // borrow sizes to find the highest amount that can pass on-chain checks.
+          if (isRiskRejected) {
+            const originalBorrowWad = BigInt(borrowAmountWad);
+            const reductionPercents = [90, 75, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+            for (const pct of reductionPercents) {
+              const candidateBorrowWad = (originalBorrowWad * BigInt(pct)) / BigInt(100);
+              if (candidateBorrowWad <= BigInt(0)) continue;
+
+              console.log(`🔁 Retrying borrow at ${pct}% of requested amount...`, {
+                requested: borrowAmountWad,
+                candidate: candidateBorrowWad.toString(),
+              });
+
+              const retry = await this.borrowTokens(
+                marginAccountAddress,
+                contractTokenSymbol,
+                candidateBorrowWad.toString()
+              );
+
+              if (retry.success) {
+                const borrowedHuman = Number(candidateBorrowWad) / 1e18;
+                return {
+                  success: true,
+                  hash: `Deposit: ${depositResult.hash}, Borrow: ${retry.hash} (auto-adjusted borrow=${borrowedHuman.toFixed(6)} ${contractTokenSymbol})`,
+                };
+              }
+            }
+          }
+
+          const collateralAfterDeposit = await this.getMarginCollateralBalanceWad(
+            marginAccountAddress,
+            contractTokenSymbol
+          );
+          const debtSnapshot = await this.getCurrentBorrowedBalances(marginAccountAddress);
+          const debtSummary = debtSnapshot.success && debtSnapshot.data
+            ? Object.entries(debtSnapshot.data)
+                .filter(([k, v]) => ['XLM', 'BLUSDC', 'AQUSDC', 'SOUSDC', 'USDC', 'EURC'].includes(k) && parseFloat(v.amount) > 0)
+                .map(([k, v]) => `${k}=${v.amount}`)
+                .join(', ')
+            : 'unavailable';
           return {
             success: false,
-            error: `Borrow failed: ${borrowResult.error}. Deposit was successful with hash: ${depositResult.hash}`
+            error:
+              `Borrow failed: ${borrowResult.error}. ` +
+              `Deposit was successful with hash: ${depositResult.hash}. ` +
+              `Observed on-chain collateral(${contractTokenSymbol})=${(Number(collateralAfterDeposit) / 1e18).toFixed(6)}. ` +
+              `Current on-chain debt snapshot: ${debtSummary}.`
           };
         }
         

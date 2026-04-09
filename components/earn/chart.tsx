@@ -300,7 +300,7 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
                   type="ghost"
                   tabs={[
                     { id: "usd", label: "USD" },
-                    { id: "usdc", label: "USDC" },
+                    { id: "usdc", label: "BLUSDC" },
                   ]}
                   activeTab={selectedCurrency}
                   onTabChange={(tabId: string) => setSelectedCurrency(tabId)}
@@ -442,7 +442,7 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
                           type="ghost"
                           tabs={[
                             { id: "usd", label: "USD" },
-                            { id: "usdc", label: "USDC" },
+                            { id: "usdc", label: "BLUSDC" },
                           ]}
                           activeTab={selectedCurrency}
                           onTabChange={(tabId: string) =>

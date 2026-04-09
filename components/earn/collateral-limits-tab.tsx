@@ -22,7 +22,6 @@ export const CollateralLimitsTab = () => {
     const caps: Record<string, { supplyCap: number; borrowCap: number }> = {
       XLM: { supplyCap: 10000000, borrowCap: 5000000 },
       USDC: { supplyCap: 1000000, borrowCap: 500000 },
-      EURC: { supplyCap: 1000000, borrowCap: 500000 },
     };
 
     return {

@@ -12,10 +12,22 @@ import { useWithdrawLiquidity, usePoolData, useUserPositions } from "@/hooks/use
 import { AssetType } from "@/lib/stellar-utils";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 
+const toInternalAsset = (value: string) => {
+  if (value === 'AqUSDC' || value === 'AquiresUSDC' || value === 'AQUARIUS_USDC') return 'AQUARIUS_USDC';
+  if (value === 'SoUSDC' || value === 'SoroswapUSDC' || value === 'SOROSWAP_USDC') return 'SOROSWAP_USDC';
+  return value;
+};
+
+const toDisplayAsset = (value: string) => {
+  if (value === 'AQUARIUS_USDC' || value === 'AquiresUSDC') return 'AqUSDC';
+  if (value === 'SOROSWAP_USDC' || value === 'SoroswapUSDC') return 'SoUSDC';
+  return value;
+};
+
 export const WithdrawLiquidity = () => {
   const { isDark } = useTheme();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
-  const [selectedOption, setSelectedOption] = useState<string>(selectedAsset);
+  const [selectedOption, setSelectedOption] = useState<string>(toDisplayAsset(selectedAsset));
   const [value, setValue] = useState<string>("");
   const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
   
@@ -27,8 +39,10 @@ export const WithdrawLiquidity = () => {
 
   // Sync with selected pool store
   useEffect(() => {
-    setSelectedOption(selectedAsset);
+    setSelectedOption(toDisplayAsset(selectedAsset));
   }, [selectedAsset]);
+
+  const normalizedAsset = toInternalAsset(selectedOption);
 
   // Refresh positions when user connects or asset changes
   useEffect(() => {
@@ -39,9 +53,9 @@ export const WithdrawLiquidity = () => {
   }, [userAddress, selectedOption, refreshPositions]);
 
   // Get pool stats and user position for selected asset
-  const selectedPool = pools[selectedOption as keyof typeof pools];
-  const selectedPoolConfig = STELLAR_POOLS[selectedOption as keyof typeof STELLAR_POOLS];
-  const userPosition = positions[selectedOption as keyof typeof positions];
+  const selectedPool = pools[normalizedAsset as keyof typeof pools];
+  const selectedPoolConfig = STELLAR_POOLS[normalizedAsset as keyof typeof STELLAR_POOLS];
+  const userPosition = positions[normalizedAsset as keyof typeof positions];
 
   // Log for debugging
   useEffect(() => {
@@ -89,7 +103,7 @@ export const WithdrawLiquidity = () => {
   const handleWithdraw = async () => {
     const numAmount = parseFloat(value);
     if (numAmount > 0 && userAddress) {
-      const result = await withdraw(numAmount, selectedOption as AssetType);
+      const result = await withdraw(numAmount, normalizedAsset as AssetType);
       if (result.success) {
         setValue("");
         setSelectedPercentage(null);
@@ -131,7 +145,7 @@ export const WithdrawLiquidity = () => {
               setSelectedOption={(option) => {
                 const optionString = typeof option === 'string' ? option : option.toString();
                 setSelectedOption(optionString);
-                useSelectedPoolStore.getState().set({ selectedAsset: optionString as AssetType });
+                useSelectedPoolStore.getState().set({ selectedAsset: toInternalAsset(optionString) as AssetType });
               }}
               selectedOption={selectedOption}
               classname="w-fit gap-[4px] items-center"

@@ -8,13 +8,14 @@ import { useFarmStore } from "@/store/farm-store";
 import { Button } from "../ui/button";
 import { BlendService, BLEND_POOL_ASSETS } from "@/lib/blend-utils";
 import { AquariusService } from "@/lib/aquarius-utils";
+import { SoroswapService } from "@/lib/soroswap-utils";
 import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
 import { PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { useBlendStore } from "@/store/blend-store";
 
-const SUPPORTED_TOKENS = ["XLM", "USDC", "EURC"] as const;
+const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
 
 const PERCENTAGE_OPTIONS = [25, 50, 75, 100] as const;
@@ -30,10 +31,15 @@ export const RemoveLiquidity = () => {
     ((selectedRow?.cell?.[1] as any)?.title?.toLowerCase?.() === "aquarius" ||
       (selectedRow?.cell?.[0] as any)?.tags?.includes?.("Aquarius"));
 
-  const aquariusTokens =
+  const isSoroswapPool =
+    tabType === "multi" &&
+    ((selectedRow?.cell?.[1] as any)?.title?.toLowerCase?.() === "soroswap" ||
+      (selectedRow?.cell?.[0] as any)?.tags?.includes?.("Soroswap"));
+
+  const poolTokens =
     (selectedRow?.cell?.[0] as any)?.titles?.map((t: string) => t.toUpperCase()) ?? ["XLM", "USDC"];
-  const tokenA = aquariusTokens[0] ?? "XLM";
-  const tokenB = aquariusTokens[1] ?? "USDC";
+  const tokenA = poolTokens[0] ?? "XLM";
+  const tokenB = poolTokens[1] ?? "USDC";
 
   // Determine initial token from store (for single asset / lending rows)
   const getInitialToken = useCallback((): TokenSymbol => {
@@ -63,12 +69,12 @@ export const RemoveLiquidity = () => {
 
   // Check if Blend pool is configured in Registry (once on mount)
   useEffect(() => {
-    if (!isAquariusPool) {
+    if (!isAquariusPool && !isSoroswapPool) {
       BlendService.isBlendPoolConfigured()
         .then(setBlendConfigured)
         .catch(() => setBlendConfigured(false));
     }
-  }, [isAquariusPool]);
+  }, [isAquariusPool, isSoroswapPool]);
 
   // Load margin account
   useEffect(() => {
@@ -94,21 +100,24 @@ export const RemoveLiquidity = () => {
   }, [marginAccountAddress, selectedToken]);
 
   useEffect(() => {
-    if (!isAquariusPool || !marginAccountAddress) {
+    if ((!isAquariusPool && !isSoroswapPool) || !marginAccountAddress) {
       setLpBalance("0");
       return;
     }
     setLoadingLpBalance(true);
-    // getUserLpBalance tries tracking token first, then falls back to pool's get_user_shares()
-    AquariusService.getUserLpBalance(
-      marginAccountAddress,
-      CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL,
-      tokenA,
-      tokenB
-    )
+    const fetchLpBalance = isSoroswapPool
+      ? SoroswapService.getLpBalance(marginAccountAddress)
+      : AquariusService.getUserLpBalance(
+          marginAccountAddress,
+          CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL,
+          tokenA,
+          tokenB
+        );
+
+    fetchLpBalance
       .then(setLpBalance)
       .finally(() => setLoadingLpBalance(false));
-  }, [isAquariusPool, marginAccountAddress, tokenA, tokenB]);
+  }, [isAquariusPool, isSoroswapPool, marginAccountAddress, tokenA, tokenB]);
 
   const handleTokenSelect = (token: TokenSymbol) => {
     setSelectedToken(token);
@@ -183,7 +192,8 @@ export const RemoveLiquidity = () => {
     return `Withdraw ${selectedToken}`;
   };
 
-  if (isAquariusPool) {
+  if (isAquariusPool || isSoroswapPool) {
+    const dexName = isSoroswapPool ? "Soroswap" : "Aquarius";
     const lpAmount = parseFloat(value);
     const lpAvailable = parseFloat(lpBalance);
     const isInputValid = lpAmount > 0 && !isNaN(lpAmount);
@@ -195,7 +205,7 @@ export const RemoveLiquidity = () => {
       isOverBalance ||
       txStatus === "loading";
 
-    const handleAquariusWithdraw = async () => {
+    const handleMultiDexWithdraw = async () => {
       if (!userAddress || !marginAccountAddress) return;
       const amount = parseFloat(value);
       if (isNaN(amount) || amount <= 0) return;
@@ -204,24 +214,34 @@ export const RemoveLiquidity = () => {
       setTxError("");
       setTxHash("");
 
-      const result = await AquariusService.removeLiquidity(
-        userAddress,
-        marginAccountAddress,
-        tokenA,
-        tokenB,
-        amount
-      );
+      const result = isSoroswapPool
+        ? await SoroswapService.removeLiquidity(
+            userAddress,
+            marginAccountAddress,
+            amount
+          )
+        : await AquariusService.removeLiquidity(
+            userAddress,
+            marginAccountAddress,
+            tokenA,
+            tokenB,
+            amount
+          );
 
       if (result.success) {
         setTxStatus("success");
         setTxHash(result.hash ?? "");
         setValue("");
         setSelectedPercentage(0);
-        // Refresh LP balance via pool contract fallback
-        AquariusService.getUserLpBalance(
-          marginAccountAddress,
-          CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL
-        ).then(setLpBalance);
+        // Refresh LP balance from on-chain after transaction
+        const refreshLpBalance = isSoroswapPool
+          ? SoroswapService.getLpBalance(marginAccountAddress)
+          : AquariusService.getUserLpBalance(
+              marginAccountAddress,
+              CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL
+            );
+        refreshLpBalance.then(setLpBalance);
+        triggerBlendRefresh();
       } else {
         setTxStatus("error");
         setTxError(result.error ?? "Remove liquidity failed");
@@ -234,7 +254,7 @@ export const RemoveLiquidity = () => {
       if (txStatus === "loading") return "Removing Liquidity...";
       if (!isInputValid) return "Enter Amount";
       if (isOverBalance) return "Insufficient LP Balance";
-      return `Remove ${tokenA}/${tokenB}`;
+      return `Remove ${tokenA}/${tokenB} (${dexName})`;
     };
 
     return (
@@ -245,7 +265,7 @@ export const RemoveLiquidity = () => {
           <span className={`text-[12px] font-medium ${
             isDark ? "text-[#919191]" : "text-[#76737B]"
           }`}>
-            Your Aquarius LP Balance
+            Your {dexName} LP Balance
           </span>
           <div className="flex items-center gap-[6px]">
             <Image src={iconPaths[tokenA] ?? "/icons/stellar.svg"} alt={tokenA} width={16} height={16} />
@@ -324,7 +344,7 @@ export const RemoveLiquidity = () => {
           size="large"
           type="solid"
           disabled={isSubmitDisabled}
-          onClick={handleAquariusWithdraw}
+          onClick={handleMultiDexWithdraw}
         />
 
         {txStatus === "error" && txError && (

@@ -119,7 +119,6 @@ export const ActivityTab = () => {
     // Show placeholder data - in production this would come from an indexer
     const totalXLM = parseFloat(pools.XLM?.totalSupply || '0');
     const totalUSDC = parseFloat(pools.USDC?.totalSupply || '0');
-    const totalEURC = parseFloat(pools.EURC?.totalSupply || '0');
 
     return {
       rows: [
@@ -144,30 +143,13 @@ export const ActivityTab = () => {
           cell: [
             {
               icon: "/icons/user.png",
-              title: "USDC Pool",
+              title: "BLUSDC Pool",
               clickable: "address",
             },
             {
               icon: "/icons/usdc.svg",
-              title: `${totalUSDC.toLocaleString()} USDC`,
+              title: `${totalUSDC.toLocaleString()} BLUSDC`,
               description: `$${totalUSDC.toLocaleString()}`,
-            },
-            {
-              percentage: 100,
-            },
-          ],
-        },
-        {
-          cell: [
-            {
-              icon: "/icons/user.png",
-              title: "EURC Pool",
-              clickable: "address",
-            },
-            {
-              icon: "/icons/eurc.svg",
-              title: `${totalEURC.toLocaleString()} EURC`,
-              description: `$${totalEURC.toLocaleString()}`,
             },
             {
               percentage: 100,

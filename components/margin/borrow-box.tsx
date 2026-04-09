@@ -28,10 +28,18 @@ export const BorrowBox = ({
   onBorrowItemsChange,
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
-  const getTokenBalanceKey = (symbol: string) =>
-    symbol === "AquiresUSDC" ? "AQUARIUS_USDC" : symbol;
-  const getBorrowedBalanceKey = (symbol: string) =>
-    symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC" ? "USDC" : symbol;
+  const getTokenBalanceKey = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC") return "BLEND_USDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC") return "AQUARIUS_USDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC") return "SOROSWAP_USDC";
+    return symbol;
+  };
+  const getBorrowedBalanceKey = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC") return "AQUSDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC") return "SOUSDC";
+    return symbol;
+  };
   const config = MODE_CONFIG[mode];
 
   // Store access

@@ -26,16 +26,16 @@ export interface EarnPoolState {
   pools: {
     XLM: PoolStats;
     USDC: PoolStats;
-    EURC: PoolStats;
     AQUARIUS_USDC: PoolStats;
+    SOROSWAP_USDC: PoolStats;
   };
 
   // User Positions
   userPositions: {
     XLM: UserPoolPosition;
     USDC: UserPoolPosition;
-    EURC: UserPoolPosition;
     AQUARIUS_USDC: UserPoolPosition;
+    SOROSWAP_USDC: UserPoolPosition;
   };
   
   // Transaction History
@@ -84,14 +84,14 @@ const initialState: EarnPoolState = {
   pools: {
     XLM: { ...defaultPoolStats },
     USDC: { ...defaultPoolStats },
-    EURC: { ...defaultPoolStats },
     AQUARIUS_USDC: { ...defaultPoolStats },
+    SOROSWAP_USDC: { ...defaultPoolStats },
   },
   userPositions: {
     XLM: { ...defaultUserPosition },
     USDC: { ...defaultUserPosition },
-    EURC: { ...defaultUserPosition },
     AQUARIUS_USDC: { ...defaultUserPosition },
+    SOROSWAP_USDC: { ...defaultUserPosition },
   },
   recentTransactions: [],
   isLoadingPools: false,
@@ -135,20 +135,18 @@ export const calculateUserTotalDeposited = (): string => {
   const { userPositions } = useEarnPoolStore.getState();
   const xlmValue = parseFloat(userPositions.XLM.deposited) || 0;
   const usdcValue = parseFloat(userPositions.USDC.deposited) || 0;
-  const eurcValue = parseFloat(userPositions.EURC.deposited) || 0;
   const aquiresUsdcValue = parseFloat(userPositions.AQUARIUS_USDC.deposited) || 0;
+  const soroswapUsdcValue = parseFloat(userPositions.SOROSWAP_USDC.deposited) || 0;
 
-  // Note: This is a simplified calculation
-  // In production, you'd need price feeds to convert to USD
-  return (xlmValue + usdcValue + eurcValue + aquiresUsdcValue).toFixed(2);
+  return (xlmValue + usdcValue + aquiresUsdcValue + soroswapUsdcValue).toFixed(2);
 };
 
 export const calculateUserTotalBorrowed = (): string => {
   const { userPositions } = useEarnPoolStore.getState();
   const xlmValue = parseFloat(userPositions.XLM.borrowed) || 0;
   const usdcValue = parseFloat(userPositions.USDC.borrowed) || 0;
-  const eurcValue = parseFloat(userPositions.EURC.borrowed) || 0;
   const aquiresUsdcValue = parseFloat(userPositions.AQUARIUS_USDC.borrowed) || 0;
+  const soroswapUsdcValue = parseFloat(userPositions.SOROSWAP_USDC.borrowed) || 0;
 
-  return (xlmValue + usdcValue + eurcValue + aquiresUsdcValue).toFixed(2);
+  return (xlmValue + usdcValue + aquiresUsdcValue + soroswapUsdcValue).toFixed(2);
 };

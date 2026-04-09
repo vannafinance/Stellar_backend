@@ -30,7 +30,7 @@ export const YourPositions = () => {
       const pool = pools[asset as keyof typeof pools];
       const exchangeRate = parseFloat(pool?.exchangeRate || '1');
       const vTokenBalance = parseFloat(position?.vTokenBalance || '0');
-      // Estimate XLM at $0.10, USDC/EURC at $1
+      // Estimate XLM at $0.10, USD-based assets at $1
       const price = asset === 'XLM' ? 0.1 : 1;
       total += vTokenBalance * exchangeRate * price;
     });
@@ -201,7 +201,7 @@ export const YourPositions = () => {
             tableBodyBackground={isDark ? "bg-[#1a1a1a]" : "bg-white"} 
             filters={{
               customizeDropdown: true,
-              filters: ["All", "XLM", "USDC", "EURC"]
+              filters: ["All", "XLM", "USDC", "AqUSDC", "SoUSDC"]
             }} 
           /> 
         )}

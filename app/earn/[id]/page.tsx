@@ -20,7 +20,7 @@ import { AssetType } from "@/lib/stellar-utils";
 import { usePoolData } from "@/hooks/use-earn";
 
 // Approximate USD prices for testnet display (no live oracle)
-const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, EURC: 1.0 };
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0 };
 
 const fmt = (n: number, decimals = 4) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M`
@@ -35,6 +35,18 @@ const tabs = [
   { id: "analytics", label: "Analytics" },
   { id: "margin-managers", label: "Margin Managers" },
 ];
+
+const toInternalAsset = (value: string): AssetType => {
+  if (value === "AqUSDC" || value === "AquiresUSDC" || value === "AQUARIUS_USDC") return "AQUARIUS_USDC";
+  if (value === "SoUSDC" || value === "SoroswapUSDC" || value === "SOROSWAP_USDC") return "SOROSWAP_USDC";
+  return value.toUpperCase() as AssetType;
+};
+
+const toDisplayAsset = (value: string) => {
+  if (value === "AQUARIUS_USDC" || value === "AquiresUSDC") return "AqUSDC";
+  if (value === "SOROSWAP_USDC" || value === "SoroswapUSDC") return "SoUSDC";
+  return value;
+};
 
 export default function EarnPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -53,12 +65,12 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
 
   // Set selected pool when page loads or id changes
   useEffect(() => {
-    const assetType = id.toUpperCase();
-    if (assetType === 'XLM' || assetType === 'USDC' || assetType === 'EURC') {
+    const assetType = toInternalAsset(id);
+    if (assetType === 'XLM' || assetType === 'USDC' || assetType === 'AQUARIUS_USDC' || assetType === 'SOROSWAP_USDC') {
       setSelectedPool(assetType as AssetType, {
-        id: id,
+        id: toDisplayAsset(id),
         chain: assetType,
-        title: assetType,
+        title: toDisplayAsset(id),
         tag: "Active"
       });
     }
@@ -69,21 +81,22 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
     if (selectedVault && selectedVault.id === id) {
       return selectedVault;
     }
+    const internalAsset = toInternalAsset(id);
+    const displayAsset = toDisplayAsset(id);
     // Fallback data if store is empty (e.g., direct URL access)
-    // Default to Stellar XLM for the blockchain
     return {
-      id: id,
-      chain: id.toUpperCase() === 'USDC' ? 'USDC' : id.toUpperCase() === 'EURC' ? 'EURC' : 'XLM',
-      title: id,
+      id: displayAsset,
+      chain: internalAsset,
+      title: displayAsset,
       tag: "Active",
     };
   }, [selectedVault, id]);
 
   // Get icon path for the asset
   const iconPath = useMemo(() => {
-    // Try to get icon from iconPaths, fallback to xlm-icon for Stellar
-    const assetName = vaultData.title.toUpperCase();
-    return iconPaths[assetName] || "/icons/xlm-icon.png";
+    const exact = iconPaths[vaultData.title];
+    const uppercase = iconPaths[vaultData.title.toUpperCase()];
+    return exact || uppercase || "/icons/stellar.svg";
   }, [vaultData.title]);
 
   // Live pool data from on-chain contracts (auto-refreshes every 30s)
@@ -91,7 +104,8 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
 
   // Build header stats entirely from live contract data — no string parsing
   const accountStatsItems = useMemo(() => {
-    const asset = vaultData.title.toUpperCase();
+    const asset = toInternalAsset(vaultData.title);
+    const displayAsset = toDisplayAsset(vaultData.title);
     const pool = pools[asset as keyof typeof pools];
     const price = TOKEN_PRICES[asset] ?? 1;
 
@@ -106,13 +120,13 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
         name: "Total Supply",
         // USD value with approximate price + raw token amount beneath
         amount: `$${fmt(totalSupply * price, 2)}`,
-        amountInToken: `${fmt(totalSupply)} ${asset}`,
+        amountInToken: `${fmt(totalSupply)} ${displayAsset}`,
       },
       {
         id: "2",
         name: "Available Liquidity",
         amount: `$${fmt(availableLiquidity * price, 2)}`,
-        amountInToken: `${fmt(availableLiquidity)} ${asset}`,
+        amountInToken: `${fmt(availableLiquidity)} ${displayAsset}`,
       },
       {
         id: "3",

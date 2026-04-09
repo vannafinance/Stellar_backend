@@ -99,7 +99,7 @@ export const tableBody = {
           tag: "36.05%",
         },
         {
-          onlyIcons: ["XLM", "USDC", "EURC"],
+          onlyIcons: ["XLM", "USDC"],
           tag: "Collateral",
           clickable: "toggle",
         },
@@ -108,8 +108,8 @@ export const tableBody = {
     {
       cell: [
         {
-          chain: "USDC",
-          title: "USDC",
+          chain: "BLUSDC",
+          title: "BLUSDC",
           tag: "Active",
         },
         {
@@ -133,7 +133,7 @@ export const tableBody = {
           tag: "35.05%",
         },
         {
-          onlyIcons: ["USDC", "XLM", "EURC"],
+          onlyIcons: ["BLUSDC", "XLM"],
           tag: "Collateral",
           clickable: "toggle",
         },
@@ -142,55 +142,21 @@ export const tableBody = {
     {
       cell: [
         {
-          chain: "EURC",
-          title: "EURC",
+          chain: "AqUSDC",
+          title: "AqUSDC",
           tag: "Active",
         },
         {
-          title: "$567.8K",
-          tag: "523.2K EURC",
-        },
-        {
-          title: "6.25%",
-          tag: "6.25%",
-        },
-        {
-          title: "$198.5K",
-          tag: "183.1K EURC",
-        },
-        {
-          title: "5.15%",
-          tag: "5.15%",
-        },
-        {
-          title: "34.95%",
-          tag: "34.95%",
-        },
-        {
-          onlyIcons: ["EURC", "USDC", "XLM"],
-          tag: "Collateral",
-          clickable: "toggle",
-        },
-      ],
-    },
-    {
-      cell: [
-        {
-          chain: "AquiresUSDC",
-          title: "AquiresUSDC",
-          tag: "Active",
-        },
-        {
-          title: "0 AquiresUSDC",
-          tag: "0.0000 AquiresUSDC",
+          title: "0 AqUSDC",
+          tag: "0.0000 AqUSDC",
         },
         {
           title: "2.50%",
           tag: "2.50%",
         },
         {
-          title: "0 AquiresUSDC",
-          tag: "0.0000 AquiresUSDC",
+          title: "0 AqUSDC",
+          tag: "0.0000 AqUSDC",
         },
         {
           title: "4.00%",
@@ -201,7 +167,7 @@ export const tableBody = {
           tag: "0.00%",
         },
         {
-          onlyIcons: ["USDC", "XLM", "EURC"],
+          onlyIcons: ["BLUSDC", "XLM"],
           tag: "Collateral",
           clickable: "toggle",
         },
@@ -218,43 +184,43 @@ export const STELLAR_POOLS = {
     symbol: 'XLM',
     icon: '/icons/usdc-icon.svg', // Placeholder - replace with proper XLM icon
     decimals: 7,
-    lendingProtocol: 'CDZX7NBK7FVYM5KTHSMKDHE44SKGOVXYXWCFHXHJ47RPBZO3XLSFZPHV',
-    vToken: 'CDEQJMUKX7XGZQ5C7DX7WOGZHXCIC7ATRAUICYPYJGYXSVZPGUYLVXCI',
+    lendingProtocol: 'CAOPI6NYPXEVMDRTUWAGMWNSIXMBCBDSJBJARLIUJB6LNRPQCCJUN3VO',
+    vToken: 'CC7XU2DPNVYB5FFNX7XR4LEEEZFOSLTOBSCY6AXXIYUONYKTFMLYZ4ZT',
     nativeContract: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
   },
   USDC: {
     id: 'USDC',
     name: 'USD Coin',
-    symbol: 'USDC',
+    symbol: 'BLUSDC',
     icon: '/icons/usdc-icon.svg',
     decimals: 7,
-    lendingProtocol: 'CAYBLJPQA22UFRERDDX2U62ZR52UDO7YRUSQUO7ZANERXA4UKARBQCFQ',
-    vToken: 'CACVSNZ322SDFHWIU6DO3OKN5JYRL6Q7A6OHT2TVAE4ASWDU7I34GQSH',
-    nativeContract: '', // Add USDC token contract when deployed
-  },
-  EURC: {
-    id: 'EURC',
-    name: 'Euro Coin',
-    symbol: 'EURC',
-    icon: '/icons/usdc-icon.svg', // Placeholder - replace with proper EURC icon
-    decimals: 7,
-    lendingProtocol: 'CCJM2PJR2PFN25VK7RNLDDBUC7U7OP6NO3BX6I7LRVKYOCAOJRUM3TTW',
-    vToken: 'CCACTGHDA5KBAY3YVJJ2SJHIYTOQ54PJFUEEDA5FUO7XLBZRCIJ2RIT6',
-    nativeContract: '', // Add EURC token contract when deployed
+    lendingProtocol: 'CBMZVGZCQWI35OYTLH7PLHJXFE7GHXD5CTNT2CYWBD4URVKTWQQRVN3Q',
+    vToken: 'CCN6O2Y2KKXZCFDEI7XI2W3K4SVI2634YEPRTJVKAYS22QH3QFQNS5FO',
+    nativeContract: 'CAQCFVLOBK5GIULPNZRGATJJMIZL5BSP7X5YJVMGCPTUEPFM4AVSRCJU',
   },
   AQUARIUS_USDC: {
     id: 'AQUARIUS_USDC',
     name: 'Aquarius USD Coin',
-    symbol: 'AquiresUSDC',
+    symbol: 'AqUSDC',
     icon: '/icons/usdc-icon.svg',
     decimals: 7,
     issuer: 'GAHPYWLK6YRN7CVYZOO4H3VDRZ7PVF5UJGLZCSPAEIKJE2XSWF5LAGER',
     nativeContract: 'CAZRY5GSFBFXD7H6GAFBA5YGYQTDXU4QKWKMYFWBAZFUCURN3WKX6LF5',
-    lendingProtocol: 'CCPOBSGDA5B32GNQURBIGQ6GQFO3SU6PLGQXMMT4QV6C6XGKK5V2MCDZ',
-    vToken: 'CD7QIYFD5R22RDL4MI5PGU35M3FNWXPDIEKANJOHIC27OVGPMTECMFU4',
+    lendingProtocol: 'CCIC7KKEZFONJSDRIML2MEWDC67DVHRGVTUYP6UPR4UQURPCB44O6N5D',
+    vToken: 'CCY44CN4V725LP2PQBLTM27Q3UEGNM76PKVG7IZF3L74DX4FLSDUJA7S',
+  },
+  SOROSWAP_USDC: {
+    id: 'SOROSWAP_USDC',
+    name: 'Soroswap USD Coin',
+    symbol: 'SoUSDC',
+    icon: '/icons/usdc-icon.svg',
+    decimals: 7,
+    nativeContract: 'CB3TLW74NBIOT3BUWOZ3TUM6RFDF6A4GVIRUQRQZABG5KPOUL4JJOV2F',
+    lendingProtocol: 'CA55DFIQG6O2VO4PW23LSG7VQH45HQ3KG75N4VVIJCLQKULT4Z7BMS32',
+    vToken: 'CCMI4Y6LQ7SA3WKBEK463IG47EBBJ4UCCOQNPC7RTYN53ARJ63J55DZD',
   },
 } as const;
 
 // Supported assets for dropdown
-export const STELLAR_ASSETS = ['XLM', 'USDC', 'EURC', 'AQUARIUS_USDC'] as const;
+export const STELLAR_ASSETS = ['XLM', 'USDC', 'AQUARIUS_USDC', 'SOROSWAP_USDC'] as const;
 export type StellarAsset = typeof STELLAR_ASSETS[number];

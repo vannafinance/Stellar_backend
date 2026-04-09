@@ -15,7 +15,7 @@ export const SpotSwapView = ({
   onSwitchToOrderbook,
 }: SpotSwapViewProps) => {
   const { isDark } = useTheme();
-  const [selectedDex, setSelectedDex] = useState(MOCK_DEXES[0]?.id || "uniswap");
+  const [selectedDex, setSelectedDex] = useState("soroswap");
 
   return (
     <div

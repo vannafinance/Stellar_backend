@@ -33,8 +33,12 @@ interface Collateral {
 
 const CollateralComponent = (props: Collateral) => {
   const { isDark } = useTheme();
-  const getTokenBalanceKey = (symbol: string) =>
-    symbol === "AquiresUSDC" ? "AQUARIUS_USDC" : symbol;
+  const getTokenBalanceKey = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC") return "BLEND_USDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC") return "AQUARIUS_USDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC") return "SOROSWAP_USDC";
+    return symbol;
+  };
   
   // Get wallet balances from user store
   const tokenBalances = useUserStore((state) => state.tokenBalances);

@@ -17,11 +17,10 @@ export default function PortfolioPage() {
   const totalDepositedValue = useMemo(() => {
     const xlmValue = parseFloat(depositedBalances.XLM || '0');
     const usdcValue = parseFloat(depositedBalances.USDC || '0');
-    const eurcValue = parseFloat(depositedBalances.EURC || '0');
     
     // For demo purposes, assume 1:1 USD value for simplicity
     // In a real app, you'd fetch current prices from an oracle
-    return xlmValue + usdcValue + eurcValue;
+    return xlmValue + usdcValue;
   }, [depositedBalances]);
 
   // Portfolio account stats items with real data
@@ -66,11 +65,6 @@ export default function PortfolioPage() {
         id: "4",
         name: "USDC Deposited", 
         amount: `${depositedBalances.USDC} USDC`,
-      },
-      {
-        id: "5",
-        name: "EURC Deposited",
-        amount: `${depositedBalances.EURC} EURC`,
       },
     ];
   }, [address, balance, depositedBalances, totalDepositedValue]);

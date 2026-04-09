@@ -8,6 +8,7 @@ import { useFarmStore } from "@/store/farm-store";
 import { Button } from "../ui/button";
 import { BlendService, BLEND_POOL_ASSETS } from "@/lib/blend-utils";
 import { AquariusService, AquariusPoolStats } from "@/lib/aquarius-utils";
+import { SoroswapService, SoroswapPoolStats } from "@/lib/soroswap-utils";
 import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
@@ -15,7 +16,7 @@ import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/marg
 import { useBlendPoolStats } from "@/hooks/use-farm";
 import { useBlendStore } from "@/store/blend-store";
 
-const SUPPORTED_TOKENS = ["XLM", "USDC", "EURC"] as const;
+const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
 
 export const AddLiquidity = () => {
@@ -28,10 +29,15 @@ export const AddLiquidity = () => {
     ((selectedRow?.cell?.[1] as any)?.title?.toLowerCase?.() === "aquarius" ||
       (selectedRow?.cell?.[0] as any)?.tags?.includes?.("Aquarius"));
 
-  const aquariusTokens =
+  const isSoroswapPool =
+    tabType === "multi" &&
+    ((selectedRow?.cell?.[1] as any)?.title?.toLowerCase?.() === "soroswap" ||
+      (selectedRow?.cell?.[0] as any)?.tags?.includes?.("Soroswap"));
+
+  const poolTokens =
     (selectedRow?.cell?.[0] as any)?.titles?.map((t: string) => t.toUpperCase()) ?? ["XLM", "USDC"];
-  const tokenA = aquariusTokens[0] ?? "XLM";
-  const tokenB = aquariusTokens[1] ?? "USDC";
+  const tokenA = poolTokens[0] ?? "XLM";
+  const tokenB = poolTokens[1] ?? "USDC";
 
   // Determine initial token from store (for single asset / lending rows)
   const getInitialToken = useCallback((): TokenSymbol => {
@@ -62,6 +68,7 @@ export const AddLiquidity = () => {
   const [blendConfigured, setBlendConfigured] = useState<boolean | null>(null);
   const [aquariusRegistryMissing, setAquariusRegistryMissing] = useState(false);
   const [aquariusPoolStats, setAquariusPoolStats] = useState<AquariusPoolStats | null>(null);
+  const [soroswapPoolStats, setSoroswapPoolStats] = useState<SoroswapPoolStats | null>(null);
   // Current Blend supply balance for the selected token
   const [blendBalance, setBlendBalance] = useState<string>("0");
   const [loadingBlendBalance, setLoadingBlendBalance] = useState(false);
@@ -69,13 +76,47 @@ export const AddLiquidity = () => {
   const [marginUsdcBalance, setMarginUsdcBalance] = useState<string>("0");
   const [loadingMarginBalances, setLoadingMarginBalances] = useState(false);
 
+  const refreshDexMarginBalances = useCallback(
+    async (retryCount = 1, retryDelayMs = 1200) => {
+      if ((!isAquariusPool && !isSoroswapPool) || !marginAccountAddress) return;
+
+      setLoadingMarginBalances(true);
+      try {
+        for (let attempt = 0; attempt < retryCount; attempt++) {
+          const [xlm, usdc] = isSoroswapPool
+            ? await Promise.all([
+                SoroswapService.getMarginAccountTokenBalance(marginAccountAddress, "XLM"),
+                SoroswapService.getMarginAccountTokenBalance(marginAccountAddress, "USDC"),
+              ])
+            : await Promise.all([
+                AquariusService.getMarginAccountTokenBalance(marginAccountAddress, "XLM"),
+                AquariusService.getMarginAccountTokenBalance(marginAccountAddress, "USDC"),
+              ]);
+
+          setMarginXlmBalance(xlm);
+          setMarginUsdcBalance(usdc);
+
+          if (attempt < retryCount - 1) {
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          }
+        }
+      } finally {
+        setLoadingMarginBalances(false);
+      }
+    },
+    [isAquariusPool, isSoroswapPool, marginAccountAddress]
+  );
+
   // Check protocol configuration (once on mount)
   useEffect(() => {
-    if (!isAquariusPool) {
+    if (!isAquariusPool && !isSoroswapPool) {
       BlendService.isBlendPoolConfigured()
         .then(setBlendConfigured)
         .catch(() => setBlendConfigured(false));
-    } else {
+      return;
+    }
+
+    if (isAquariusPool) {
       // Always usable via hardcoded fallback — check Registry separately for info only
       AquariusService.isAquariusConfigured()
         .then((configured) => setAquariusRegistryMissing(!configured))
@@ -84,16 +125,37 @@ export const AddLiquidity = () => {
       AquariusService.getAquariusPoolStats(CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL)
         .then(setAquariusPoolStats)
         .catch(() => setAquariusPoolStats(null));
+      setSoroswapPoolStats(null);
+      return;
     }
-  }, [isAquariusPool]);
+
+    if (isSoroswapPool) {
+      setAquariusRegistryMissing(false);
+      SoroswapService.getPoolStats()
+        .then(setSoroswapPoolStats)
+        .catch(() => setSoroswapPoolStats(null));
+      setAquariusPoolStats(null);
+    }
+  }, [isAquariusPool, isSoroswapPool]);
 
   // Auto-calculate tokenB when user types tokenA (and vice versa)
   const handleAmountAChange = (val: string) => {
     setAmountA(val);
     const parsed = parseFloat(val);
-    if (!isNaN(parsed) && parsed > 0 && aquariusPoolStats) {
-      const rA = parseFloat(aquariusPoolStats.reserveA);
-      const rB = parseFloat(aquariusPoolStats.reserveB);
+    // For Aquarius get_reserves() token order is [USDC, XLM] (sorted by address),
+    // while this panel token order is [XLM, USDC]. Map reserves by symbol first.
+    const xlmReserve = isSoroswapPool
+      ? parseFloat(soroswapPoolStats?.reserveXLM ?? "0")
+      : parseFloat(aquariusPoolStats?.reserveB ?? "0");
+    const usdcReserve = isSoroswapPool
+      ? parseFloat(soroswapPoolStats?.reserveUSDC ?? "0")
+      : parseFloat(aquariusPoolStats?.reserveA ?? "0");
+    const reserveA = tokenA === "XLM" ? xlmReserve : usdcReserve;
+    const reserveB = tokenB === "USDC" ? usdcReserve : xlmReserve;
+
+    if (!isNaN(parsed) && parsed > 0 && reserveA > 0 && reserveB > 0) {
+      const rA = reserveA;
+      const rB = reserveB;
       if (rA > 0) setAmountB((parsed * rB / rA).toFixed(7));
     } else if (val === '') {
       setAmountB('');
@@ -103,9 +165,18 @@ export const AddLiquidity = () => {
   const handleAmountBChange = (val: string) => {
     setAmountB(val);
     const parsed = parseFloat(val);
-    if (!isNaN(parsed) && parsed > 0 && aquariusPoolStats) {
-      const rA = parseFloat(aquariusPoolStats.reserveA);
-      const rB = parseFloat(aquariusPoolStats.reserveB);
+    const xlmReserve = isSoroswapPool
+      ? parseFloat(soroswapPoolStats?.reserveXLM ?? "0")
+      : parseFloat(aquariusPoolStats?.reserveB ?? "0");
+    const usdcReserve = isSoroswapPool
+      ? parseFloat(soroswapPoolStats?.reserveUSDC ?? "0")
+      : parseFloat(aquariusPoolStats?.reserveA ?? "0");
+    const reserveA = tokenA === "XLM" ? xlmReserve : usdcReserve;
+    const reserveB = tokenB === "USDC" ? usdcReserve : xlmReserve;
+
+    if (!isNaN(parsed) && parsed > 0 && reserveA > 0 && reserveB > 0) {
+      const rA = reserveA;
+      const rB = reserveB;
       if (rB > 0) setAmountA((parsed * rA / rB).toFixed(7));
     } else if (val === '') {
       setAmountA('');
@@ -128,28 +199,15 @@ export const AddLiquidity = () => {
     refreshBorrowedBalances(marginAccountAddress);
   }, [marginAccountAddress, selectedToken]);
 
-  // Fetch actual margin account token balances for Aquarius pool display
+  // Fetch actual margin account token balances for multi-asset pool display
   useEffect(() => {
-    if (!isAquariusPool || !marginAccountAddress) {
+    if ((!isAquariusPool && !isSoroswapPool) || !marginAccountAddress) {
       setMarginXlmBalance("0");
       setMarginUsdcBalance("0");
       return;
     }
-    let cancelled = false;
-    setLoadingMarginBalances(true);
-    Promise.all([
-      AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'XLM'),
-      AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'USDC'),
-    ]).then(([xlm, usdc]) => {
-      if (!cancelled) {
-        setMarginXlmBalance(xlm);
-        setMarginUsdcBalance(usdc);
-      }
-    }).catch(() => {}).finally(() => {
-      if (!cancelled) setLoadingMarginBalances(false);
-    });
-    return () => { cancelled = true; };
-  }, [isAquariusPool, marginAccountAddress, txHash]);
+    refreshDexMarginBalances();
+  }, [isAquariusPool, isSoroswapPool, marginAccountAddress, txHash, refreshDexMarginBalances]);
 
   // Fetch current Blend supply balance for selected token
   useEffect(() => {
@@ -189,31 +247,45 @@ export const AddLiquidity = () => {
     setTxError("");
     setTxHash("");
 
-    const result = await AquariusService.addLiquidity(
-      userAddress,
-      marginAccountAddress,
-      tokenA,
-      tokenB,
-      amtA,
-      amtB
-    );
+    const result = isSoroswapPool
+      ? await SoroswapService.addLiquidity(
+          userAddress,
+          marginAccountAddress,
+          amtA,
+          amtB
+        )
+      : await AquariusService.addLiquidity(
+          userAddress,
+          marginAccountAddress,
+          tokenA,
+          tokenB,
+          amtA,
+          amtB
+        );
 
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
+      // Optimistic UI update to reflect balances instantly; canonical values are re-fetched below.
+      const nextXlm = Math.max(0, parseFloat(marginXlmBalance || "0") - amtA);
+      const nextUsdc = Math.max(0, parseFloat(marginUsdcBalance || "0") - amtB);
+      setMarginXlmBalance(nextXlm.toFixed(7));
+      setMarginUsdcBalance(nextUsdc.toFixed(7));
       setAmountA("");
       setAmountB("");
-      // Refresh actual margin account token balances after add liquidity
-      setTimeout(() => {
-        Promise.all([
-          AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'XLM'),
-          AquariusService.getMarginAccountTokenBalance(marginAccountAddress, 'USDC'),
-        ]).then(([xlm, usdc]) => {
-          setMarginXlmBalance(xlm);
-          setMarginUsdcBalance(usdc);
-        }).catch(() => {});
-        triggerBlendRefresh();
-      }, 3000);
+      // Refresh canonical balances and pool stats; retries absorb RPC indexing delay.
+      refreshDexMarginBalances(3, 1500);
+      if (isSoroswapPool) {
+        SoroswapService.getPoolStats().then(setSoroswapPoolStats).catch(() => {});
+      } else {
+        AquariusService.getAquariusPoolStats(CONTRACT_ADDRESSES.AQUARIUS_XLM_USDC_POOL)
+          .then(setAquariusPoolStats)
+          .catch(() => {});
+      }
+
+      // Keep store-level data in sync for other pages that derive margin info.
+      refreshBorrowedBalances(marginAccountAddress);
+      triggerBlendRefresh();
     } else {
       setTxStatus("error");
       const message = result.error ?? "Add liquidity failed";
@@ -286,7 +358,17 @@ export const AddLiquidity = () => {
     return `Deposit ${selectedToken}`;
   };
 
-  if (isAquariusPool) {
+  if (isAquariusPool || isSoroswapPool) {
+    const dexName = isSoroswapPool ? "Soroswap" : "Aquarius";
+    const xlmReserve = isSoroswapPool
+      ? parseFloat(soroswapPoolStats?.reserveXLM ?? "0")
+      : parseFloat(aquariusPoolStats?.reserveB ?? "0");
+    const usdcReserve = isSoroswapPool
+      ? parseFloat(soroswapPoolStats?.reserveUSDC ?? "0")
+      : parseFloat(aquariusPoolStats?.reserveA ?? "0");
+    const reserveA = tokenA === "XLM" ? xlmReserve : usdcReserve;
+    const reserveB = tokenB === "USDC" ? usdcReserve : xlmReserve;
+
     const availableA = tokenA === "XLM" ? marginXlmBalance : marginUsdcBalance;
     const availableB = tokenB === "USDC" ? marginUsdcBalance : marginXlmBalance;
     const isInputValid = parseFloat(amountA) > 0 && parseFloat(amountB) > 0;
@@ -306,7 +388,7 @@ export const AddLiquidity = () => {
       if (txStatus === "loading") return "Adding Liquidity...";
       if (!isInputValid) return "Enter Amounts";
       if (isOverA || isOverB) return "Insufficient Balance";
-      return `Add ${tokenA}/${tokenB}`;
+      return `Add ${tokenA}/${tokenB} (${dexName})`;
     };
 
     return (
@@ -314,11 +396,11 @@ export const AddLiquidity = () => {
         <div className={`w-full h-fit p-[20px] rounded-[16px] ${
           isDark ? "bg-[#111111]" : "bg-white"
         }`}>
-          {aquariusPoolStats && (
+          {(reserveA > 0 && reserveB > 0) && (
             <div className={`text-[11px] font-medium mb-[4px] ${isDark ? "text-[#919191]" : "text-[#76737B]"}`}>
-              1 {tokenB} ≈ {(parseFloat(aquariusPoolStats.reserveA) / parseFloat(aquariusPoolStats.reserveB)).toFixed(4)} {tokenA}
+              1 {tokenB} ≈ {(reserveA / reserveB).toFixed(4)} {tokenA}
               &nbsp;·&nbsp;
-              1 {tokenA} ≈ {(parseFloat(aquariusPoolStats.reserveB) / parseFloat(aquariusPoolStats.reserveA)).toFixed(4)} {tokenB}
+              1 {tokenA} ≈ {(reserveB / reserveA).toFixed(4)} {tokenB}
             </div>
           )}
           <div className="w-full flex flex-col gap-[12px]">
@@ -358,7 +440,7 @@ export const AddLiquidity = () => {
                   }`}>
                     {loadingMarginBalances
                       ? "Loading..."
-                      : `Balance: ${parseFloat(idx === 0 ? availableA : availableB).toFixed(4)}`}
+                      : `Balance: ${parseFloat(idx === 0 ? availableA : availableB).toFixed(7)}`}
                   </span>
                 </div>
               </div>
@@ -366,13 +448,21 @@ export const AddLiquidity = () => {
           </div>
         </div>
 
-        {aquariusRegistryMissing && (
+        {isAquariusPool && aquariusRegistryMissing && (
           <div className={`w-full h-fit p-[12px] rounded-[12px] text-[12px] ${
             isDark ? "bg-[#1A1A1A] text-[#FFA07A]" : "bg-[#FFF8F0] text-[#C05000]"
           }`}>
             Registry not configured — using default Aquarius addresses. LP position tracking requires
             the admin to run <code>set_aquarius_router_address</code> and{" "}
             <code>set_aquarius_pool_index</code> on the Registry.
+          </div>
+        )}
+
+        {isSoroswapPool && (
+          <div className={`w-full h-fit p-[12px] rounded-[12px] text-[12px] ${
+            isDark ? "bg-[#1A1A1A] text-[#8AB4FF]" : "bg-[#F1F7FF] text-[#1E4FA8]"
+          }`}>
+            LP positions are tracked on-chain from your margin account Soroswap LP token balance.
           </div>
         )}
 

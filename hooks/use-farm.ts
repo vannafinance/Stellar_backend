@@ -22,10 +22,9 @@ import { useBlendStore } from '@/store/blend-store';
 export interface FarmPoolStats {
   XLM: BlendReserveData | null;
   USDC: BlendReserveData | null;
-  EURC: BlendReserveData | null;
 }
 
-const EMPTY_STATS: FarmPoolStats = { XLM: null, USDC: null, EURC: null };
+const EMPTY_STATS: FarmPoolStats = { XLM: null, USDC: null };
 
 export const useBlendPoolStats = () => {
   const [stats, setStats] = useState<FarmPoolStats>(EMPTY_STATS);
@@ -40,7 +39,6 @@ export const useBlendPoolStats = () => {
       setStats({
         XLM: data.XLM,
         USDC: data.USDC,
-        EURC: data.EURC,
       });
     } catch (err: any) {
       setError(err?.message ?? 'Failed to fetch pool stats');
@@ -63,7 +61,6 @@ export const useBlendPoolStats = () => {
 export interface UserBlendPositions {
   XLM: BlendUserPosition;
   USDC: BlendUserPosition;
-  EURC: BlendUserPosition;
   totalValueXLM: string; // sum of underlying values (in XLM units for display)
 }
 
@@ -71,7 +68,6 @@ const EMPTY_POSITION: BlendUserPosition = { bTokenBalance: '0', underlyingValue:
 const EMPTY_USER: UserBlendPositions = {
   XLM: EMPTY_POSITION,
   USDC: EMPTY_POSITION,
-  EURC: EMPTY_POSITION,
   totalValueXLM: '0',
 };
 
@@ -93,12 +89,10 @@ export const useUserBlendPositions = () => {
       const data = await BlendService.getAllUserBlendPositions(marginAccountAddress);
       const xlmVal = parseFloat(data.XLM?.underlyingValue ?? '0');
       const usdcVal = parseFloat(data.USDC?.underlyingValue ?? '0');
-      const eurcVal = parseFloat(data.EURC?.underlyingValue ?? '0');
       setPositions({
         XLM: data.XLM ?? { ...EMPTY_POSITION, tokenSymbol: 'XLM' },
         USDC: data.USDC ?? { ...EMPTY_POSITION, tokenSymbol: 'USDC' },
-        EURC: data.EURC ?? { ...EMPTY_POSITION, tokenSymbol: 'EURC' },
-        totalValueXLM: (xlmVal + usdcVal + eurcVal).toFixed(4),
+        totalValueXLM: (xlmVal + usdcVal).toFixed(4),
       });
     } catch (err: any) {
       setError(err?.message ?? 'Failed to fetch positions');

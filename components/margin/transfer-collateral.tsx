@@ -13,7 +13,13 @@ import { WalletService } from "@/lib/stellar-utils";
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
   const normalizeContractTokenSymbol = (symbol: string) =>
-    symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC" ? "USDC" : symbol;
+    symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
+      ? "BLUSDC"
+      : symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC"
+        ? "AQUSDC"
+        : symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC"
+          ? "SOUSDC"
+          : symbol;
   const [selectedCurrency, setSelectedCurrency] = useState<string>("XLM");
   const [valueInput, setValueInput] = useState<string>("");
   const [valueInUsd, setValueInUsd] = useState<number>(0.0);
@@ -319,5 +325,4 @@ export const TransferCollateral = () => {
     </motion.section>
   );
 };
-
 

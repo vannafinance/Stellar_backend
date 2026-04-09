@@ -12,7 +12,41 @@ export const farmTableHeadings = [
 
 export const farmTableBody = {
   rows: [
-    // Row 0: Aquarius AMM, XLM/USDC on Stellar (Testnet)
+    // Row 0: Soroswap AMM, XLM/USDC on Stellar (Testnet)
+    {
+      cell: [
+        {
+          chain: "XLM",
+          titles: ["XLM", "USDC"],
+          tags: ["Soroswap", "0.30%", "Testnet"],
+        },
+        {
+          title: "Soroswap",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+      ],
+    },
+    // Row 1: Aquarius AMM, XLM/USDC on Stellar (Testnet)
     {
       cell: [
         {
@@ -339,7 +373,6 @@ export const singleAssetTableHeadings = [
 export const BLEND_POOL_ASSETS_CONFIG = [
   { symbol: "XLM", iconPath: "/icons/stellar.svg" },
   { symbol: "USDC", iconPath: "/icons/usdc-icon.svg" },
-  { symbol: "EURC", iconPath: "/icons/eurc.svg" },
 ];
 
 export const singleAssetTableBody = {
@@ -381,37 +414,6 @@ export const singleAssetTableBody = {
         {
           chain: "USDC",
           title: "USDC",
-          tags: ["Blend", "Supply"],
-        },
-        {
-          title: "Blend",
-        },
-        {
-          title: "—",
-        },
-        {
-          title: "—",
-        },
-        {
-          title: "—",
-        },
-        {
-          title: "—",
-        },
-        {
-          title: "—",
-        },
-        {
-          title: "—",
-        },
-      ],
-    },
-    // Row 3: EURC - Blend Supply Pool
-    {
-      cell: [
-        {
-          chain: "EURC",
-          title: "EURC",
           tags: ["Blend", "Supply"],
         },
         {

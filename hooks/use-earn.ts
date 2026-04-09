@@ -15,11 +15,11 @@ export const usePoolData = () => {
     setError(null);
 
     try {
-      const [xlmStats, usdcStats, eurcStats, aquiresUsdcStats] = await Promise.all([
+      const [xlmStats, usdcStats, aquiresUsdcStats, soroswapUsdcStats] = await Promise.all([
         ContractService.getPoolStats(ASSET_TYPES.XLM),
         ContractService.getPoolStats(ASSET_TYPES.USDC),
-        ContractService.getPoolStats(ASSET_TYPES.EURC),
         ContractService.getPoolStats(ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getPoolStats(ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
       // Calculate APYs (simplified - in production, use rate model contract)
@@ -56,20 +56,20 @@ export const usePoolData = () => {
               ? (parseFloat(usdcStats.totalSupply) / parseFloat(usdcStats.vTokenSupply)).toFixed(7)
               : '1',
           },
-          EURC: {
-            ...eurcStats,
-            supplyAPY: calculateSupplyAPY(eurcStats.utilizationRate),
-            borrowAPY: calculateBorrowAPY(eurcStats.utilizationRate),
-            exchangeRate: eurcStats.vTokenSupply !== '0'
-              ? (parseFloat(eurcStats.totalSupply) / parseFloat(eurcStats.vTokenSupply)).toFixed(7)
-              : '1',
-          },
           AQUARIUS_USDC: {
             ...aquiresUsdcStats,
             supplyAPY: calculateSupplyAPY(aquiresUsdcStats.utilizationRate),
             borrowAPY: calculateBorrowAPY(aquiresUsdcStats.utilizationRate),
             exchangeRate: aquiresUsdcStats.vTokenSupply !== '0'
               ? (parseFloat(aquiresUsdcStats.totalSupply) / parseFloat(aquiresUsdcStats.vTokenSupply)).toFixed(7)
+              : '1',
+          },
+          SOROSWAP_USDC: {
+            ...soroswapUsdcStats,
+            supplyAPY: calculateSupplyAPY(soroswapUsdcStats.utilizationRate),
+            borrowAPY: calculateBorrowAPY(soroswapUsdcStats.utilizationRate),
+            exchangeRate: soroswapUsdcStats.vTokenSupply !== '0'
+              ? (parseFloat(soroswapUsdcStats.totalSupply) / parseFloat(soroswapUsdcStats.vTokenSupply)).toFixed(7)
               : '1',
           },
         },
@@ -113,8 +113,8 @@ export const useUserPositions = () => {
         userPositions: {
           XLM: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
           USDC: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-          EURC: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
           AQUARIUS_USDC: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+          SOROSWAP_USDC: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
         },
       });
       // Also update user store
@@ -122,8 +122,8 @@ export const useUserPositions = () => {
         depositedBalances: {
           XLM: '0',
           USDC: '0',
-          EURC: '0',
           AQUARIUS_USDC: '0',
+          SOROSWAP_USDC: '0',
         },
       });
       return;
@@ -136,32 +136,30 @@ export const useUserPositions = () => {
     try {
       // Fetch vToken balances (these are deposited amounts)
       console.log('Fetching vToken balances...');
-      const [xlmVBalance, usdcVBalance, eurcVBalance, aquiresUsdcVBalance] = await Promise.all([
+      const [xlmVBalance, usdcVBalance, aquiresUsdcVBalance, soroswapUsdcVBalance] = await Promise.all([
         ContractService.getDepositedBalance(address, ASSET_TYPES.XLM),
         ContractService.getDepositedBalance(address, ASSET_TYPES.USDC),
-        ContractService.getDepositedBalance(address, ASSET_TYPES.EURC),
         ContractService.getDepositedBalance(address, ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getDepositedBalance(address, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
       console.log('vToken balances fetched:', {
         XLM: xlmVBalance,
         USDC: usdcVBalance,
-        EURC: eurcVBalance,
       });
 
       // Fetch borrow balances
       console.log('Fetching borrow balances...');
-      const [xlmBorrow, usdcBorrow, eurcBorrow, aquiresUsdcBorrow] = await Promise.all([
+      const [xlmBorrow, usdcBorrow, aquiresUsdcBorrow, soroswapUsdcBorrow] = await Promise.all([
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.XLM),
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.USDC),
-        ContractService.getUserBorrowBalance(address, ASSET_TYPES.EURC),
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getUserBorrowBalance(address, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
       console.log('Borrow balances fetched:', {
         XLM: xlmBorrow,
         USDC: usdcBorrow,
-        EURC: eurcBorrow,
       });
 
       // Update earn pool store
@@ -183,18 +181,18 @@ export const useUserPositions = () => {
             earnedInterest: '0',
             accruedDebt: '0',
           },
-          EURC: {
-            deposited: eurcVBalance,
-            vTokenBalance: eurcVBalance,
-            borrowed: eurcBorrow,
-            borrowShares: '0',
-            earnedInterest: '0',
-            accruedDebt: '0',
-          },
           AQUARIUS_USDC: {
             deposited: aquiresUsdcVBalance,
             vTokenBalance: aquiresUsdcVBalance,
             borrowed: aquiresUsdcBorrow,
+            borrowShares: '0',
+            earnedInterest: '0',
+            accruedDebt: '0',
+          },
+          SOROSWAP_USDC: {
+            deposited: soroswapUsdcVBalance,
+            vTokenBalance: soroswapUsdcVBalance,
+            borrowed: soroswapUsdcBorrow,
             borrowShares: '0',
             earnedInterest: '0',
             accruedDebt: '0',
@@ -208,8 +206,8 @@ export const useUserPositions = () => {
         depositedBalances: {
           XLM: xlmVBalance,
           USDC: usdcVBalance,
-          EURC: eurcVBalance,
           AQUARIUS_USDC: aquiresUsdcVBalance,
+          SOROSWAP_USDC: soroswapUsdcVBalance,
         },
       });
       
@@ -245,11 +243,11 @@ export const useSupplyLiquidity = () => {
     try {
       const balance = await WalletService.getBalance(address);
 
-      const [xlmDeposited, usdcDeposited, eurcDeposited, aquiresUsdcDeposited] = await Promise.all([
+      const [xlmDeposited, usdcDeposited, aquiresUsdcDeposited, soroswapUsdcDeposited] = await Promise.all([
         ContractService.getDepositedBalance(address, ASSET_TYPES.XLM),
         ContractService.getDepositedBalance(address, ASSET_TYPES.USDC),
-        ContractService.getDepositedBalance(address, ASSET_TYPES.EURC),
         ContractService.getDepositedBalance(address, ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getDepositedBalance(address, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
       useUserStore.getState().set({
@@ -257,8 +255,8 @@ export const useSupplyLiquidity = () => {
         depositedBalances: {
           XLM: xlmDeposited,
           USDC: usdcDeposited,
-          EURC: eurcDeposited,
           AQUARIUS_USDC: aquiresUsdcDeposited,
+          SOROSWAP_USDC: soroswapUsdcDeposited,
         },
       });
     } catch (error) {
@@ -328,11 +326,11 @@ export const useWithdrawLiquidity = () => {
     try {
       const balance = await WalletService.getBalance(address);
 
-      const [xlmDeposited, usdcDeposited, eurcDeposited, aquiresUsdcDeposited] = await Promise.all([
+      const [xlmDeposited, usdcDeposited, aquiresUsdcDeposited, soroswapUsdcDeposited] = await Promise.all([
         ContractService.getDepositedBalance(address, ASSET_TYPES.XLM),
         ContractService.getDepositedBalance(address, ASSET_TYPES.USDC),
-        ContractService.getDepositedBalance(address, ASSET_TYPES.EURC),
         ContractService.getDepositedBalance(address, ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getDepositedBalance(address, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
       useUserStore.getState().set({
@@ -340,8 +338,8 @@ export const useWithdrawLiquidity = () => {
         depositedBalances: {
           XLM: xlmDeposited,
           USDC: usdcDeposited,
-          EURC: eurcDeposited,
           AQUARIUS_USDC: aquiresUsdcDeposited,
+          SOROSWAP_USDC: soroswapUsdcDeposited,
         },
       });
 
@@ -350,8 +348,8 @@ export const useWithdrawLiquidity = () => {
         userPositions: {
           XLM: { ...useEarnPoolStore.getState().userPositions.XLM, vTokenBalance: xlmDeposited, deposited: xlmDeposited },
           USDC: { ...useEarnPoolStore.getState().userPositions.USDC, vTokenBalance: usdcDeposited, deposited: usdcDeposited },
-          EURC: { ...useEarnPoolStore.getState().userPositions.EURC, vTokenBalance: eurcDeposited, deposited: eurcDeposited },
           AQUARIUS_USDC: { ...useEarnPoolStore.getState().userPositions.AQUARIUS_USDC, vTokenBalance: aquiresUsdcDeposited, deposited: aquiresUsdcDeposited },
+          SOROSWAP_USDC: { ...useEarnPoolStore.getState().userPositions.SOROSWAP_USDC, vTokenBalance: soroswapUsdcDeposited, deposited: soroswapUsdcDeposited },
         },
       });
     } catch (error) {
@@ -414,8 +412,8 @@ export const useWithdrawLiquidity = () => {
     depositedBalances: {
       XLM: userPositions.XLM?.vTokenBalance || '0',
       USDC: userPositions.USDC?.vTokenBalance || '0',
-      EURC: userPositions.EURC?.vTokenBalance || '0',
       AQUARIUS_USDC: userPositions.AQUARIUS_USDC?.vTokenBalance || '0',
+      SOROSWAP_USDC: userPositions.SOROSWAP_USDC?.vTokenBalance || '0',
     },
     clearMessage: () => setMessage({ type: '', text: '' }),
   };

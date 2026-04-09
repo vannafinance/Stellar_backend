@@ -14,6 +14,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useFarmStore } from "@/store/farm-store";
 import { useBlendPoolStats, useUserBlendPositions, useAllAquariusPoolStats } from "@/hooks/use-farm";
+import { useAllSoroswapPoolStats } from "@/hooks/use-soroswap";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useEffect } from "react";
 
@@ -28,6 +29,7 @@ export default function FarmPage() {
   const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
   const { positions: userPositions } = useUserBlendPositions();
   const aquariusPools = useAllAquariusPoolStats();
+  const soroswapPools = useAllSoroswapPoolStats();
   const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
   const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
@@ -39,7 +41,7 @@ export default function FarmPage() {
 
   // Build real single-asset table rows from live pool data
   const singleAssetTableBody = useMemo(() => {
-    const assets = ['XLM', 'USDC', 'EURC'] as const;
+    const assets = ['XLM', 'USDC'] as const;
     const rows = assets.map((symbol) => {
       const s = poolStats[symbol];
       const loading = statsLoading;
@@ -64,7 +66,7 @@ export default function FarmPage() {
 
   // Build positions table from user's Blend holdings
   const positionsTableBody = useMemo(() => {
-    const assets = ['XLM', 'USDC', 'EURC'] as const;
+    const assets = ['XLM', 'USDC'] as const;
     const rows = assets
       .filter((sym) => parseFloat(userPositions[sym]?.underlyingValue ?? '0') > 0)
       .map((sym) => {
@@ -89,9 +91,9 @@ export default function FarmPage() {
     return { rows };
   }, [userPositions, poolStats]);
 
-  // Build LP/Multiple Assets table from live Aquarius pool data
+  // Build LP/Multiple Assets table from live Aquarius + Soroswap pool data
   const lpTableBody = useMemo(() => {
-    const rows = aquariusPools.map(({ pool, stats, isLoading }) => {
+    const aqRows = aquariusPools.map(({ pool, stats, isLoading }) => {
       const [tokenA, tokenB] = pool.tokens;
       const loading = isLoading;
       const tvl = stats
@@ -100,6 +102,7 @@ export default function FarmPage() {
       const fee = stats ? stats.feeFraction : loading ? '...' : '—';
       const shares = stats ? `${parseFloat(stats.totalShares).toFixed(2)} LP` : loading ? '...' : '—';
       return {
+        id: pool.id,
         cell: [
           { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius', pool.feeFraction / 100 + '%', 'Testnet'] },
           { title: 'Aquarius' },
@@ -113,8 +116,32 @@ export default function FarmPage() {
         ],
       };
     });
-    return { rows };
-  }, [aquariusPools]);
+
+    const ssRows = soroswapPools.map(({ pool, stats, isLoading }) => {
+      const [tokenA, tokenB] = pool.tokens;
+      const loading = isLoading;
+      const tvl = stats
+        ? `${parseFloat(stats.reserveXLM).toFixed(2)} ${tokenA} + ${parseFloat(stats.reserveUSDC).toFixed(2)} ${tokenB}`
+        : loading ? '...' : '—';
+      const shares = stats ? `${parseFloat(stats.totalShares).toFixed(2)} LP` : loading ? '...' : '—';
+      return {
+        id: pool.id,
+        cell: [
+          { chain: tokenA, titles: [tokenA, tokenB], tags: ['Soroswap', pool.feeFraction / 100 + '%', 'Testnet'] },
+          { title: 'Soroswap' },
+          { title: tvl },
+          { title: shares },
+          { title: loading ? '...' : stats ? `${pool.feeFraction / 100}%` : '—' },
+          { title: '—' },
+          { title: '—' },
+          { title: '—' },
+          { title: '—' },
+        ],
+      };
+    });
+
+    return { rows: [...ssRows, ...aqRows] };
+  }, [aquariusPools, soroswapPools]);
 
   // Live farm stats values
   const farmStatsValues = useMemo(() => {
@@ -167,7 +194,8 @@ export default function FarmPage() {
 
   const handleRowClick = useCallback((row: any, rowIndex: number) => {
     const tabType = activeFilterTab === "lending-single-assets" ? "single" : "multi";
-    const rowId = row.cell?.[0]?.title?.toLowerCase().replace(/\s+/g, "-") ||
+    const rowId = row.id ||
+      row.cell?.[0]?.title?.toLowerCase().replace(/\s+/g, "-") ||
       row.cell?.[0]?.titles?.join("-").toLowerCase().replace(/\s+/g, "-") ||
       `row-${rowIndex}`;
     setFarmData({ selectedRow: row, tabType });

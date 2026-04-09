@@ -2,11 +2,26 @@ import createNewStore from "@/zustand/index";
 import { MarginAccountService, type MarginAccount } from "@/lib/margin-utils";
 
 // Approximate USD prices for testnet display (XLM oracle price ≈ $0.10)
-const TOKEN_PRICES: Record<string, number> = { XLM: 0.10, USDC: 1.00, EURC: 1.00 };
+const TOKEN_PRICES: Record<string, number> = {
+  XLM: 0.10,
+  BLUSDC: 1.00,
+  AQUSDC: 1.00,
+  SOUSDC: 1.00,
+  USDC: 1.00,
+  EURC: 1.00,
+};
 
 // Liquidation threshold from RiskEngine contract: BALANCE_TO_BORROW_THRESHOLD = 1.1 * WAD
 // Account is liquidatable when: (totalCollateral / totalDebt) < 1.1
 const LIQUIDATION_THRESHOLD = 1.1;
+
+const canonicalMarginToken = (token: string): string => {
+  const normalized = token.toUpperCase();
+  if (normalized === 'BLEND_USDC' || normalized === 'USDC') return 'BLUSDC';
+  if (normalized === 'AQUIRESUSDC' || normalized === 'AQUARIUS_USDC') return 'AQUSDC';
+  if (normalized === 'SOROSWAPUSDC' || normalized === 'SOROSWAP_USDC') return 'SOUSDC';
+  return normalized;
+};
 
 // Types
 export interface BorrowedBalance {
@@ -94,7 +109,7 @@ export const clearMarginAccount = () => {
 export const setAccountCreationLoading = (loading: boolean) => {
   useMarginAccountInfoStore.getState().set({
     isCreatingAccount: loading,
-    accountCreationError: loading ? null : useMarginAccountInfoStore.getState().get((state) => state.accountCreationError),
+    accountCreationError: loading ? null : useMarginAccountInfoStore.getState().accountCreationError,
   });
 };
 
@@ -113,10 +128,7 @@ export const depositAndBorrow = async (
   tokenSymbol: string = 'XLM'
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
-    const normalizedTokenSymbol =
-      tokenSymbol === 'AquiresUSDC' || tokenSymbol === 'AQUARIUS_USDC'
-        ? 'USDC'
-        : tokenSymbol;
+    const normalizedTokenSymbol = canonicalMarginToken(tokenSymbol);
 
     // Get current margin account
     const account = MarginAccountService.getStoredMarginAccount(userAddress);
@@ -156,10 +168,7 @@ export const borrowTokens = async (
   borrowAmount: number
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
-    const normalizedTokenSymbol =
-      tokenSymbol === 'AquiresUSDC' || tokenSymbol === 'AQUARIUS_USDC'
-        ? 'USDC'
-        : tokenSymbol;
+    const normalizedTokenSymbol = canonicalMarginToken(tokenSymbol);
 
     console.log('🏦 === MARGIN STORE: BORROW OPERATION ===');
     console.log('📊 Borrow parameters:', {
@@ -348,10 +357,19 @@ export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
 
     // ── Borrowed totals ───────────────────────────────────────────────────────
     if (borrowedResult.success && borrowedResult.data) {
+      const dedupedBorrowed: Record<string, { amount: string; usdValue: string }> = {};
       Object.entries(borrowedResult.data).forEach(([token, { amount, usdValue }]) => {
+        const canonical = canonicalMarginToken(token);
+        const current = dedupedBorrowed[canonical];
+        if (!current || parseFloat(amount) > parseFloat(current.amount)) {
+          dedupedBorrowed[canonical] = { amount, usdValue };
+        }
+      });
+
+      Object.entries(dedupedBorrowed).forEach(([token, { amount, usdValue }]) => {
         // Use fetched usdValue if non-zero, otherwise compute from token price
         const fetchedUsd = parseFloat(usdValue);
-        const price = TOKEN_PRICES[token.toUpperCase()] ?? 1;
+        const price = TOKEN_PRICES[token] ?? 1;
         const computed = parseFloat(amount) * price;
         const usd = fetchedUsd > 0 ? fetchedUsd : computed;
         totalBorrowedValue += usd;
@@ -361,8 +379,17 @@ export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
 
     // ── Collateral totals ─────────────────────────────────────────────────────
     if (collateralResult.success && collateralResult.data) {
+      const dedupedCollateral: Record<string, string> = {};
       Object.entries(collateralResult.data).forEach(([token, { amount }]) => {
-        const price = TOKEN_PRICES[token.toUpperCase()] ?? 1;
+        const canonical = canonicalMarginToken(token);
+        const current = dedupedCollateral[canonical];
+        if (!current || parseFloat(amount) > parseFloat(current)) {
+          dedupedCollateral[canonical] = amount;
+        }
+      });
+
+      Object.entries(dedupedCollateral).forEach(([token, amount]) => {
+        const price = TOKEN_PRICES[token] ?? 1;
         totalCollateralValue += parseFloat(amount) * price;
       });
     }
@@ -423,4 +450,3 @@ export const resetCreationState = () => {
     accountCreationError: null,
   });
 };
-

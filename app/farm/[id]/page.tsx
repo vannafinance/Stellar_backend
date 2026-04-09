@@ -14,6 +14,7 @@ import { transactionTableHeadings } from "@/components/earn/acitivity-tab";
 import { Form } from "@/components/farm/form";
 import { singleAssetTableBody } from "@/lib/constants/farm";
 import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
+import { SOROSWAP_POOLS } from "@/lib/soroswap-utils";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { items } from "@/components/earn/details-tab";
 import { StatsCard } from "@/components/ui/stats-card";
@@ -27,6 +28,7 @@ import {
   useAquariusEvents,
   buildLpChartData,
 } from "@/hooks/use-farm";
+import { useSoroswapPoolStats, useSoroswapLpPosition } from "@/hooks/use-soroswap";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 const UI_TABS = [
@@ -52,33 +54,41 @@ export default function FarmDetailPage() {
   const [activeUiTab, setActiveUiTab] = useState<string>("all-transactions");
   const [activeTab, setActiveTab] = useState<string>("current-position");
 
-  // Determine which token this page is for (xlm / usdc / eurc)
-  const tokenSymbol = useMemo((): 'XLM' | 'USDC' | 'EURC' | null => {
+  // Determine which token this page is for (xlm / usdc)
+  const tokenSymbol = useMemo((): 'XLM' | 'USDC' | null => {
     const upper = id?.toUpperCase();
     if (upper === 'XLM') return 'XLM';
     if (upper === 'USDC') return 'USDC';
-    if (upper === 'EURC') return 'EURC';
     return null;
   }, [id]);
 
-  // Row type detection (multi-asset = Aquarius, single = Blend)
+  // Row type detection (multi-asset = Aquarius/Soroswap, single = Blend)
   const selectedRow = useFarmStore((state) => state.selectedRow);
   const tabType = useFarmStore((state) => state.tabType);
 
-  // Detect Aquarius pool early so hooks can be called unconditionally
-  const isAquariusEarly =
+  // Detect pool type early so hooks can be called unconditionally
+  const isSoroswapEarly = id?.startsWith('soroswap-') ?? false;
+  const isAquariusEarly = !isSoroswapEarly && (
     tabType === 'multi' ||
-    (id && !['xlm', 'usdc', 'eurc'].includes(id.toLowerCase()));
+    (id != null && !['xlm', 'usdc'].includes(id.toLowerCase()))
+  );
 
-  // Match pool config from AQUARIUS_POOLS based on id (e.g. "xlm-usdc", "xlm-aqua", "xlm-usdt")
+  // Match Aquarius pool config
   const matchedPool = useMemo(() => {
     if (!isAquariusEarly) return null;
     return AQUARIUS_POOLS.find((p) =>
+      p.id === id?.toLowerCase() ||
       p.tokens.join('-').toLowerCase() === id?.toLowerCase()
     ) ?? AQUARIUS_POOLS[0];
   }, [isAquariusEarly, id]);
 
   const aquariusPoolAddress = matchedPool?.poolAddress ?? null;
+
+  // Match Soroswap pool config
+  const matchedSoroswapPool = useMemo(() => {
+    if (!isSoroswapEarly) return null;
+    return SOROSWAP_POOLS.find((p) => p.id === id) ?? SOROSWAP_POOLS[0];
+  }, [isSoroswapEarly, id]);
 
   // Real data hooks — Blend (single-asset)
   const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
@@ -90,6 +100,13 @@ export default function FarmDetailPage() {
   const { stats: aqStats, isLoading: aqStatsLoading } = useAquariusPoolStats(aquariusPoolAddress);
   const { lpBalance } = useAquariusLpPosition(marginAccountAddress, aquariusPoolAddress);
   const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress);
+
+  // Real data hooks — Soroswap (multi-asset)
+  const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats();
+  const { lpBalance: ssLpBalanceRaw } = useSoroswapLpPosition(marginAccountAddress);
+  const mySSLpBalance = parseFloat(ssLpBalanceRaw ?? '0');
+  const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
+  const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
 
   // Pool stats for this token
   const reserveData = tokenSymbol ? poolStats[tokenSymbol] : null;
@@ -302,6 +319,76 @@ export default function FarmDetailPage() {
     { heading: 'Your LP Balance', mainInfo: myLpBalance.toFixed(4), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
   ], [aqStats, myLpBalance, poolTokenA, poolTokenB]);
 
+  // ── Soroswap computed values ──
+
+  // Soroswap stats strip
+  const soroswapStatsItems = useMemo(() => [
+    {
+      id: "reserveXLM",
+      name: `${ssTokenA} Reserve`,
+      amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveXLM).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenA}` : "N/A",
+    },
+    {
+      id: "reserveUSDC",
+      name: `${ssTokenB} Reserve`,
+      amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveUSDC).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenB}` : "N/A",
+    },
+    {
+      id: "fee",
+      name: "Fee Rate",
+      amount: ssStats?.feeFraction ?? (ssStatsLoading ? "..." : "N/A"),
+    },
+    {
+      id: "totalShares",
+      name: "Total LP Shares",
+      amount: ssStatsLoading ? "..." : ssStats ? parseFloat(ssStats.totalShares).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "N/A",
+    },
+  ], [ssStats, ssStatsLoading, ssTokenA, ssTokenB]);
+
+  // Soroswap LP chart data (no on-chain events yet — flat line from current balance)
+  const ssChartData = useMemo(
+    () => buildLpChartData([], mySSLpBalance),
+    [mySSLpBalance]
+  );
+
+  // Soroswap position table headings
+  const soroswapPositionHeadings = [
+    { label: "Pool", id: "pool" },
+    { label: "LP Shares", id: "lp-shares" },
+    { label: `${ssTokenA} Deposited`, id: "token-a" },
+    { label: `${ssTokenB} Deposited`, id: "token-b" },
+    { label: "Fee Rate", id: "fee-rate" },
+  ];
+
+  // Soroswap current position
+  const soroswapCurrentPositionBody = useMemo(() => {
+    if (mySSLpBalance <= 0) return { rows: [] };
+    const totalSharesNum = parseFloat(ssStats?.totalShares ?? '0');
+    const ratio = totalSharesNum > 0 ? mySSLpBalance / totalSharesNum : 0;
+    const xlmShare = (parseFloat(ssStats?.reserveXLM ?? '0') * ratio).toFixed(4);
+    const usdcShare = (parseFloat(ssStats?.reserveUSDC ?? '0') * ratio).toFixed(4);
+    return {
+      rows: [{
+        cell: [
+          { chain: ssTokenA, title: `${ssTokenA} / ${ssTokenB}`, tags: ['Soroswap', 'LP'] },
+          { title: `${mySSLpBalance.toFixed(4)} LP` },
+          { title: `${xlmShare} ${ssTokenA}` },
+          { title: `${usdcShare} ${ssTokenB}` },
+          { title: ssStats?.feeFraction ?? '—' },
+        ],
+      }],
+    };
+  }, [mySSLpBalance, ssStats, ssTokenA, ssTokenB]);
+
+  // Soroswap analytics cards
+  const soroswapAnalyticsItems = useMemo(() => [
+    { heading: `${ssTokenA} Reserve`, mainInfo: `${parseFloat(ssStats?.reserveXLM ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenA}`, subInfo: `Current ${ssTokenA} reserve in pool`, tooltip: `Total ${ssTokenA} held by the Soroswap pool` },
+    { heading: `${ssTokenB} Reserve`, mainInfo: `${parseFloat(ssStats?.reserveUSDC ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenB}`, subInfo: `Current ${ssTokenB} reserve in pool`, tooltip: `Total ${ssTokenB} held by the Soroswap pool` },
+    { heading: 'Fee Rate', mainInfo: ssStats?.feeFraction ?? '—', subInfo: 'Swap fee per trade', tooltip: 'Fee split between LPs' },
+    { heading: 'Total LP Shares', mainInfo: parseFloat(ssStats?.totalShares ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 }), subInfo: 'Total outstanding LP tokens', tooltip: 'Sum of all LP shares minted' },
+    { heading: 'Your LP Balance', mainInfo: mySSLpBalance.toFixed(4), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
+  ], [ssStats, mySSLpBalance, ssTokenA, ssTokenB]);
+
   const findRowFromId = useCallback((searchId: string) => {
     for (const row of singleAssetTableBody.rows) {
       const firstCell = row.cell?.[0];
@@ -310,10 +397,22 @@ export default function FarmDetailPage() {
         if (rowId === searchId.toLowerCase()) return { row, tabType: "single" as const };
       }
     }
-    // Match against AQUARIUS_POOLS by token pair id
+    // Match against SOROSWAP_POOLS by pool id
+    for (const pool of SOROSWAP_POOLS) {
+      if (pool.id === searchId.toLowerCase()) {
+        const row = {
+          cell: [
+            { chain: pool.tokens[0], titles: pool.tokens, tags: ['Soroswap', (pool.feeFraction / 100).toFixed(2) + '%', 'Testnet'] },
+            { title: 'Soroswap' },
+          ],
+        };
+        return { row, tabType: "multi" as const };
+      }
+    }
+    // Match against AQUARIUS_POOLS by pool id or token pair
     for (const pool of AQUARIUS_POOLS) {
       const poolId = pool.tokens.join("-").toLowerCase();
-      if (poolId === searchId.toLowerCase()) {
+      if (pool.id === searchId.toLowerCase() || poolId === searchId.toLowerCase()) {
         const row = {
           cell: [
             { chain: pool.tokens[0], titles: pool.tokens, tags: ['Aquarius', (pool.feeFraction / 100).toFixed(2) + '%', 'Testnet'] },
@@ -389,7 +488,11 @@ export default function FarmDetailPage() {
 
       {/* Pool stats strip */}
       <section className="w-full h-fit">
-        <AccountStatsGhost items={isMultiAsset ? aquariusStatsItems : statsItems} />
+        <AccountStatsGhost items={
+          isSoroswapEarly ? soroswapStatsItems :
+          isMultiAsset ? aquariusStatsItems :
+          statsItems
+        } />
       </section>
 
       {/* Main content */}
@@ -400,7 +503,14 @@ export default function FarmDetailPage() {
           {activeUiTab === "all-transactions" ? (
             <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
               {/* Chart */}
-              {isMultiAsset ? (
+              {isSoroswapEarly ? (
+                <Chart
+                  type="farm"
+                  heading="My LP Position"
+                  uptrend={mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(4)} LP shares` : undefined}
+                  liveData={ssChartData.length > 0 ? ssChartData : undefined}
+                />
+              ) : isMultiAsset ? (
                 <Chart
                   type="farm"
                   heading="My LP Position"
@@ -417,7 +527,33 @@ export default function FarmDetailPage() {
               )}
 
               {/* My position + history table */}
-              {isMultiAsset ? (
+              {isSoroswapEarly ? (
+                <Table
+                  filterDropdownPosition="right"
+                  tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
+                  heading={{
+                    heading: "My Position",
+                    tabsItems: [
+                      { id: "current-position", label: "Current Position" },
+                      { id: "position-history", label: "Position History" },
+                    ],
+                    tabType: "solid",
+                  }}
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                  filters={{ filters: ["All"], customizeDropdown: true }}
+                  tableHeadings={
+                    activeTab === "current-position"
+                      ? soroswapPositionHeadings
+                      : transactionTableHeadings
+                  }
+                  tableBody={
+                    activeTab === "current-position"
+                      ? soroswapCurrentPositionBody
+                      : { rows: [] }
+                  }
+                />
+              ) : isMultiAsset ? (
                 <Table
                   filterDropdownPosition="right"
                   tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
@@ -466,12 +602,17 @@ export default function FarmDetailPage() {
               )}
 
               {/* No position hints */}
-              {isMultiAsset && myLpBalance <= 0 && activeTab === "current-position" && marginAccountAddress && (
+              {isSoroswapEarly && mySSLpBalance <= 0 && activeTab === "current-position" && marginAccountAddress && (
+                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                  No active LP position. Use the form on the right to add liquidity to {ssTokenA}/{ssTokenB}.
+                </p>
+              )}
+              {isMultiAsset && !isSoroswapEarly && myLpBalance <= 0 && activeTab === "current-position" && marginAccountAddress && (
                 <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                   No active LP position. Use the form on the right to add liquidity to {poolTokenA}/{poolTokenB}.
                 </p>
               )}
-              {!isMultiAsset && !posLoading && !eventsLoading && myBTokens === 0 && activeTab === "current-position" && marginAccountAddress && (
+              {!isMultiAsset && !isSoroswapEarly && !posLoading && !eventsLoading && myBTokens === 0 && activeTab === "current-position" && marginAccountAddress && (
                 <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                   No active position in this pool. Use the form on the right to supply {tokenSymbol}.
                 </p>
@@ -486,7 +627,7 @@ export default function FarmDetailPage() {
             <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
               <h2 className={`text-[20px] font-semibold ${isDark ? "text-white" : ""}`}>Statistics</h2>
               <article className="w-full h-full grid grid-cols-3 gap-x-[15px] gap-y-[15px]" aria-label="Pool Statistics">
-                {(isMultiAsset ? aquariusAnalyticsItems : analyticsItems).map((item, idx) => (
+                {(isSoroswapEarly ? soroswapAnalyticsItems : isMultiAsset ? aquariusAnalyticsItems : analyticsItems).map((item, idx) => (
                   <StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />
                 ))}
               </article>

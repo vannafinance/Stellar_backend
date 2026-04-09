@@ -16,7 +16,13 @@ import { WalletService } from "@/lib/stellar-utils";
 export const RepayLoanTab = () => {
   const { isDark } = useTheme();
   const normalizeContractTokenSymbol = (symbol: string) =>
-    symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC" ? "USDC" : symbol;
+    symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
+      ? "BLUSDC"
+      : symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC"
+        ? "AQUSDC"
+        : symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC"
+          ? "SOUSDC"
+          : symbol;
   // Wallet and margin account state
   const [userAddress, setUserAddress] = useState<string>("");
   const [marginAccount, setMarginAccount] = useState<string>("");

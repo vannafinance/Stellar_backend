@@ -32,12 +32,6 @@ export const BLEND_POOL_ASSETS: BlendPoolAsset[] = [
     iconPath: '/icons/usdc-icon.svg',
     decimals: 7,
   },
-  {
-    symbol: 'EURC',
-    trackingSymbol: 'BLEND_EURC',
-    iconPath: '/icons/eurc.svg',
-    decimals: 7,
-  },
 ];
 
 // Transaction result type
@@ -162,7 +156,7 @@ export class BlendService {
    *
    * @param blendPoolAddress - The Blend Capital pool address from Registry
    * @param action - 'Deposit' or 'Withdraw'
-   * @param tokenSymbol - 'XLM', 'USDC', or 'EURC'
+  * @param tokenSymbol - 'XLM' or 'USDC'
    * @param amountWad - Amount in WAD (18 decimals)
    * @param marginAccountAddress - User's smart account address
    */
@@ -256,10 +250,17 @@ export class BlendService {
         throw new Error(`Unsupported token: ${tokenSymbol}`);
       }
 
-      // Get the Blend pool address — prefer Registry value, fall back to known testnet address
+      // Get the Blend pool address from Registry.
       const registryAddr = await BlendService.getBlendPoolAddressFromRegistry();
-      const blendPoolAddress = registryAddr ?? CONTRACT_ADDRESSES.BLEND_POOL;
-      console.log('[BlendService] Using Blend pool address:', blendPoolAddress, registryAddr ? '(from Registry)' : '(fallback)');
+      if (!registryAddr) {
+        return {
+          success: false,
+          error:
+            'Blend pool is not configured in the Registry. Ask the admin to run set_blend_pool_address before depositing XLM.',
+        };
+      }
+      const blendPoolAddress = registryAddr;
+      console.log('[BlendService] Using Blend pool address:', blendPoolAddress, '(from Registry)');
 
       // Convert amount to WAD (18 decimals)
       const amountWad = BigInt(Math.floor(amount * 1e18));
@@ -337,10 +338,17 @@ export class BlendService {
         throw new Error(`Unsupported token: ${tokenSymbol}`);
       }
 
-      // Get the Blend pool address — prefer Registry value, fall back to known testnet address
+      // Get the Blend pool address from Registry.
       const registryAddr = await BlendService.getBlendPoolAddressFromRegistry();
-      const blendPoolAddress = registryAddr ?? CONTRACT_ADDRESSES.BLEND_POOL;
-      console.log('[BlendService] Using Blend pool address:', blendPoolAddress, registryAddr ? '(from Registry)' : '(fallback)');
+      if (!registryAddr) {
+        return {
+          success: false,
+          error:
+            'Blend pool is not configured in the Registry. Ask the admin to run set_blend_pool_address before withdrawing XLM.',
+        };
+      }
+      const blendPoolAddress = registryAddr;
+      console.log('[BlendService] Using Blend pool address:', blendPoolAddress, '(from Registry)');
 
       // Convert amount to WAD (18 decimals)
       const amountWad = BigInt(Math.floor(amount * 1e18));
@@ -402,7 +410,7 @@ export class BlendService {
    * Get user's Blend supply balance for a given token.
    *
    * Reads the tracking token balance from the TrackingToken contract.
-   * The tracking symbols are: BLEND_XLM, BLEND_USDC, BLEND_EURC
+  * The tracking symbols are: BLEND_XLM, BLEND_USDC
    * (set by AccountManager after a successful Blend deposit).
    */
   static async getUserBlendBalance(
@@ -502,10 +510,11 @@ export class BlendService {
 
   /**
    * Check if the Blend pool is configured.
-   * Always returns true since we have a known testnet fallback address (CONTRACT_ADDRESSES.BLEND_POOL).
+   * Blend actions require Registry.BlendPoolContract to be present so the
+   * smart account can route the call to the correct protocol branch.
    */
   static async isBlendPoolConfigured(): Promise<boolean> {
-    return true;
+    return (await BlendService.getBlendPoolAddressFromRegistry()) !== null;
   }
 
   /**
@@ -589,14 +598,13 @@ export class BlendService {
    * Calls get_reserve(asset_address) and calculates APY, TVL, utilization.
    */
   static async getBlendReserveData(
-    tokenSymbol: 'XLM' | 'USDC' | 'EURC',
+    tokenSymbol: 'XLM' | 'USDC',
     blendPoolAddress?: string
   ): Promise<BlendReserveData | null> {
     // Asset contract addresses in the Blend pool
     const assetAddresses: Record<string, string> = {
       XLM: CONTRACT_ADDRESSES.BLEND_XLM,
       USDC: CONTRACT_ADDRESSES.BLEND_USDC,
-      EURC: '', // EURC not in Blend testnet pool
     };
 
     const assetAddress = assetAddresses[tokenSymbol];
@@ -712,14 +720,14 @@ export class BlendService {
   }
 
   /**
-   * Get all three Blend reserve stats (XLM, USDC, EURC) in parallel.
+   * Get Blend reserve stats (XLM, USDC) in parallel.
    */
   static async getAllBlendReserveStats(): Promise<Record<string, BlendReserveData | null>> {
     const [xlm, usdc] = await Promise.all([
       BlendService.getBlendReserveData('XLM'),
       BlendService.getBlendReserveData('USDC'),
     ]);
-    return { XLM: xlm, USDC: usdc, EURC: null };
+    return { XLM: xlm, USDC: usdc };
   }
 
   /**
@@ -732,7 +740,7 @@ export class BlendService {
     const assets = BLEND_POOL_ASSETS;
     const empty = (): BlendUserPosition => ({ bTokenBalance: '0', underlyingValue: '0', tokenSymbol: '' });
     const result: Record<string, BlendUserPosition> = {
-      XLM: empty(), USDC: empty(), EURC: empty(),
+      XLM: empty(), USDC: empty(),
     };
 
     try {
@@ -761,7 +769,6 @@ export class BlendService {
       const bRates: Record<string, number> = {
         XLM: xlmReserve ? parseFloat(xlmReserve.bRate) : 1,
         USDC: usdcReserve ? parseFloat(usdcReserve.bRate) : 1,
-        EURC: 1,
       };
 
       // Fetch balances for each tracking symbol in parallel
@@ -893,11 +900,11 @@ export class BlendService {
   }
 
   /**
-   * Get wallet balance for a specific asset (XLM, USDC, EURC).
+   * Get wallet balance for a specific asset (XLM, USDC).
    */
   static async getWalletBalance(
     walletAddress: string,
-    assetType: 'XLM' | 'USDC' | 'EURC'
+    assetType: 'XLM' | 'USDC'
   ): Promise<string> {
     try {
       const balances = await ContractService.getAllTokenBalances(walletAddress);

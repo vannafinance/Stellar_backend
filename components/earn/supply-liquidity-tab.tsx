@@ -49,7 +49,14 @@ export const SupplyLiquidityTab = () => {
   }, [userAddress, refreshPositions, refreshTokenBalances]);
 
   // Get pool stats for selected asset
-  const normalizedAsset = selectedOption === 'AquiresUSDC' ? 'AQUARIUS_USDC' : selectedOption;
+  const normalizedAsset =
+    selectedOption === 'BLUSDC' || selectedOption === 'USDC'
+      ? 'USDC'
+      : selectedOption === 'AqUSDC' || selectedOption === 'AquiresUSDC'
+        ? 'AQUARIUS_USDC'
+        : selectedOption === 'SoUSDC' || selectedOption === 'SoroswapUSDC'
+          ? 'SOROSWAP_USDC'
+          : selectedOption;
   const selectedPool = pools[normalizedAsset as keyof typeof pools];
   const selectedPoolConfig = STELLAR_POOLS[normalizedAsset as keyof typeof STELLAR_POOLS];
 
@@ -60,11 +67,11 @@ export const SupplyLiquidityTab = () => {
       const xlmBalance = parseFloat(tokenBalances?.XLM || balance) || 0;
       return Math.max(0, xlmBalance - 1).toFixed(7); // Keep 1 XLM for fees
     } else if (normalizedAsset === 'USDC') {
-      return tokenBalances?.USDC || '0';
-    } else if (normalizedAsset === 'EURC') {
-      return tokenBalances?.EURC || '0';
+      return tokenBalances?.BLEND_USDC || tokenBalances?.USDC || '0';
     } else if (normalizedAsset === 'AQUARIUS_USDC') {
       return tokenBalances?.AQUARIUS_USDC || '0';
+    } else if (normalizedAsset === 'SOROSWAP_USDC') {
+      return tokenBalances?.SOROSWAP_USDC || '0';
     }
     return '0';
   }, [normalizedAsset, balance, tokenBalances]);

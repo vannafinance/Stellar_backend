@@ -54,28 +54,40 @@ import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 
 const abbrev = (addr: string) => `${addr.slice(0, 8)}...${addr.slice(-8)}`;
 
-// Build contract address list from the real CONTRACT_ADDRESSES constants
-const getAddresses = (selectedAsset: string) => {
-  const pool = STELLAR_POOLS[selectedAsset as keyof typeof STELLAR_POOLS];
+const toInternalAsset = (value: string) => {
+  if (value === "AqUSDC" || value === "AquiresUSDC" || value === "AQUARIUS_USDC") return "AQUARIUS_USDC";
+  if (value === "SoUSDC" || value === "SoroswapUSDC" || value === "SOROSWAP_USDC") return "SOROSWAP_USDC";
+  return value;
+};
 
-  const lendingKey = `LENDING_PROTOCOL_${selectedAsset}` as keyof typeof CONTRACT_ADDRESSES;
-  const vTokenKey  = `V${selectedAsset}_TOKEN`           as keyof typeof CONTRACT_ADDRESSES;
+const toDisplayAsset = (value: string) => {
+  if (value === "AQUARIUS_USDC" || value === "AquiresUSDC") return "AqUSDC";
+  if (value === "SOROSWAP_USDC" || value === "SoroswapUSDC") return "SoUSDC";
+  return value;
+};
+
+// Build contract address list from the real CONTRACT_ADDRESSES constants
+const getAddresses = (selectedAssetKey: string, selectedAssetLabel: string) => {
+  const pool = STELLAR_POOLS[selectedAssetKey as keyof typeof STELLAR_POOLS];
+
+  const lendingKey = `LENDING_PROTOCOL_${selectedAssetKey}` as keyof typeof CONTRACT_ADDRESSES;
+  const vTokenKey  = `V${selectedAssetKey}_TOKEN`           as keyof typeof CONTRACT_ADDRESSES;
 
   const lendingAddr = (CONTRACT_ADDRESSES[lendingKey] as string) || pool?.lendingProtocol || "";
   const vTokenAddr  = (CONTRACT_ADDRESSES[vTokenKey]  as string) || pool?.vToken          || "";
 
   return [
     {
-      heading: `${selectedAsset} Lending Protocol`,
+      heading: `${selectedAssetLabel} Lending Protocol`,
       address: lendingAddr ? abbrev(lendingAddr) : "N/A",
       fullAddress: lendingAddr,
-      tooltip: `Main lending contract for ${selectedAsset}`,
+      tooltip: `Main lending contract for ${selectedAssetLabel}`,
     },
     {
-      heading: `v${selectedAsset} Token`,
+      heading: `v${selectedAssetLabel} Token`,
       address: vTokenAddr ? abbrev(vTokenAddr) : "N/A",
       fullAddress: vTokenAddr,
-      tooltip: `Receipt token for ${selectedAsset} deposits`,
+      tooltip: `Receipt token for ${selectedAssetLabel} deposits`,
     },
     {
       heading: "Oracle Contract",
@@ -107,30 +119,32 @@ const getAddresses = (selectedAsset: string) => {
 export const Details = () => {
   const { isDark } = useTheme();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
+  const selectedAssetKey = toInternalAsset(selectedAsset);
+  const selectedAssetLabel = toDisplayAsset(selectedAssetKey);
   const { pools, isLoading, refresh } = usePoolData();
 
   // Get selected pool data
-  const selectedPool = pools[selectedAsset as keyof typeof pools];
-  const addresses = getAddresses(selectedAsset);
+  const selectedPool = pools[selectedAssetKey as keyof typeof pools];
+  const addresses = getAddresses(selectedAssetKey, selectedAssetLabel);
 
   // Calculate stats
   const totalSupplied = useMemo(() => {
     const supply = parseFloat(selectedPool?.totalSupply || '0');
-    const price = selectedAsset === 'XLM' ? 0.1 : 1;
+    const price = selectedAssetKey === 'XLM' ? 0.1 : 1;
     return {
       inToken: supply,
       inUsd: supply * price,
     };
-  }, [selectedPool, selectedAsset]);
+  }, [selectedPool, selectedAssetKey]);
 
   const totalBorrowed = useMemo(() => {
     const borrowed = parseFloat(selectedPool?.totalBorrowed || '0');
-    const price = selectedAsset === 'XLM' ? 0.1 : 1;
+    const price = selectedAssetKey === 'XLM' ? 0.1 : 1;
     return {
       inToken: borrowed,
       inUsd: borrowed * price,
     };
-  }, [selectedPool, selectedAsset]);
+  }, [selectedPool, selectedAssetKey]);
 
   // Percentage helpers for pie charts (supply is always 100% when non-zero)
   const suppliedPercent = totalSupplied.inToken > 0 ? 100 : 0;
@@ -145,12 +159,12 @@ export const Details = () => {
       mainInfo: `${formatValue(parseFloat(selectedPool?.availableLiquidity || '0'), {
         type: "number",
         useLargeFormat: true,
-      })} ${selectedAsset}`,
-      subInfo: `$${formatValue(parseFloat(selectedPool?.availableLiquidity || '0') * (selectedAsset === 'XLM' ? 0.1 : 1), {
+      })} ${selectedAssetLabel}`,
+      subInfo: `$${formatValue(parseFloat(selectedPool?.availableLiquidity || '0') * (selectedAssetKey === 'XLM' ? 0.1 : 1), {
         type: "number",
         useLargeFormat: true,
       })}`,
-      tooltip: `Total ${selectedAsset} available for borrowing`,
+      tooltip: `Total ${selectedAssetLabel} available for borrowing`,
     },
     {
       heading: "Supply APY",
@@ -176,24 +190,24 @@ export const Details = () => {
     },
     {
       heading: "Oracle Price",
-      mainInfo: selectedAsset === 'XLM' ? "$0.10" : "$1.00",
-      tooltip: `Current oracle price of ${selectedAsset}`,
+      mainInfo: selectedAssetKey === 'XLM' ? "$0.10" : "$1.00",
+      tooltip: `Current oracle price of ${selectedAssetLabel}`,
     },
     {
       heading: "Exchange Rate",
       mainInfo: selectedPool?.exchangeRate || '1.0000',
-      subInfo: `1 v${selectedAsset} = ${selectedPool?.exchangeRate || '1.0000'} ${selectedAsset}`,
-      tooltip: `Exchange rate between v${selectedAsset} and ${selectedAsset}`,
+      subInfo: `1 v${selectedAssetLabel} = ${selectedPool?.exchangeRate || '1.0000'} ${selectedAssetLabel}`,
+      tooltip: `Exchange rate between v${selectedAssetLabel} and ${selectedAssetLabel}`,
     },
     {
       heading: "vToken Supply",
       mainInfo: `${formatValue(parseFloat(selectedPool?.vTokenSupply || '0'), {
         type: "number",
         useLargeFormat: true,
-      })} v${selectedAsset}`,
-      tooltip: `Total v${selectedAsset} tokens minted`,
+      })} v${selectedAssetLabel}`,
+      tooltip: `Total v${selectedAssetLabel} tokens minted`,
     },
-  ], [selectedPool, selectedAsset]);
+  ], [selectedPool, selectedAssetKey, selectedAssetLabel]);
 
   return (
     <section className={`w-full h-fit flex flex-col gap-[16px] rounded-[20px] border-[1px] ${
@@ -210,7 +224,7 @@ export const Details = () => {
             <button
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all bg-[#703AE6] text-white`}
             >
-              {selectedAsset}
+              {selectedAssetLabel}
             </button>
             <button
               onClick={refresh}
@@ -243,7 +257,7 @@ export const Details = () => {
             mainInfo={`${formatValue(totalSupplied.inToken, {
               type: "number",
               useLargeFormat: true,
-            })} ${selectedAsset}`}
+            })} ${selectedAssetLabel}`}
             subInfo={`$${formatValue(totalSupplied.inUsd, {
               type: "number",
               useLargeFormat: true,
@@ -256,7 +270,7 @@ export const Details = () => {
             mainInfo={`${formatValue(totalBorrowed.inToken, {
               type: "number",
               useLargeFormat: true,
-            })} ${selectedAsset}`}
+            })} ${selectedAssetLabel}`}
             subInfo={`$${formatValue(totalBorrowed.inUsd, {
               type: "number",
               useLargeFormat: true,

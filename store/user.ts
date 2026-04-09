@@ -8,14 +8,15 @@ export interface User {
   tokenBalances: {
     XLM: string;
     USDC: string;
-    EURC: string;
+    BLEND_USDC: string;
     AQUARIUS_USDC: string;
+    SOROSWAP_USDC: string;
   };
   depositedBalances: {
     XLM: string;
     USDC: string;
-    EURC: string;
     AQUARIUS_USDC: string;
+    SOROSWAP_USDC: string;
   };
   isLoading: boolean;
   manuallyDisconnected: boolean; // Track if user manually disconnected
@@ -29,14 +30,15 @@ const initialState: User = {
   tokenBalances: {
     XLM: '0',
     USDC: '0',
-    EURC: '0',
+    BLEND_USDC: '0',
     AQUARIUS_USDC: '0',
+    SOROSWAP_USDC: '0',
   },
   depositedBalances: {
     XLM: '0',
     USDC: '0',
-    EURC: '0',
     AQUARIUS_USDC: '0',
+    SOROSWAP_USDC: '0',
   },
   isLoading: false,
   manuallyDisconnected: false,

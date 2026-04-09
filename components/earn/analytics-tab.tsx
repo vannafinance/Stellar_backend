@@ -186,7 +186,7 @@ export const AnalyticsTab = () => {
               Supported Assets
             </span>
             <p className={`text-sm font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
-              XLM, USDC, EURC
+              XLM, USDC, AqUSDC, SoUSDC
             </p>
           </div>
           <div className={`p-3 rounded-lg ${isDark ? "bg-[#222222]" : "bg-gray-50"}`}>
@@ -202,7 +202,7 @@ export const AnalyticsTab = () => {
               Receipt Tokens
             </span>
             <p className={`text-sm font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
-              vXLM, vUSDC, vEURC
+              vXLM, vUSDC, vAqUSDC, vSoUSDC
             </p>
           </div>
         </div>

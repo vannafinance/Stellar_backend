@@ -17,9 +17,9 @@ export const tradeItems = [
 // Stellar blockchain supported assets
 export const DropdownOptions = [
   "XLM",
-  "USDC",
-  "EURC",
-  "AquiresUSDC",
+  "BLUSDC",
+  "AqUSDC",
+  "SoUSDC",
 ];
 
 // Legacy ETH options (deprecated)
@@ -40,11 +40,14 @@ export const LegacyDropdownOptions = [
 
 export const iconPaths: Record<string, string> = {
   // Stellar assets - using USDC icon as placeholder for missing icons
-  // TODO: Add proper XLM and EURC icons to /public/icons/
+  // TODO: Add proper XLM icon to /public/icons/
   XLM: "/icons/stellar.svg", // Placeholder - replace with "/icons/xlm-icon.png" when available
+  BLUSDC: "/icons/usdc-icon.svg",
+  AqUSDC: "/icons/usdc-icon.svg", // Aquarius USDC uses USDC icon
+  SoUSDC: "/icons/usdc-icon.svg", // Soroswap USDC uses USDC icon
   USDC: "/icons/usdc-icon.svg",
-  EURC: "/icons/eurc.svg", // Placeholder - replace with "/icons/eurc-icon.png" when available
   AquiresUSDC: "/icons/usdc-icon.svg", // Aquarius USDC uses USDC icon
+  SoroswapUSDC: "/icons/usdc-icon.svg", // Soroswap USDC uses USDC icon
   // Legacy ETH assets (for backwards compatibility)
   USDT: "/icons/usdt-icon.svg",
   ETH: "/icons/eth-icon.png",

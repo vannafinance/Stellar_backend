@@ -1,7 +1,9 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { CONTRACT_ADDRESSES } from '../lib/stellar-utils';
+
 const SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
-const REGISTRY = 'CANOLJZH7YTQVRSNL4WFIT6EHZUK6OL7HQR2Q2UOMHFJCZH2JMHW3AR2';
+const REGISTRY = CONTRACT_ADDRESSES.REGISTRY;
 const ADMIN_SECRET = 'SCEWN2DJDWOVKBQ6YVGP24ZW6DRUO5WPPMCTSSC5ABHW5OPJ7BWKVUV2';
 const CORRECT_POOL_INDEX_HEX = '9ac7a9cde23ac2ada11105eeaa42e43c2ea8332ca0aa8f41f58d7160274d718e';
 const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);

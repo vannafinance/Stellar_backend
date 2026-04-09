@@ -13,13 +13,27 @@ import { useSupplyLiquidity, usePoolData } from "@/hooks/use-earn";
 import { AssetType } from "@/lib/stellar-utils";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 
+const toInternalAsset = (value: string) => {
+  if (value === 'BLUSDC' || value === 'USDC') return 'USDC';
+  if (value === 'AqUSDC' || value === 'AquiresUSDC' || value === 'AQUARIUS_USDC') return 'AQUARIUS_USDC';
+  if (value === 'SoUSDC' || value === 'SoroswapUSDC' || value === 'SOROSWAP_USDC') return 'SOROSWAP_USDC';
+  return value;
+};
+
+const toDisplayAsset = (value: string) => {
+  if (value === 'USDC') return 'BLUSDC';
+  if (value === 'AQUARIUS_USDC' || value === 'AquiresUSDC') return 'AqUSDC';
+  if (value === 'SOROSWAP_USDC' || value === 'SoroswapUSDC') return 'SoUSDC';
+  return value;
+};
+
 export const SupplyLiquidityTab = () => {
   const { isDark } = useTheme();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
-  const [selectedOption, setSelectedOption] = useState<string>(selectedAsset);
+  const [selectedOption, setSelectedOption] = useState<string>(toDisplayAsset(selectedAsset));
   const [value, setValue] = useState<string>("");
   const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
-  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', EURC: '0', AQUARIUS_USDC: '0' });
+  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' });
   
   const userAddress = useUserStore((state) => state.address);
   const balance = useUserStore((state) => state.balance);
@@ -31,7 +45,7 @@ export const SupplyLiquidityTab = () => {
 
   // Sync with selected pool store
   useEffect(() => {
-    setSelectedOption(selectedAsset);
+    setSelectedOption(toDisplayAsset(selectedAsset));
   }, [selectedAsset]);
 
   // Use balances from the user store (populated on wallet connect by refreshBalances)
@@ -40,7 +54,7 @@ export const SupplyLiquidityTab = () => {
   }, [storeTokenBalances]);
 
   // Get pool stats for selected asset
-  const normalizedAsset = selectedOption === 'AquiresUSDC' ? 'AQUARIUS_USDC' : selectedOption;
+  const normalizedAsset = toInternalAsset(selectedOption);
   const selectedPool = pools[normalizedAsset as keyof typeof pools];
   const selectedPoolConfig = STELLAR_POOLS[normalizedAsset as keyof typeof STELLAR_POOLS];
 
@@ -51,11 +65,11 @@ export const SupplyLiquidityTab = () => {
       const xlmBalance = parseFloat(balance) || 0;
       return Math.max(0, xlmBalance - 1).toFixed(7); // Keep 1 XLM for fees
     } else if (normalizedAsset === 'USDC') {
-      return tokenBalances.USDC || '0';
-    } else if (normalizedAsset === 'EURC') {
-      return tokenBalances.EURC || '0';
+      return tokenBalances.BLEND_USDC || tokenBalances.USDC || '0';
     } else if (normalizedAsset === 'AQUARIUS_USDC') {
       return tokenBalances.AQUARIUS_USDC || '0';
+    } else if (normalizedAsset === 'SOROSWAP_USDC') {
+      return tokenBalances.SOROSWAP_USDC || '0';
     }
     return '0';
   }, [normalizedAsset, balance, tokenBalances]);
@@ -123,7 +137,7 @@ export const SupplyLiquidityTab = () => {
             setSelectedOption={(option) => {
               const optionString = typeof option === 'string' ? option : option.toString();
               setSelectedOption(optionString);
-              useSelectedPoolStore.getState().set({ selectedAsset: optionString as AssetType });
+              useSelectedPoolStore.getState().set({ selectedAsset: toInternalAsset(optionString) as AssetType });
             }}
             selectedOption={selectedOption}
             classname="w-fit gap-[4px] items-center"
@@ -155,7 +169,7 @@ export const SupplyLiquidityTab = () => {
           
           <div className="flex justify-between items-center">
             <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-              ≈ ${(parseFloat(value) * (selectedOption === 'XLM' ? 0.1 : selectedOption === 'USDC' ? 1 : selectedOption === 'EURC' ? 1.05 : 1) || 0).toFixed(2)} USD
+              ≈ ${(parseFloat(value) * (selectedOption === 'XLM' ? 0.1 : 1) || 0).toFixed(2)} USD
             </span>
             <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
               Available: {availableBalance} {selectedOption}
