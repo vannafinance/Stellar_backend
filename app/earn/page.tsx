@@ -4,19 +4,14 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Chart } from "@/components/earn/chart";
 import { Table } from "@/components/earn/table";
-import { AccountStats } from "@/components/margin/account-stats";
+import { Carousel } from "@/components/ui/carousel";
 import { tableHeadings } from "@/lib/constants/earn";
-import { ACCOUNT_STATS_ITEMS } from "@/lib/constants/margin";
 import { useUserStore } from "@/store/user";
-import { RewardsTable } from "@/components/earn/rewards-table";
 import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { setSelectedPool } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { useEarnPage } from "@/hooks/use-earn";
 import { depositData, netApyData } from "@/lib/constants/earn";
-
-// Liquidation threshold used across the protocol (80% collateral factor)
-const LIQUIDATION_THRESHOLD = 0.8;
 
 // USD prices for testnet tokens
 const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0 };
@@ -156,7 +151,7 @@ export default function Earn() {
   const [activeTab, setActiveTab] = useState("vaults");
 
   // Live data from on-chain contracts (auto-refreshes every 30s)
-  const { pools, userPositions, totalDeposited, totalBorrowed } = useEarnPage();
+  const { pools, userPositions } = useEarnPage();
 
   // Set default pool selection on mount
   useEffect(() => {
@@ -167,56 +162,6 @@ export default function Earn() {
       tag: 'Active'
     });
   }, []);
-
-  // ─── Account Stats ───────────────────────────────────────────────────────────
-  // All values derived from the user's live on-chain positions.
-  // Units are native token amounts summed without USD conversion
-  // since we do not have a live price feed on testnet.
-  const accountStats = useMemo(() => {
-    if (!userAddress) {
-      return {
-        netHealthFactor: "-",
-        collateralLeftBeforeLiquidation: "-",
-        netAvailableCollateral: "-",
-      };
-    }
-
-    // Health Factor = (total deposited × liquidation threshold) / total borrowed
-    // A value > 1 means the position is healthy; < 1 means it can be liquidated.
-    let netHealthFactor: string | number;
-    if (totalBorrowed <= 0) {
-      netHealthFactor = totalDeposited > 0 ? "∞" : "-";
-    } else {
-      netHealthFactor = parseFloat(
-        ((totalDeposited * LIQUIDATION_THRESHOLD) / totalBorrowed).toFixed(2)
-      );
-    }
-
-    // Collateral Left Before Liquidation =
-    //   deposited − (borrowed / liquidation_threshold)
-    //   i.e. how much collateral can drop before the position becomes liquidatable
-    let collateralLeftBeforeLiquidation: string | number;
-    if (totalDeposited <= 0) {
-      collateralLeftBeforeLiquidation = "-";
-    } else if (totalBorrowed <= 0) {
-      collateralLeftBeforeLiquidation = parseFloat(totalDeposited.toFixed(4));
-    } else {
-      const gap = totalDeposited - totalBorrowed / LIQUIDATION_THRESHOLD;
-      collateralLeftBeforeLiquidation = parseFloat(gap.toFixed(4));
-    }
-
-    // Net Available Collateral = deposited − borrowed
-    const netAvailableCollateral =
-      totalDeposited > 0
-        ? parseFloat((totalDeposited - totalBorrowed).toFixed(4))
-        : "-";
-
-    return {
-      netHealthFactor,
-      collateralLeftBeforeLiquidation,
-      netAvailableCollateral,
-    };
-  }, [userAddress, totalDeposited, totalBorrowed]);
 
   // ─── Live Chart Data ─────────────────────────────────────────────────────────
   // Scale the static historical series so the last point equals the current live value.
@@ -339,32 +284,48 @@ export default function Earn() {
     [router, setSelectedVault]
   );
 
+  const earnCarouselItems = [
+    {
+      icon: "",
+      title: "Earn Yield on Your Assets",
+      description:
+        "Supply liquidity to Vanna vaults and earn competitive APY. Your funds work 24/7 — no lockups, withdraw anytime.",
+    },
+    {
+      icon: "",
+      title: "Multi-Collateral Vaults",
+      description:
+        "Deposit multiple assets as collateral and borrow against them. Diversify risk while maximizing capital efficiency.",
+    },
+    {
+      icon: "",
+      title: "Audited & Battle-Tested",
+      description:
+        "Vanna Protocol's smart contracts are fully audited. Secure, transparent, and built for DeFi power users.",
+    },
+  ];
+
   return (
-    <main>
+    <main className="w-full px-4 sm:px-10 lg:px-30 pb-8 lg:pb-0">
+      {/* Promotional Carousel */}
+      <section className="w-full pt-4 sm:pt-6 pb-4">
+        <Carousel items={earnCarouselItems} autoplayInterval={5000} />
+      </section>
+
+      {/* Charts — below carousel, side by side */}
       {userAddress && (
-        <section className="p-[40px] w-full h-fit flex gap-[24px]" aria-label="User Dashboard">
-          <div className="flex gap-[16px] w-full h-fit">
-            <article className="w-[437.33px] h-fit">
-              <Chart containerWidth="w-[437.33px]" containerHeight="h-[331px]" type="overall-deposit" liveData={liveDepositData} />
-            </article>
-            <article className="w-[437.33px] h-fit">
-              <Chart containerWidth="w-[437.33px]" containerHeight="h-[331px]" type="net-apy" liveData={liveNetApyData} />
-            </article>
-            <aside className="w-full h-fit">
-              <RewardsTable />
-            </aside>
-          </div>
+        <section className="w-full pb-4 flex flex-col lg:flex-row gap-3" aria-label="User Dashboard">
+          <article className="flex-1 min-w-0">
+            <Chart containerWidth="w-full" containerHeight="h-[320px]" type="overall-deposit" liveData={liveDepositData} height={220} />
+          </article>
+          <article className="flex-1 min-w-0">
+            <Chart containerWidth="w-full" containerHeight="h-[320px]" type="net-apy" liveData={liveNetApyData} height={220} />
+          </article>
         </section>
       )}
 
-      <section className="h-[206px] w-full pt-[40px] px-[40px]" aria-label="Account Statistics">
-        <AccountStats
-          items={ACCOUNT_STATS_ITEMS.slice(0, 3)}
-          values={accountStats}
-        />
-      </section>
-
-      <section className="p-[40px] w-full h-fit" aria-label="Vaults and Positions">
+      {/* Pool Table — full width */}
+      <section className="w-full pb-8" aria-label="Vaults and Positions">
         <Table
           filterDropdownPosition="right"
           filters={{

@@ -23,8 +23,8 @@ export const Navbar = (props: Navbar) => {
   const pathname = usePathname();
   const router = useRouter();
   const { isDark, toggleTheme } = useTheme();
-  const userStore = useUserStore();
-  const { address, isConnected, connectWallet, disconnectWallet, isLoading } = useWallet();
+  useUserStore();
+  const { address, connectWallet, disconnectWallet, isLoading } = useWallet();
 
   const groupedItems = {
     primary: props.items.filter((item) => item.group === "primary"),
@@ -76,7 +76,7 @@ export const Navbar = (props: Navbar) => {
     // Delay closing to allow mouse to move to dropdown
     closeTimeoutRef.current = setTimeout(() => {
       setIsDropdownOpen(false);
-    }, 150);
+    }, 300);
   };
 
   const handleDropdownMouseEnter = () => {
@@ -127,7 +127,7 @@ export const Navbar = (props: Navbar) => {
     };
 
   return (
-    <div className={`relative ${isDark ? "bg-[#111111]" : ""}`}>
+    <div className={`sticky top-0 z-50 relative ${isDark ? "bg-[#111111]" : "bg-white"}`}>
       <motion.div
         className={`py-[12px] px-[40px] w-full h-fit flex justify-between items-center ${isDark ? "text-white" : ""}`}
         initial={{ y: -100, opacity: 0 }}
@@ -227,8 +227,8 @@ export const Navbar = (props: Navbar) => {
               return (
                 <motion.div
                   key={item.link}
-                  onHoverStart={() => handleMouseEnter(item)}
-                  onHoverEnd={handleMouseLeave}
+                  onMouseEnter={() => handleMouseEnter(item)}
+                  onMouseLeave={handleMouseLeave}
                   onClick={() => {
                     handleNavItemClickWithLink(item);
                   }}

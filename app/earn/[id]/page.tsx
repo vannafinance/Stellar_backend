@@ -54,7 +54,7 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
   const router = useRouter();
   const selectedVault = useEarnVaultStore((state) => state.selectedVault);
   const [activeTab, setActiveTab] = useState<string>("details");
-  
+
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
   };
@@ -83,7 +83,6 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
     }
     const internalAsset = toInternalAsset(id);
     const displayAsset = toDisplayAsset(id);
-    // Fallback data if store is empty (e.g., direct URL access)
     return {
       id: displayAsset,
       chain: internalAsset,
@@ -102,7 +101,7 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
   // Live pool data from on-chain contracts (auto-refreshes every 30s)
   const { pools } = usePoolData();
 
-  // Build header stats entirely from live contract data — no string parsing
+  // Build header stats entirely from live contract data
   const accountStatsItems = useMemo(() => {
     const asset = toInternalAsset(vaultData.title);
     const displayAsset = toDisplayAsset(vaultData.title);
@@ -118,7 +117,6 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
       {
         id: "1",
         name: "Total Supply",
-        // USD value with approximate price + raw token amount beneath
         amount: `$${fmt(totalSupply * price, 2)}`,
         amountInToken: `${fmt(totalSupply)} ${displayAsset}`,
       },
@@ -131,101 +129,75 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
       {
         id: "3",
         name: "Utilization Rate",
-        // utilizationRate = totalBorrowed / totalSupply × 100
         amount: `${utilizationRate.toFixed(2)}%`,
       },
       {
         id: "4",
         name: "Supply APY",
-        // supplyAPY = baseRate + utilizationRate × multiplier (from use-earn hook)
         amount: `${supplyAPY.toFixed(2)}%`,
       },
     ];
   }, [pools, vaultData.title]);
 
   return (
-    <main className="flex flex-col gap-[40px]">
-      <header className="pt-[40px] px-[80px] w-full h-fit">
-        <div className="w-full h-fit flex flex-col gap-[20px]">
+    <main className="flex flex-col gap-5">
+      <header className="pt-4 sm:pt-5 px-4 sm:px-10 lg:px-30 w-full h-fit">
+        <div className="w-full h-fit flex flex-col gap-3">
           <nav aria-label="Breadcrumb">
             <button
               type="button"
               onClick={handleBackToPools}
-              className={`w-fit h-fit flex gap-[12px] items-center cursor-pointer text-[16px] font-medium hover:text-[#703AE6] transition-colors ${
+              className={`w-fit h-fit flex gap-[10px] items-center cursor-pointer text-[15px] font-medium hover:text-[#703AE6] transition-colors ${
                 isDark ? "text-white" : "text-[#5A5555]"
               }`}
             >
-              <svg
-                width="9"
-                height="16"
-                viewBox="0 0 9 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M8 1L1 8L8 15"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+              <svg width="8" height="14" viewBox="0 0 9 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 1L1 8L8 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               Back to pools
             </button>
           </nav>
-          <div className="w-full h-fit flex gap-[16px] items-center">
-            <div className="flex gap-[16px]">
-              <Image
-                src={iconPath}
-                alt={`${vaultData.title}-icon`}
-                width={36}
-                height={36}
-              />
-              <div className="w-fit h-fit flex gap-[8px] items-center">
-                <h1 className={`w-fit h-fit text-[24px] font-bold ${
-                  isDark ? "text-white" : "text-[#181822]"
+          <div className="w-full h-fit flex gap-3 items-center">
+            <Image
+              src={iconPath}
+              alt={`${vaultData.title}-icon`}
+              width={34}
+              height={34}
+            />
+            <div className="w-fit h-fit flex gap-2 items-center">
+              <h1 className={`w-fit h-fit text-[25px] font-bold ${isDark ? "text-white" : "text-[#181822]"}`}>
+                {vaultData.title}
+              </h1>
+              <div className="w-fit h-fit flex gap-2 items-center">
+                <span className={`text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
+                  isDark ? "bg-[#222222] text-white" : "bg-[#EEEEEE] text-[#0C0C0C]"
                 }`}>
-                  {vaultData.title}
-                </h1>
-                <div className="w-fit h-fit flex gap-[8px] items-center">
-                  <span className={`text-[12px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
-                    isDark ? "bg-[#222222] text-white" : "bg-[#F4F4F4] text-[#0C0C0C]"
-                  }`}>
-                    {vaultData.tag}
-                  </span>
-                </div>
+                  Active
+                </span>
+                <span className="text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] bg-[#703AE6] text-white">
+                  {vaultData.tag}
+                </span>
               </div>
-            </div>
-            <div className={`text-[16px] font-semibold w-fit h-[48px] rounded-[12px] py-[12px] pr-[16px] pl-[8px] flex gap-[4px] ${
-              isDark ? "bg-[#222222] text-white" : "bg-[#F4F4F4]"
-            }`}>
-              Network:{" "}
-              <Image
-                src={iconPath}
-                alt={`${vaultData.chain}-icon`}
-                width={20}
-                height={20}
-              />
             </div>
           </div>
         </div>
       </header>
-      
-      <section className="px-[80px]" aria-label="Vault Statistics">
+
+      <section className="px-4 sm:px-10 lg:px-30" aria-label="Vault Statistics">
         <AccountStatsGhost items={accountStatsItems} />
       </section>
 
-      <section className="px-[80px] pb-[80px] w-full h-fit" aria-label="Vault Details and Actions">
-        <div className="flex gap-[20px] w-full h-fit">
-          <article className="w-[700px] h-full flex flex-col gap-[24px]">
-            <nav className="w-full h-[48px]" aria-label="Vault Information Tabs">
+      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-8 lg:pb-16 w-full h-fit" aria-label="Vault Details and Actions">
+        <div className="flex flex-col lg:flex-row gap-4 w-full h-fit">
+          <article className="flex-1 min-w-0 h-full flex flex-col gap-3">
+            <nav className="w-full" aria-label="Vault Information Tabs">
               <AnimatedTabs
                 tabs={tabs}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
-                type="underline"
-                tabClassName="w-[130px] h-[48px] text-[12px]"
-                containerClassName="w-full"
+                type="border"
+                containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
+                tabClassName="!flex-1 !px-2 text-[12px]"
               />
             </nav>
             {activeTab === "your-positions" && <YourPositions />}
@@ -235,8 +207,35 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
             {activeTab === "margin-managers" && <MarginManagersTab />}
             {activeTab === "collateral-limits" && <CollateralLimitsTab />}
           </article>
-          <aside aria-label="Transaction Form">
+          <aside className="w-full lg:w-[420px] shrink-0 flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start" aria-label="Transaction Form">
             <Form />
+
+            {/* How it works */}
+            <div className={`w-full rounded-2xl border p-4 flex flex-col gap-3 ${
+              isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
+            }`}>
+              <p className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
+                How it works
+              </p>
+              <div className="flex flex-col gap-3">
+                {[
+                  { step: "1", title: "Supply assets", desc: `Deposit ${vaultData.title} into the vault to provide liquidity` },
+                  { step: "2", title: "Receive vault shares", desc: `Get b${vaultData.title} tokens representing your share of the pool` },
+                  { step: "3", title: "Earn yield", desc: "Borrowers pay interest which accrues to your position automatically" },
+                  { step: "4", title: "Withdraw anytime", desc: "Redeem your vault shares for the underlying asset plus earned yield" },
+                ].map((item) => (
+                  <div key={item.step} className="flex gap-3 items-start">
+                    <div className="w-6 h-6 rounded-full bg-[#703AE6]/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[11px] font-bold text-[#703AE6]">{item.step}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{item.title}</span>
+                      <span className={`text-[12px] font-medium leading-relaxed ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>{item.desc}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </aside>
         </div>
       </section>

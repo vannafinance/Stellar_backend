@@ -452,31 +452,45 @@ export default function FarmDetailPage() {
   const isMultiAsset = rowData?.tabType === 'multi' && farmData.titles && farmData.titles.length > 1;
 
   return (
-    <main className="flex flex-col gap-[40px] pt-[40px] px-[40px] pb-[80px]">
+    <main className="flex flex-col gap-5">
       {/* Header */}
-      <header className="w-full h-fit">
-        <div className="w-full h-fit flex flex-col gap-[20px]">
+      <header className="pt-4 sm:pt-5 px-4 sm:px-10 lg:px-30 w-full">
+        <div className="w-full flex flex-col gap-3">
           <nav aria-label="Breadcrumb">
             <button
               type="button"
               onClick={() => router.push("/farm")}
-              className={`w-fit h-fit flex gap-[12px] items-center cursor-pointer text-[16px] font-medium hover:text-[#703AE6] transition-colors ${isDark ? "text-white" : "text-[#5A5555]"}`}
+              className={`w-fit h-fit flex gap-2 items-center cursor-pointer text-[15px] font-medium hover:text-[#703AE6] transition-colors ${isDark ? "text-white" : "text-[#5A5555]"}`}
             >
-              <svg width="9" height="16" viewBox="0 0 9 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg width="8" height="14" viewBox="0 0 9 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 1L1 8L8 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               Back to pools
             </button>
           </nav>
-          <div className="w-full h-fit flex gap-[16px] items-center">
-            <Image src={iconPath} alt={`${farmData.title}-icon`} width={36} height={36} />
-            <div className="w-fit h-fit flex gap-[8px] items-center">
-              <h1 className={`text-[24px] font-bold ${isDark ? "text-white" : "text-[#181822]"}`}>
+          <div className="flex gap-3 items-center flex-wrap">
+            {isMultiAsset ? (
+              <div className="flex items-center -space-x-[18px]">
+                {farmData.titles?.map((titleName: string, iconIdx: number) => {
+                  const assetIconPath = iconPaths[titleName.toUpperCase()];
+                  if (!assetIconPath) return null;
+                  return (
+                    <Image key={iconIdx} src={assetIconPath} alt={titleName} width={28} height={28}
+                      className={`rounded-full ${isDark ? "border border-black" : "border border-white"}`}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <Image src={iconPath} alt={`${farmData.title}-icon`} width={28} height={28} />
+            )}
+            <div className="flex gap-2 items-center flex-wrap">
+              <h1 className={`text-[20px] font-bold ${isDark ? "text-white" : "text-[#181822]"}`}>
                 {farmData.title}
               </h1>
-              <div className="flex gap-[8px]">
+              <div className="flex gap-2 items-center">
                 {farmData.tags.slice(0, 2).map((tag: string | number, i: number) => (
-                  <span key={i} className="text-[12px] font-semibold text-center rounded-[4px] py-[2px] px-[6px] bg-[#703AE6] text-white">
+                  <span key={i} className="text-[12px] font-semibold text-center rounded px-1.5 py-0.5 bg-[#703AE6] text-white">
                     {tag}
                   </span>
                 ))}
@@ -487,7 +501,7 @@ export default function FarmDetailPage() {
       </header>
 
       {/* Pool stats strip */}
-      <section className="w-full h-fit">
+      <section className="px-4 sm:px-10 lg:px-30">
         <AccountStatsGhost items={
           isSoroswapEarly ? soroswapStatsItems :
           isMultiAsset ? aquariusStatsItems :
@@ -496,9 +510,20 @@ export default function FarmDetailPage() {
       </section>
 
       {/* Main content */}
-      <section className="w-full h-fit flex gap-[20px]">
-        <div className="w-full h-fit flex flex-col gap-[10px]">
-          <AnimatedTabs containerClassName="w-full h-fit" tabClassName="w-full h-fit" type="solid" tabs={UI_TABS} activeTab={activeUiTab} onTabChange={setActiveUiTab} />
+      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-8 lg:pb-16 w-full">
+        <div className="flex flex-col lg:flex-row gap-4 w-full">
+          {/* Article — left/main content */}
+          <article className="flex-1 min-w-0 flex flex-col gap-3">
+          <nav className="w-full">
+            <AnimatedTabs
+              containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
+              tabClassName="!flex-1 !px-2 text-[12px]"
+              type="border"
+              tabs={UI_TABS}
+              activeTab={activeUiTab}
+              onTabChange={setActiveUiTab}
+            />
+          </nav>
 
           {activeUiTab === "all-transactions" ? (
             <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
@@ -626,18 +651,43 @@ export default function FarmDetailPage() {
           ) : (
             <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
               <h2 className={`text-[20px] font-semibold ${isDark ? "text-white" : ""}`}>Statistics</h2>
-              <article className="w-full h-full grid grid-cols-3 gap-x-[15px] gap-y-[15px]" aria-label="Pool Statistics">
+              <article className="w-full h-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-[15px] gap-y-[15px]" aria-label="Pool Statistics">
                 {(isSoroswapEarly ? soroswapAnalyticsItems : isMultiAsset ? aquariusAnalyticsItems : analyticsItems).map((item, idx) => (
                   <StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />
                 ))}
               </article>
             </div>
           )}
-        </div>
+          </article>
 
-        {/* Deposit / Withdraw form */}
-        <div className="w-[480px] h-fit flex flex-col gap-[20px]">
-          <Form />
+          {/* Aside — right sticky panel */}
+          <aside className="w-full lg:w-[420px] shrink-0 flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start">
+            <Form />
+
+            {/* How it works */}
+            <div className={`w-full rounded-2xl border p-4 flex flex-col gap-3 ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"}`}>
+              <p className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>How it works</p>
+              <div className="flex flex-col gap-3">
+                {[
+                  { step: "1", title: "Choose a pool", desc: "Select a farm pool matching your strategy and risk appetite" },
+                  { step: "2", title: "Deposit assets", desc: "Supply tokens to earn LP fees and farm rewards automatically" },
+                  { step: "3", title: "Earn yield", desc: "Trading fees and protocol rewards accrue to your position" },
+                  { step: "4", title: "Withdraw anytime", desc: "Redeem your LP position for underlying assets plus earned yield" },
+                ].map((item) => (
+                  <div key={item.step} className="flex gap-3 items-start">
+                    <div className="w-6 h-6 rounded-full bg-[#703AE6]/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[11px] font-bold text-[#703AE6]">{item.step}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <p className={`text-[12px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{item.title}</p>
+                      <p className={`text-[11px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+
         </div>
       </section>
     </main>

@@ -2,6 +2,7 @@
 
 import { Table } from "@/components/earn/table";
 import { AccountStats } from "@/components/margin/account-stats";
+import { Carousel } from "@/components/ui/carousel";
 import { useTheme } from "@/contexts/theme-context";
 import {
   FARM_STATS_ITEMS,
@@ -215,24 +216,52 @@ export default function FarmPage() {
     return { headings: farmTableHeadings, body: lpTableBody };
   }, [activeTab, activeFilterTab, singleAssetTableBody, positionsTableBody, lpTableBody]);
 
+  const farmCarouselItems = [
+    {
+      icon: "",
+      title: "Farm DeFi Yields",
+      description:
+        "Provide liquidity to LP pools and single-asset vaults. Earn trading fees, protocol rewards, and bonus APY — all in one place.",
+    },
+    {
+      icon: "",
+      title: "LP & Single Asset Strategies",
+      description:
+        "Choose from multi-asset LP positions or simple single-asset lending. Flexible strategies to match your risk appetite.",
+    },
+    {
+      icon: "",
+      title: "Powered by Vanna Protocol",
+      description:
+        "All farm strategies are built on audited, battle-tested smart contracts. Your capital is always in your control.",
+    },
+  ];
+
   return (
-    <div className="w-full h-fit px-[40px] pt-[40px] pb-[80px] flex flex-col gap-[40px]">
+    <main className="w-full px-4 sm:px-10 lg:px-30 pb-8 lg:pb-0">
+      {/* Carousel */}
+      <section className="w-full pt-4 sm:pt-6 pb-4">
+        <Carousel items={farmCarouselItems} autoplayInterval={5000} />
+      </section>
+
+      {/* Farm + Margin stats — only shown when wallet connected */}
       {userAddress && FARM_STATS_ITEMS.length > 0 && MARGIN_ACCOUNT_STATS_ITEMS.length > 0 && (
-        <div className={`w-full h-fit p-[24px] border-[1px] rounded-[20px] flex flex-col gap-[40px] ${isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"}`}>
-          <div className="w-full h-fit flex flex-col gap-[8px]">
-            <div className={`w-full h-fit text-[20px] font-semibold ${isDark ? "text-[#FFFFFF]" : "text-[#111111]"}`}>
-              Farm Stats
+        <section className="w-full mb-6">
+          <div className={`w-full p-5 border rounded-2xl flex flex-col gap-8 ${isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"}`}>
+            <div className="flex flex-col gap-2">
+              <p className={`text-[16px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Farm Stats</p>
+              <AccountStats darkBackgroundColor="#111111" items={FARM_STATS_ITEMS} values={farmStatsValues} gridCols="grid-cols-2" backgroundColor="#FFFFFF" />
             </div>
-            <AccountStats darkBackgroundColor="#111111" items={FARM_STATS_ITEMS} values={farmStatsValues} gridCols="grid-cols-2" backgroundColor="#FFFFFF" />
-          </div>
-          <div className="w-full h-fit flex flex-col gap-[8px]">
-            <div className={`w-full h-fit text-[20px] font-semibold ${isDark ? "text-[#FFFFFF]" : "text-[#111111]"}`}>
-              Margin Account Stats
+            <div className="flex flex-col gap-2">
+              <p className={`text-[16px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Margin Account Stats</p>
+              <AccountStats darkBackgroundColor="#111111" items={MARGIN_ACCOUNT_STATS_ITEMS} values={marginStatsValues} gridCols="grid-cols-3" backgroundColor="#FFFFFF" />
             </div>
-            <AccountStats darkBackgroundColor="#111111" items={MARGIN_ACCOUNT_STATS_ITEMS} values={marginStatsValues} gridCols="grid-cols-3" backgroundColor="#FFFFFF" />
           </div>
-        </div>
+        </section>
       )}
+
+      {/* Pool Table */}
+      <section className="w-full pb-8">
       <Table
         filterDropdownPosition="left"
         heading={{
@@ -262,6 +291,7 @@ export default function FarmPage() {
         tableBody={tableData.body}
         onRowClick={activeTab === "vaults" ? handleRowClick : undefined}
       />
-    </div>
+      </section>
+    </main>
   );
 }
