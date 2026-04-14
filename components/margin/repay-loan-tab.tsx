@@ -1,17 +1,32 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
-import { DropdownOptionsType } from "@/lib/types";
+import { useState, useEffect } from "react";
 import { DropdownOptions } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { Dropdown } from "../ui/dropdown";
 import { Popup } from "@/components/ui/popup";
 import { useTheme } from "@/contexts/theme-context";
+import { MarginAccountService } from "@/lib/margin-utils";
+import { getAddress } from "@stellar/freighter-api";
+import { WalletService } from "@/lib/stellar-utils";
 
 export const RepayLoanTab = () => {
   const { isDark } = useTheme();
+  const normalizeContractTokenSymbol = (symbol: string) =>
+    symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
+      ? "BLUSDC"
+      : symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC"
+        ? "AQUSDC"
+        : symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC"
+          ? "SOUSDC"
+          : symbol;
+  // Wallet and margin account state
+  const [userAddress, setUserAddress] = useState<string>("");
+  const [marginAccount, setMarginAccount] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  
   // Repay form state
   // Repay loan statistics
   const [repayStats, setRepayStats] = useState({
@@ -30,9 +45,69 @@ export const RepayLoanTab = () => {
   const [isPayNowPopupOpen, setIsPayNowPopupOpen] = useState(false);
   const [isFlashClosePopupOpen, setIsFlashClosePopupOpen] = useState(false);
 
+  // Load user data and borrowed balances on mount
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const address = await getAddress();
+        if (!address.error && address.address) {
+          setUserAddress(address.address);
+          
+          // Get margin account
+          const account = MarginAccountService.getStoredMarginAccount(address.address);
+          if (account && account.isActive) {
+            setMarginAccount(account.address);
+            
+            // Get borrowed balances
+            await refreshBorrowedBalances(account.address);
+            
+            // Get wallet balance
+            const balance = await WalletService.getBalance(address.address);
+            setRepayStats(prev => ({
+              ...prev,
+              availableBalance: parseFloat(balance) || 0
+            }));
+          }
+        }
+      } catch (error) {
+        console.error("Error loading user data:", error);
+      }
+    };
+    
+    loadUserData();
+  }, []);
+
+  // Refresh borrowed balances for selected currency
+  const refreshBorrowedBalances = async (marginAccountAddress: string) => {
+    try {
+      const result = await MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress);
+      if (result.success && result.data) {
+        const tokenData = result.data[normalizeContractTokenSymbol(selectedRepayCurrency)];
+        if (tokenData) {
+          setRepayStats(prev => ({
+            ...prev,
+            netOutstandingAmountToPay: parseFloat(tokenData.amount) || 0
+          }));
+        }
+      }
+    } catch (error) {
+      console.error("Error refreshing balances:", error);
+    }
+  };
+
+  // Refresh when currency changes
+  useEffect(() => {
+    if (marginAccount) {
+      refreshBorrowedBalances(marginAccount);
+    }
+  }, [selectedRepayCurrency, marginAccount]);
+
   // Handler for percentage click
   const handlePercentageClick = (item: number) => {
     setSelectedRepayPercentage(item);
+    // Calculate amount based on percentage
+    const calculatedAmount = (repayStats.netOutstandingAmountToPay * item) / 100;
+    setRepayAmount(calculatedAmount);
   };
 
   // Handler for input change
@@ -41,8 +116,37 @@ export const RepayLoanTab = () => {
   };
 
   // Handler for pay now click
-  const handlePayNowClick = () => {
-    setIsPayNowPopupOpen(true);
+  const handlePayNowClick = async () => {
+    if (!marginAccount || repayAmount <= 0) {
+      alert("Please enter a valid repay amount");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Convert amount to WAD format (18 decimals)
+      const repayAmountWad = (BigInt(Math.floor(repayAmount * 1000000)) * BigInt(1000000000000)).toString();
+      
+      const result = await MarginAccountService.repayLoan(
+        marginAccount,
+        normalizeContractTokenSymbol(selectedRepayCurrency),
+        repayAmountWad
+      );
+
+      if (result.success) {
+        alert(`✅ Loan repayment successful! Transaction hash: ${result.hash}`);
+        // Refresh balances
+        await refreshBorrowedBalances(marginAccount);
+        setRepayAmount(0);
+      } else {
+        alert(`❌ Loan repayment failed: ${result.error}`);
+      }
+    } catch (error: any) {
+      alert(`❌ Error: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+      setIsPayNowPopupOpen(false);
+    }
   };
 
   // Handler for flash close click
@@ -263,11 +367,11 @@ export const RepayLoanTab = () => {
             whileTap={isInputEmpty ? {} : { scale: 0.98 }}
           >
             <Button
-              text="Pay Now"
+              text={isLoading ? "Processing..." : "Pay Now"}
               size="large"
               type="gradient"
               onClick={handlePayNowClick}
-              disabled={isInputEmpty}
+              disabled={isInputEmpty || isLoading || !marginAccount}
             />
           </motion.div>
 
@@ -315,9 +419,9 @@ export const RepayLoanTab = () => {
             >
               <Popup
                 icon="/assets/exclamation.png"
-                description="Are you sure you want to close this position? This action will lock in your current P&L and cannot be undone."
-                buttonText="Close Position"
-                buttonOnClick={handleClosePayNowPopup}
+                description={`Are you sure you want to repay ${repayAmount} ${selectedRepayCurrency}? This will reduce your borrowed amount.`}
+                buttonText={isLoading ? "Processing..." : "Confirm Repayment"}
+                buttonOnClick={handlePayNowClick}
                 closeButtonText="Cancel"
                 closeButtonOnClick={handleClosePayNowPopup}
               />

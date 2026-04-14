@@ -1,284 +1,320 @@
-import { useState } from "react";
+'use client';
+
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Dropdown } from "../ui/dropdown";
 import { DropdownOptions } from "@/lib/constants";
-import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS, UNIFIED_BALANCE_BREAKDOWN_DATA } from "@/lib/constants/margin";
-import { InfoCard } from "../margin/info-card";
-import { Button } from "../ui/button";
-import { AmountBreakdownDialogue } from "../ui/amount-breakdown-dialogue";
+import { STELLAR_POOLS } from "@/lib/constants/earn";
+import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
-
-const infoPropsData = {
-  data: {
-    youGetVETH: 100,
-    ethPerVETH: 1.002889,
-
-    currentAPY: 4.95,
-    baseAPY: 2.79,
-    bonusAPY: 0.25,
-    rewardsAPY: 1.9,
-
-    projectedMonthlyFrom: 0,
-    projectedMonthlyTo: 100000,
-
-    projectedYearlyFrom: 0,
-    projectedYearlyTo: 100000,
-  },
-
-  expandableSections: [
-    {
-      title: "More Details",
-      headingBold: false,
-      defaultExpanded: false,
-      items: [
-        {
-          id: "baseAPY",
-          name: "Base APY (%)",
-        },
-        {
-          id: "bonusAPY",
-          name: "Bonus APY (%)",
-        },
-        {
-          id: "rewardsAPY",
-          name: "Rewards APY (%)",
-        },
-        {
-          id: "youGetVETH",
-          name: "You Get (vETH)",
-        },
-        {
-          id: "ethPerVETH",
-          name: "ETH per vETH",
-        },
-        {
-          id: "currentAPY",
-          name: "Current APY (%)",
-        },
-        {
-          id: "projectedMonthlyFrom",
-          name: "Projected Monthly Earnings (From)",
-        },
-        {
-          id: "projectedMonthlyTo",
-          name: "Projected Monthly Earnings (To)",
-        },
-        {
-          id: "projectedYearlyFrom",
-          name: "Projected Yearly Earnings (From)",
-        },
-        {
-          id: "projectedYearlyTo",
-          name: "Projected Yearly Earnings (To)",
-        },
-      ],
-    },
-  ],
-
-  showExpandable: true,
-};
+import { useSupplyLiquidity, usePoolData, useUserPositions } from "@/hooks/use-earn";
+import { AssetType, ContractService } from "@/lib/stellar-utils";
 
 export const SupplyLiquidityTab = () => {
   const { isDark } = useTheme();
-  const [selectedOption, setSelectedOption] = useState<string>("USDT");
-  const [valueInUSD, setValueInUSD] = useState<number>(0);
-  const [value, setValue] = useState<number>(0);
-  const [selectedPercentage, setSelectedPercentage] = useState<number>(10);
-  const [selectedBalance, setSelectedBalance] = useState<string>("PB");
-  const [unifiedBalance, setUnifiedBalance] = useState<number>(0);
-  const [isBalanceBreakdownOpen, setIsBalanceBreakdownOpen] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<string>("XLM");
+  const [value, setValue] = useState<string>("");
+  const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
+  
   const userAddress = useUserStore((state) => state.address);
+  const balance = useUserStore((state) => state.balance);
+  const tokenBalances = useUserStore((state) => state.tokenBalances);
+  
+  const { supply, isLoading, message, clearMessage } = useSupplyLiquidity();
+  const { pools } = usePoolData();
+  const { refresh: refreshPositions } = useUserPositions();
 
-  const handleBalanceBreakdownClick = () => {
-    if (selectedBalance === "WB") {
-      setIsBalanceBreakdownOpen(true);
+  // Fetch all token balances when user connects
+  const refreshTokenBalances = useCallback(async () => {
+    if (!userAddress) return;
+    
+    try {
+      const balances = await ContractService.getAllTokenBalances(userAddress);
+      useUserStore.getState().set({
+        tokenBalances: balances,
+        balance: balances.XLM, // Also update native XLM balance
+      });
+    } catch (error) {
+      console.error('Error fetching token balances:', error);
+    }
+  }, [userAddress]);
+
+  // Refresh positions and token balances when user connects
+  useEffect(() => {
+    if (userAddress) {
+      refreshPositions();
+      refreshTokenBalances();
+    }
+  }, [userAddress, refreshPositions, refreshTokenBalances]);
+
+  // Get pool stats for selected asset
+  const normalizedAsset =
+    selectedOption === 'BLUSDC' || selectedOption === 'USDC'
+      ? 'USDC'
+      : selectedOption === 'AqUSDC' || selectedOption === 'AquiresUSDC'
+        ? 'AQUARIUS_USDC'
+        : selectedOption === 'SoUSDC' || selectedOption === 'SoroswapUSDC'
+          ? 'SOROSWAP_USDC'
+          : selectedOption;
+  const selectedPool = pools[normalizedAsset as keyof typeof pools];
+  const selectedPoolConfig = STELLAR_POOLS[normalizedAsset as keyof typeof STELLAR_POOLS];
+
+  // Calculate available balance based on selected asset
+  const availableBalance = useMemo(() => {
+    if (normalizedAsset === 'XLM') {
+      // For XLM, use native balance minus some reserve for fees
+      const xlmBalance = parseFloat(tokenBalances?.XLM || balance) || 0;
+      return Math.max(0, xlmBalance - 1).toFixed(7); // Keep 1 XLM for fees
+    } else if (normalizedAsset === 'USDC') {
+      return tokenBalances?.BLEND_USDC || tokenBalances?.USDC || '0';
+    } else if (normalizedAsset === 'AQUARIUS_USDC') {
+      return tokenBalances?.AQUARIUS_USDC || '0';
+    } else if (normalizedAsset === 'SOROSWAP_USDC') {
+      return tokenBalances?.SOROSWAP_USDC || '0';
+    }
+    return '0';
+  }, [normalizedAsset, balance, tokenBalances]);
+
+  // Handle percentage button click
+  const handlePercentageClick = (percent: number) => {
+    setSelectedPercentage(percent);
+    const maxAmount = parseFloat(availableBalance) || 0;
+    const calculatedAmount = (maxAmount * percent / 100).toFixed(7);
+    setValue(calculatedAmount);
+  };
+
+  // Handle supply action
+  const handleSupply = async () => {
+    const numAmount = parseFloat(value);
+    if (numAmount > 0 && userAddress) {
+      const result = await supply(numAmount, normalizedAsset as AssetType);
+      if (result.success) {
+        setValue("");
+        setSelectedPercentage(null);
+        // Refresh positions and balances after successful deposit
+        setTimeout(() => {
+          refreshPositions();
+          refreshTokenBalances();
+        }, 2000);
+      }
     }
   };
 
-  const handleCloseBalanceBreakdown = () => {
-    setIsBalanceBreakdownOpen(false);
-  };
-  return (
-    <>
-      <form className={`flex gap-[16px] items-center w-full h-fit border-[1px] rounded-[16px] p-[16px] ${
-        isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"
-      }`}>
-        <div className="w-full h-full flex flex-col gap-[44px] justify-between">
-          <div className="w-full h-fit">
-            <label htmlFor="asset-select" className="sr-only">
-              Select Asset
-            </label>
-            <Dropdown
-              items={DropdownOptions}
-              setSelectedOption={setSelectedOption}
-              selectedOption={selectedOption}
-              classname="w-fit gap-[4px] items-center"
-              dropdownClassname="w-full"
-            />
-          </div>
-          <div className="w-full h-fit flex flex-col gap-[8px]">
-            <div className="w-full h-fit">
-              <label htmlFor="supply-amount" className="sr-only">
-                Supply Amount
-              </label>
-              <input
-                id="supply-amount"
-                onChange={(e) => setValue(Number(e.target.value))}
-                value={value}
-                type="number"
-                placeholder="Enter amount"
-                className={`w-full h-fit placeholder:text-[#C7C7C7] text-[16px] font-medium outline-none ${
-                  isDark ? "text-white bg-[#111111]" : "bg-white"
-                }`}
-                aria-describedby="usd-value"
-              />
-            </div>
-            <output id="usd-value" className={`w-full h-fit text-[10px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              {valueInUSD.toFixed(2)}
-            </output>
-          </div>
-        </div>
-        <div className="w-fit h-fit flex flex-col gap-[32px] items-end">
-          <fieldset className="w-full h-fit flex gap-[8px]">
-            <legend className="sr-only">Select deposit percentage</legend>
-            {DEPOSIT_PERCENTAGES.map((item) => {
-              return (
-                <button
-                  type="button"
-                  onClick={() => setSelectedPercentage(item)}
-                  key={item}
-                  className={`flex justify-center items-center cursor-pointer text-[14px] font-semibold w-fit h-[44px] rounded-[12px] p-[10px] ${
-                    selectedPercentage === item
-                      ? `${PERCENTAGE_COLORS[item]} text-white`
-                      : isDark
-                      ? "bg-[#222222] text-white"
-                      : "bg-[#F4F4F4] text-black"
-                  }`}
-                  aria-pressed={selectedPercentage === item}
-                >
-                  {item}%
-                </button>
-              );
-            })}
-          </fieldset>
-          <div className="w-fit h-fit flex flex-col items-end gap-[4px]">
-            <fieldset className="flex w-fit h-fit rounded-[4px] gap-[4px] items-center">
-              <legend className="sr-only">Select balance type</legend>
-              <button
-                type="button"
-                onClick={() => setSelectedBalance("PB")}
-                className={`w-[28px] h-fit rounded-[4px] p-[4px] text-[12px] font-medium cursor-pointer ${
-                  selectedBalance === "PB"
-                    ? "bg-[#F1EBFD] text-[#703AE6]"
-                    : isDark
-                    ? "bg-[#222222] text-white"
-                    : "bg-[#F4F4F4] text-black"
-                }`}
-                aria-pressed={selectedBalance === "PB"}
-                aria-label="Protocol Balance"
-              >
-                PB
-              </button>
-              <span className="w-[16px] h-[16px] flex items-center justify-center" aria-hidden="true">
-                <svg
-                  width="12"
-                  height="11"
-                  viewBox="0 0 12 11"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M10.9986 6.75H0.125171C0.0564207 6.75 0.000170742 6.80625 0.000170742 6.875V7.8125C0.000170742 7.88125 0.0564207 7.9375 0.125171 7.9375H9.58142L7.32673 10.7969C7.26267 10.8781 7.32048 11 7.42517 11H8.55798C8.63455 11 8.70642 10.9656 8.75486 10.9047L11.3924 7.55937C11.6502 7.23125 11.4174 6.75 10.9986 6.75ZM11.3752 3.0625H1.91892L4.17361 0.203125C4.23767 0.121875 4.17986 0 4.07517 0H2.94236C2.8658 0 2.79392 0.0343751 2.74548 0.0953126L0.107983 3.44063C-0.149829 3.76875 0.0829833 4.25 0.500171 4.25H11.3752C11.4439 4.25 11.5002 4.19375 11.5002 4.125V3.1875C11.5002 3.11875 11.4439 3.0625 11.3752 3.0625Z"
-                    fill={isDark ? "#FFFFFF" : "#000000"}
-                  />
-                </svg>
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedBalance("WB")}
-                className={`w-[28px] h-fit rounded-[4px] p-[4px] text-[12px] font-medium cursor-pointer ${
-                  selectedBalance === "WB"
-                    ? "bg-[#F1EBFD] text-[#703AE6]"
-                    : isDark
-                    ? "bg-[#222222] text-white"
-                    : "bg-[#F4F4F4] text-black"
-                }`}
-                aria-pressed={selectedBalance === "WB"}
-                aria-label="Wallet Balance"
-              >
-                WB
-              </button>
-            </fieldset>
-            <output className="w-fit h-fit text-[10px] flex gap-[4px] font-semibold">
-              <button
-                type="button"
-                onClick={handleBalanceBreakdownClick}
-                className={`${selectedBalance==="WB"?"underline cursor-pointer":""} ${
-                  isDark ? "text-white" : "text-[#111111]"
-                } text-[10px] font-semibold`}
-                disabled={selectedBalance !== "WB"}
-              >
-                {selectedBalance==="WB"?"Unified Balance:":"Balance:"}
-              </button>
-              <span className={isDark ? "text-white" : "text-[#363636]"}>
-                {unifiedBalance.toFixed(2)}
-              </span>
-            </output>
-          </div>
-        </div>
-      </form>
-      <section className="flex flex-col gap-[8px]" aria-label="Supply Details">
-        <InfoCard
-          data={infoPropsData.data}
-          expandableSections={infoPropsData.expandableSections}
-          showExpandable={infoPropsData.showExpandable}
-        />
-      </section>
-      <Button
-        text={!userAddress ? "Connect Wallet" : value === 0 ? "Enter Amount" : "Supply Liquidity"}
-        size="large"
-        type="gradient"
-        disabled={value === 0 ? true : false}
-      />
+  // Calculate estimated vTokens to receive
+  const estimatedVTokens = useMemo(() => {
+    const amount = parseFloat(value) || 0;
+    if (amount <= 0) return '0';
+    
+    const exchangeRate = parseFloat(selectedPool?.exchangeRate || '1');
+    if (exchangeRate <= 0) return amount.toFixed(7);
+    
+    return (amount / exchangeRate).toFixed(7);
+  }, [value, selectedPool]);
 
-      <AnimatePresence>
-        {isBalanceBreakdownOpen && (
-          <motion.aside
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="balance-breakdown-title"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            onClick={handleCloseBalanceBreakdown}
-          >
-            <motion.article
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ duration: 0.3 }}
-              onClick={(e) => e.stopPropagation()}
+  // Get button text
+  const getButtonText = () => {
+    if (!userAddress) return "Connect Wallet";
+    if (isLoading) return "Processing...";
+    if (!value || parseFloat(value) <= 0) return "Enter Amount";
+    if (parseFloat(value) > parseFloat(availableBalance)) return "Insufficient Balance";
+    return `Supply ${value} ${selectedOption}`;
+  };
+
+  const isButtonDisabled = 
+    !userAddress || 
+    isLoading || 
+    !value || 
+    parseFloat(value) <= 0 || 
+    parseFloat(value) > parseFloat(availableBalance);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Asset Selection & Amount Input */}
+      <div className={`flex flex-col gap-4 w-full h-fit border rounded-[16px] p-4 ${
+        isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-gray-200"
+      }`}>
+        {/* Asset Selector */}
+        <div className="flex justify-between items-center">
+          <label className={`text-sm font-medium ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+            Select Asset
+          </label>
+          <Dropdown
+            items={DropdownOptions}
+            setSelectedOption={setSelectedOption}
+            selectedOption={selectedOption}
+            classname="w-fit gap-[4px] items-center"
+            dropdownClassname="w-full"
+          />
+        </div>
+
+        {/* Amount Input */}
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setSelectedPercentage(null);
+              }}
+              placeholder="0.00"
+              step="0.0000001"
+              min="0"
+              className={`w-full text-2xl font-bold outline-none bg-transparent ${
+                isDark ? "text-white placeholder-gray-600" : "text-gray-900 placeholder-gray-400"
+              }`}
+            />
+            <span className={`text-sm font-medium ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+              {selectedOption}
+            </span>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+              ≈ ${(parseFloat(value) * (selectedOption === 'XLM' ? 0.1 : 1) || 0).toFixed(2)} USD
+            </span>
+            <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              Available: {availableBalance} {selectedOption}
+            </span>
+          </div>
+        </div>
+
+        {/* Percentage Buttons */}
+        <div className="flex gap-2">
+          {DEPOSIT_PERCENTAGES.map((percent) => (
+            <button
+              key={percent}
+              type="button"
+              onClick={() => handlePercentageClick(percent)}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                selectedPercentage === percent
+                  ? `${PERCENTAGE_COLORS[percent]} text-white`
+                  : isDark
+                  ? "bg-[#222222] text-gray-300 hover:bg-[#333333]"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
             >
-              <AmountBreakdownDialogue
-                heading={UNIFIED_BALANCE_BREAKDOWN_DATA.heading}
-                asset={selectedOption}
-                totalDeposit={unifiedBalance}
-                breakdown={UNIFIED_BALANCE_BREAKDOWN_DATA.breakdown.map(item => ({
-                  name: item.name,
-                  value: item.value
-                }))}
-                onClose={handleCloseBalanceBreakdown}
-              />
-            </motion.article>
-          </motion.aside>
+              {percent}%
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Pool Stats Card */}
+      <div className={`rounded-[16px] p-4 ${
+        isDark ? "bg-[#111111] border border-[#333333]" : "bg-gray-50 border border-gray-200"
+      }`}>
+        <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
+          Pool Statistics
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Supply APY</span>
+            <span className={`text-lg font-bold text-green-500`}>
+              {selectedPool?.supplyAPY || '0'}%
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Total Supply</span>
+            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
+              {parseFloat(selectedPool?.totalSupply || '0').toLocaleString()} {selectedOption}
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Utilization</span>
+            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
+              {selectedPool?.utilizationRate || '0'}%
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Available</span>
+            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
+              {parseFloat(selectedPool?.availableLiquidity || '0').toLocaleString()} {selectedOption}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* You Will Receive Card */}
+      {value && parseFloat(value) > 0 && (
+        <div className={`rounded-[16px] p-4 border-2 border-dashed ${
+          isDark ? "bg-[#0D1117] border-[#703AE6]/30" : "bg-purple-50 border-purple-200"
+        }`}>
+          <div className="flex justify-between items-center">
+            <div className="flex flex-col">
+              <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                You will receive
+              </span>
+              <span className={`text-xl font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
+                {estimatedVTokens} v{selectedOption}
+              </span>
+            </div>
+            <div className={`p-2 rounded-full ${isDark ? "bg-[#703AE6]/20" : "bg-purple-100"}`}>
+              <svg className="w-6 h-6 text-[#703AE6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+          </div>
+          <p className={`text-xs mt-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+            v{selectedOption} tokens represent your share in the lending pool and accrue interest over time.
+          </p>
+        </div>
+      )}
+
+      {/* Message Display */}
+      <AnimatePresence>
+        {message.text && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className={`p-4 rounded-xl flex items-start gap-3 ${
+              message.type === 'success' 
+                ? 'bg-green-500/10 border border-green-500/20 text-green-500' 
+                : message.type === 'error' 
+                ? 'bg-red-500/10 border border-red-500/20 text-red-500' 
+                : 'bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]'
+            }`}
+          >
+            {message.type === 'success' && (
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+            {message.type === 'error' && (
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            {message.type === 'info' && (
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+            <span className="text-sm">{message.text}</span>
+          </motion.div>
         )}
       </AnimatePresence>
-    </>
+
+      {/* Supply Button */}
+      <button
+        onClick={handleSupply}
+        disabled={isButtonDisabled}
+        className={`w-full py-4 rounded-xl font-semibold text-white transition-all ${
+          isButtonDisabled
+            ? "bg-gray-500 cursor-not-allowed opacity-50"
+            : "bg-gradient-to-r from-[#703AE6] to-[#FF007A] hover:opacity-90 cursor-pointer"
+        }`}
+      >
+        {getButtonText()}
+      </button>
+
+      {/* Contract Info */}
+      <div className={`text-xs text-center ${isDark ? "text-gray-600" : "text-gray-400"}`}>
+        Contract: {selectedPoolConfig?.lendingProtocol.slice(0, 8)}...{selectedPoolConfig?.lendingProtocol.slice(-8)}
+      </div>
+    </div>
   );
 };
 

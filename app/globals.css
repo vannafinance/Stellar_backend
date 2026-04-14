@@ -2,6 +2,11 @@
 
 @theme {
   --font-family: var(--font-plus-jakarta-sans), system-ui, sans-serif;
+
+  /* Custom breakpoints */
+  --breakpoint-mobile: 550px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1024px;
 }
 
 :root {
@@ -230,6 +235,43 @@ html.dark * {
     background-color: #D0D0D0;
   }
 
+  /* Thin scrollbar (alternate class) */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #a7a7a7 #f4f4f4;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #f4f4f4;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #a7a7a7;
+    border-radius: 3px;
+  }
+
+  /* Hide scrollbar while keeping scroll functionality */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Shadow utility */
+  .shadow {
+    box-shadow:
+      0px 7px 15px rgba(0, 0, 0, 0.08),
+      0px 28px 28px rgba(0, 0, 0, 0.07);
+  }
+
   /* Hide TradingView attribution logo */
   #tv-attr-logo,
   a#tv-attr-logo {
@@ -237,6 +279,6 @@ html.dark * {
     visibility: hidden !important;
     opacity: 0 !important;
   }
-  
+
 }
 

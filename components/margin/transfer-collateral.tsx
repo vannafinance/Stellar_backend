@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dropdown } from "../ui/dropdown";
 import { AnimatePresence, motion } from "framer-motion";
 import { DropdownOptions } from "@/lib/constants";
@@ -6,31 +6,135 @@ import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { DetailsPanel } from "../ui/details-panel";
 import { Button } from "../ui/button";
 import { useTheme } from "@/contexts/theme-context";
+import { MarginAccountService } from "@/lib/margin-utils";
+import { getAddress } from "@stellar/freighter-api";
+import { WalletService } from "@/lib/stellar-utils";
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
-  const [selectedCurrency, setSelectedCurrency] = useState<string>("USDC");
+  const normalizeContractTokenSymbol = (symbol: string) =>
+    symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
+      ? "BLUSDC"
+      : symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC"
+        ? "AQUSDC"
+        : symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC"
+          ? "SOUSDC"
+          : symbol;
+  const [selectedCurrency, setSelectedCurrency] = useState<string>("XLM");
   const [valueInput, setValueInput] = useState<string>("");
   const [valueInUsd, setValueInUsd] = useState<number>(0.0);
   const [percentage, setPercentage] = useState<number>(0);
+  
+  // Wallet and margin account state
+  const [userAddress, setUserAddress] = useState<string>("");
+  const [marginAccount, setMarginAccount] = useState<string>("");
+  const [marginAccountBalance, setMarginAccountBalance] = useState<number>(0);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Load user data on mount
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const address = await getAddress();
+        if (!address.error && address.address) {
+          setUserAddress(address.address);
+          
+          // Get margin account
+          const account = MarginAccountService.getStoredMarginAccount(address.address);
+          if (account && account.isActive) {
+            setMarginAccount(account.address);
+            
+            // Get margin account balance
+            await refreshMarginAccountBalance(account.address);
+          }
+          
+          // Get wallet balance
+          const balance = await WalletService.getBalance(address.address);
+          setWalletBalance(parseFloat(balance) || 0);
+        }
+      } catch (error) {
+        console.error("Error loading user data:", error);
+      }
+    };
+    
+    loadUserData();
+  }, []);
+
+  // Refresh margin account balance
+  const refreshMarginAccountBalance = async (marginAccountAddress: string) => {
+    try {
+      const result = await MarginAccountService.getCollateralBalances(marginAccountAddress);
+      if (result.success && result.data) {
+        const tokenData = result.data[normalizeContractTokenSymbol(selectedCurrency)];
+        if (tokenData) {
+          setMarginAccountBalance(parseFloat(tokenData.amount) || 0);
+        }
+      }
+    } catch (error) {
+      console.error("Error refreshing margin account balance:", error);
+    }
+  };
+
+  // Refresh when currency changes
+  useEffect(() => {
+    if (marginAccount) {
+      refreshMarginAccountBalance(marginAccount);
+    }
+  }, [selectedCurrency, marginAccount]);
 
   const handlePercentageClick = (item: number) => {
     setPercentage(item);
+    // Calculate amount based on percentage of wallet balance
+    const calculatedAmount = (walletBalance * item) / 100;
+    setValueInput(calculatedAmount.toFixed(7));
+    setValueInUsd(calculatedAmount * 1); // Placeholder for price conversion
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setValueInput(value);
-    setValueInUsd(Number(value) * 100);
+    setValueInUsd(Number(value) * 1); // Placeholder for price conversion
   };
 
   const handleMaxValueClick = () => {
-    setValueInput("2000");
-    setValueInUsd(2000);
+    setValueInput(walletBalance.toFixed(7));
+    setValueInUsd(walletBalance);
   };
 
-  const handleTransferClick = () => {
-    console.log("Transfer clicked");
+  const handleTransferClick = async () => {
+    if (!marginAccount || !valueInput || Number(valueInput) <= 0) {
+      alert("Please enter a valid amount");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Convert amount to WAD format (18 decimals)
+      const amountWad = (BigInt(Math.floor(Number(valueInput) * 1000000)) * BigInt(1000000000000)).toString();
+      
+      const result = await MarginAccountService.depositCollateralTokens(
+        marginAccount,
+        normalizeContractTokenSymbol(selectedCurrency),
+        amountWad
+      );
+
+      if (result.success) {
+        alert(`✅ Transfer successful! Transaction hash: ${result.hash}`);
+        // Refresh balances
+        await refreshMarginAccountBalance(marginAccount);
+        const balance = await WalletService.getBalance(userAddress);
+        setWalletBalance(parseFloat(balance) || 0);
+        setValueInput("");
+        setValueInUsd(0);
+      } else {
+        alert(`❌ Transfer failed: ${result.error}`);
+      }
+    } catch (error: any) {
+      alert(`❌ Error: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -155,9 +259,11 @@ export const TransferCollateral = () => {
             transition={{ duration: 0.3, delay: 0.25 }}
           >
             <p className={`text-[10px] font-medium ${isDark ? "text-white" : ""}`}>
-              Transfer To: <span className="font-semibold">WB</span>
+              Transfer To: <span className="font-semibold">Margin Account</span>
             </p>
-            <p className={`text-[20px] font-medium ${isDark ? "text-white" : ""}`}>2000 USD</p>
+            <p className={`text-[20px] font-medium ${isDark ? "text-white" : ""}`}>
+              {walletBalance.toFixed(2)} {selectedCurrency}
+            </p>
 
             <motion.button
               onClick={handleMaxValueClick}
@@ -177,7 +283,10 @@ export const TransferCollateral = () => {
         transition={{ duration: 0.4, delay: 0.3 }}
       >
         <DetailsPanel
-          items={[{ title: "Transfer Collateral", value: "2000 USD" }]}
+          items={[
+            { title: "Transfer Collateral", value: `${valueInput || '0'} ${selectedCurrency}` },
+            { title: "Margin Account Balance", value: `${marginAccountBalance.toFixed(7)} ${selectedCurrency}` }
+          ]}
         />
       </motion.aside>
       <motion.section 
@@ -192,10 +301,10 @@ export const TransferCollateral = () => {
           transition={{ duration: 0.3, delay: 0.45 }}
         >
           <Button
-            text="Transfer"
+            text={isLoading ? "Processing..." : "Transfer"}
             size="large"
             type="gradient"
-            disabled={Number(valueInput)>0?false:true}
+            disabled={Number(valueInput) > 0 && !isLoading && marginAccount ? false : true}
             onClick={handleTransferClick}
           />
         </motion.div>
@@ -208,7 +317,7 @@ export const TransferCollateral = () => {
             text="Flash Close"
             size="large"
             type="ghost"
-            disabled={Number(valueInput)>0?false:true}
+            disabled={Number(valueInput) > 0 && !isLoading && marginAccount ? false : true}
             onClick={handleTransferClick}
           />
         </motion.div>
@@ -216,5 +325,4 @@ export const TransferCollateral = () => {
     </motion.section>
   );
 };
-
 

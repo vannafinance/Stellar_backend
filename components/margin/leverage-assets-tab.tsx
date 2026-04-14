@@ -17,9 +17,10 @@ import { InfoCard } from "./info-card";
 import { Dropdown } from "../ui/dropdown";
 import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
 import { MBSelectionGrid } from "./mb-selection-grid";
-import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useMarginAccountInfoStore, depositAndBorrow, setupContractConfiguration, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
+import { useWallet } from "@/hooks/use-wallet";
 
 type Modes = "Deposit" | "Borrow";
 
@@ -38,16 +39,34 @@ const ensureCollateralId = (collateral: Collaterals): Collaterals => {
 
 export const LeverageAssetsTab = () => {
   const { isDark } = useTheme();
+  const { refreshBalances } = useWallet();
+  const normalizeContractTokenSymbol = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC") return "AQUSDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC") return "SOUSDC";
+    return symbol;
+  };
   // Component state
   const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
+  const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
   const setHasMarginAccount = useMarginAccountInfoStore((state) => state.set);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [mode, setMode] = useState<Modes>("Deposit");
   const [borrowItems, setBorrowItems] = useState<BorrowInfo[]>([]);
   const [leverage, setLeverage] = useState(2);
   const feesCurrency = "USDT";
+  
+  // Loading states
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const userAddress = useUserStore((state) => state.address);
+
+  useEffect(() => {
+    if (!userAddress) return;
+    refreshBalances(userAddress).catch((err) => {
+      console.warn("Failed to refresh wallet balances on margin page:", err);
+    });
+  }, [userAddress, refreshBalances]);
 
   // Dialogue state
   type DialogueState = "none" | "create-margin" | "sign-agreement";
@@ -279,8 +298,149 @@ export const LeverageAssetsTab = () => {
     setEditingId(null);
   }, []); // No dependencies - uses functional updates
 
-  const handleButtonClick = () => {
-    setActiveDialogue("create-margin");
+  const handleButtonClick = async () => {
+    if (!userAddress) {
+      console.log('No user address available');
+      return;
+    }
+
+    if (hasMarginAccount) {
+      // User has margin account - execute deposit and borrow
+      try {
+        setIsProcessing(true);
+
+        // Refresh latest risk metrics before computing borrow size
+        if (marginAccountAddress) {
+          await refreshBorrowedBalances(marginAccountAddress);
+        }
+        
+        // Get deposit amount and multiplier from collaterals
+        const depositCollateral = collateralList[0]; // Get first collateral
+        const depositAmount = depositCollateral?.amount || 0;
+        const depositAmountUsd = depositCollateral?.amountInUsd || 0;
+        
+        if (depositAmount <= 0) {
+          alert('Please enter a deposit amount greater than 0');
+          setIsProcessing(false);
+          return;
+        }
+
+        let multiplier = leverage; // Use the leverage state as multiplier
+        const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
+
+        // Cap requested borrow by current account health to avoid guaranteed
+        // RiskEngine rejections (applies to all supported collateral symbols).
+        if (multiplier > 1) {
+          const latestMarginState = useMarginAccountInfoStore.getState();
+          const liveTotalBorrowedValue = latestMarginState.totalBorrowedValue;
+          const liveTotalCollateralValue = latestMarginState.totalCollateralValue;
+          const threshold = 1.1;
+          // Risk engine compares collateral/debt by value, so keep all math in USD.
+          const projectedCollateralUsd = liveTotalCollateralValue + depositAmountUsd;
+          const maxDebtUsd = projectedCollateralUsd / threshold;
+          const maxAdditionalBorrowUsd = Math.max(0, maxDebtUsd - liveTotalBorrowedValue);
+          const requestedBorrowUsd = depositAmountUsd * (multiplier - 1);
+
+          if (maxAdditionalBorrowUsd <= 0) {
+            alert(
+              'Borrow is blocked by Risk Engine: your current debt is already too high for your collateral. ' +
+              'Add more collateral or repay first.'
+            );
+            setIsProcessing(false);
+            return;
+          }
+
+          if (requestedBorrowUsd > maxAdditionalBorrowUsd) {
+            // Keep a safety margin below threshold because on-chain checks use strict ">"
+            // and integer math.
+            const safeMultiplier = depositAmountUsd > 0
+              ? 1 + (maxAdditionalBorrowUsd * 0.9) / depositAmountUsd
+              : 1;
+            multiplier = Math.max(1, Math.min(multiplier, safeMultiplier));
+            setLeverage(Math.max(1, Math.min(10, Number(multiplier.toFixed(2)))));
+            if (multiplier <= 1.000001) {
+              alert(
+                'Borrow amount is too high for current account health. ' +
+                'Deposit can proceed, but borrow must be near zero. Add more collateral or repay existing debt.'
+              );
+              setIsProcessing(false);
+              return;
+            }
+          }
+        }
+
+        console.log('🚀 Executing deposit and borrow:', {
+          userAddress,
+          depositAmount,
+          depositAmountUsd,
+          multiplier,
+          tokenSymbol,
+          marginAccountAddress
+        });
+
+        const result = await depositAndBorrow(
+          userAddress,
+          depositAmount,
+          multiplier,
+          tokenSymbol
+        );
+
+        const didDepositSucceed =
+          result.success || result.error?.includes("Deposit was successful with hash");
+
+        // Always refresh wallet + margin balances after a successful deposit phase,
+        // even when borrow fails due to risk-engine limits.
+        if (didDepositSucceed) {
+          try {
+            await refreshBalances(userAddress);
+          } catch (refreshErr) {
+            console.warn("Failed to refresh wallet balances after leverage action:", refreshErr);
+          }
+          if (marginAccountAddress) {
+            await refreshBorrowedBalances(marginAccountAddress);
+          }
+        }
+
+        if (result.success) {
+          console.log('✅ Deposit and borrow successful:', result.hash);
+          alert('Deposit and borrow successful! Transaction hash: ' + result.hash);
+        } else {
+          console.error('❌ Deposit and borrow failed:', result.error);
+          
+          // Check if it's a configuration error and suggest setup
+          if (result.error?.includes('not allowed as collateral') || result.error?.includes('Max asset cap')) {
+            const setupResult = confirm(
+              `Contract configuration error: ${result.error}\n\nWould you like to setup the contract configuration first? (This requires admin privileges)`
+            );
+            
+            if (setupResult) {
+              try {
+                const configResult = await setupContractConfiguration();
+                if (configResult.success) {
+                  alert('Contract configuration setup successful! You can now try the deposit again.');
+                } else {
+                  alert('Contract setup failed: ' + configResult.error);
+                }
+              } catch (setupError) {
+                alert('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
+              }
+              return;
+            }
+          }
+          
+          alert('Deposit and borrow failed: ' + result.error);
+        }
+
+      } catch (error) {
+        console.error('❌ Error in deposit and borrow:', error);
+        alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      } finally {
+        setIsProcessing(false);
+      }
+    } else {
+      // User doesn't have margin account - show create account dialog
+      setActiveDialogue("create-margin");
+    }
   };
 
   // MB selection handlers with Set - memoized to prevent unnecessary re-renders
@@ -587,9 +747,10 @@ export const LeverageAssetsTab = () => {
           transition={{ duration: 0.4, delay: 0.3, ease: "easeOut" }}
         >
           <Button
-            disabled={false}
+            disabled={isProcessing}
             size="large"
             text={
+              isProcessing ? "Processing..." :
               !userAddress ? "Login" :
               hasMarginAccount  && !isMBMode
                 ? "Deposit & Borrow"

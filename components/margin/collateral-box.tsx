@@ -16,6 +16,7 @@ import {
   BALANCE_TYPE_OPTIONS,
 } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+import { useUserStore } from "@/store/user";
 
 interface Collateral {
   id?: string; // Add id prop
@@ -32,6 +33,16 @@ interface Collateral {
 
 const CollateralComponent = (props: Collateral) => {
   const { isDark } = useTheme();
+  const getTokenBalanceKey = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC") return "BLEND_USDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC") return "AQUARIUS_USDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC") return "SOROSWAP_USDC";
+    return symbol;
+  };
+  
+  // Get wallet balances from user store
+  const tokenBalances = useUserStore((state) => state.tokenBalances);
+  
   // Determine editing mode
   const isEditing = props.isEditing ?? props.collaterals === null;
   const isStandard = !isEditing;
@@ -82,7 +93,7 @@ const CollateralComponent = (props: Collateral) => {
         setSelectedBalanceType(newBalanceType);
       }
     }
-  }, [isEditing, props.collaterals?.id, props.collaterals?.amount, props.collaterals?.amountInUsd, props.collaterals?.asset, props.collaterals?.balanceType]); // Only depend on isEditing and collateral id
+  }, [isEditing, props.collaterals?.amount, props.collaterals?.amountInUsd, props.collaterals?.asset, props.collaterals?.balanceType]);
 
   // Calculate USD value from input (1:1 conversion)
   useEffect(() => {
@@ -123,7 +134,6 @@ const CollateralComponent = (props: Collateral) => {
     if (!props.onSave || !props.id) return;
 
     const updatedCollateral: Collaterals = {
-      id: props.id,
       asset: selectedCurrency,
       amount: parseFloat(valueInput) || 0,
       amountInUsd: parseFloat(valueInUsd) || 0,
@@ -333,7 +343,11 @@ const CollateralComponent = (props: Collateral) => {
                   transition={{ duration: 0.1 }}
                   aria-label="View unified balance breakdown"
                 >
-                  Unified Balance: {collateral.unifiedBalance}{" "}
+                  Unified Balance: {
+                    selectedBalanceType === "WB" ? 
+                      tokenBalances[getTokenBalanceKey(selectedCurrency) as keyof typeof tokenBalances] || "0" : 
+                      collateral.unifiedBalance
+                  }{" "}
                   {collateral.asset}
                 </motion.button>
               )}
@@ -421,7 +435,11 @@ const CollateralComponent = (props: Collateral) => {
                 transition={{ duration: 0.1 }}
                 aria-label="View unified balance breakdown"
               >
-                Unified Balance: {collateral.unifiedBalance} {collateral.asset}
+                Unified Balance: {
+                  collateral.balanceType.toLowerCase() === "wb" ? 
+                    tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0" : 
+                    collateral.unifiedBalance
+                } {collateral.asset}
               </motion.button>
             </div>
 
@@ -650,7 +668,7 @@ export const Collateral = memo(CollateralComponent, (prevProps, nextProps) => {
   
   // Compare all fields
   return (
-    prevCollateral.id === nextCollateral.id &&
+    prevProps.id === nextProps.id &&
     prevCollateral.asset === nextCollateral.asset &&
     prevCollateral.amount === nextCollateral.amount &&
     prevCollateral.amountInUsd === nextCollateral.amountInUsd &&

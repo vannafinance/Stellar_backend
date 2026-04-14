@@ -50,8 +50,16 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
   const assetIcons: Record<string, string> = {
     XLM: "✦",
     USDC: "$",
-    EURC: "€",
+    AQUARIUS_USDC: "$",
+    SOROSWAP_USDC: "$",
   };
+
+  const withdrawAssets: AssetType[] = [
+    ASSET_TYPES.XLM,
+    ASSET_TYPES.USDC,
+    ASSET_TYPES.AQUARIUS_USDC,
+    ASSET_TYPES.SOROSWAP_USDC,
+  ];
 
   return (
     <AnimatePresence>
@@ -111,7 +119,7 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
                   Select Asset
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {Object.values(ASSET_TYPES).map((asset) => (
+                  {withdrawAssets.map((asset) => (
                     <button
                       key={asset}
                       onClick={() => setSelectedAsset(asset)}

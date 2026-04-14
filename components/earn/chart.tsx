@@ -16,6 +16,8 @@ interface ChartProps {
   heading?: string; // Custom heading for farm type
   downtrend?: string; // Downtrend value (e.g., "0.07%") for farm type
   uptrend?: string; // Uptrend value (e.g., "0.07%") for farm type
+  /** Override the chart series with live-scaled data. Last point should equal the current real value. */
+  liveData?: Array<{ date: string; amount: number }>;
 }
 
 const filterOptions = ["3 Months", "6 Months", "1 Year", "All Time"];
@@ -91,7 +93,7 @@ const filterDataByDays = (
   });
 };
 
-export const Chart = ({ type, currencyTab, height, containerWidth, containerHeight, heading, downtrend, uptrend }: ChartProps) => {
+export const Chart = ({ type, currencyTab, height, containerWidth, containerHeight, heading, downtrend, uptrend, liveData }: ChartProps) => {
   const { isDark } = useTheme();
   const [selectedFilter, setSelectedFilter] = useState(filterOptions[0]);
   const [selectedCurrency, setSelectedCurrency] = useState<string>("usd");
@@ -101,8 +103,9 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
   );
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [dynamicHeight, setDynamicHeight] = useState<number>(height || 206);
-  // Get data based on chart type
+  // Get data based on chart type — prefer liveData when provided
   const rawData = useMemo(() => {
+    if (liveData && liveData.length > 0) return liveData;
     switch (type) {
       case "overall-deposit":
         return depositData;
@@ -121,7 +124,7 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
       default:
         return [];
     }
-  }, [type]);
+  }, [type, liveData]);
 
   // Filter data based on selected time range or days
   const filteredData = useMemo(() => {
@@ -297,7 +300,7 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
                   type="ghost"
                   tabs={[
                     { id: "usd", label: "USD" },
-                    { id: "usdc", label: "USDC" },
+                    { id: "usdc", label: "BLUSDC" },
                   ]}
                   activeTab={selectedCurrency}
                   onTabChange={(tabId: string) => setSelectedCurrency(tabId)}
@@ -439,7 +442,7 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
                           type="ghost"
                           tabs={[
                             { id: "usd", label: "USD" },
-                            { id: "usdc", label: "USDC" },
+                            { id: "usdc", label: "BLUSDC" },
                           ]}
                           activeTab={selectedCurrency}
                           onTabChange={(tabId: string) =>

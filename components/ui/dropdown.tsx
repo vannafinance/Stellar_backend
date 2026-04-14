@@ -8,10 +8,12 @@ import { useTheme } from "@/contexts/theme-context";
 
 interface Dropdown {
   items:string[];
-  setSelectedOption: React.Dispatch<React.SetStateAction<string>>;
+  setSelectedOption: (value: string) => void;
   selectedOption: string;
   classname:string
   dropdownClassname:string
+  menuClassname?: string
+  arrowClassname?: string
 }
 
 export const Dropdown = (props: Dropdown) => {
@@ -85,7 +87,7 @@ export const Dropdown = (props: Dropdown) => {
           viewBox="0 0 24 24"
           strokeWidth={1.5}
           stroke="currentColor"
-          className="size-5"
+          className={props.arrowClassname || "size-5"}
           aria-hidden="true"
           animate={{ rotate: isHover ? 180 : 0 }}
           transition={{ duration: 0.3, ease: "easeInOut" }}
@@ -106,11 +108,11 @@ export const Dropdown = (props: Dropdown) => {
             transition={{ duration: 0.2, ease: "easeOut" }}
             onMouseEnter={handleDropdownMouseEnter}
             onMouseLeave={handleDropdownMouseLeave}
-            className={`min-w-[144px] absolute z-[100] p-2 top-8 -left-4 shadow-lg rounded-[6px] thin-scrollbar ${
+            className={`min-w-[144px] absolute z-[100] p-2 shadow-lg rounded-[6px] thin-scrollbar ${
               isDark
                 ? "bg-[#222222] border-[1px]"
                 : "bg-white"
-            } ${props.items.length > 4 ? "max-h-48 overflow-y-auto" : ""}`}
+            } ${props.menuClassname || "top-8 -left-4"} ${props.items.length > 4 ? "max-h-48 overflow-y-auto" : ""}`}
             role="listbox"
             aria-label="Options"
           >

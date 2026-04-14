@@ -48,8 +48,16 @@ export const DepositModal: React.FC<DepositModalProps> = ({ isOpen, onClose }) =
   const assetIcons: Record<string, string> = {
     XLM: "✦",
     USDC: "$",
-    EURC: "€",
+    AQUARIUS_USDC: "$",
+    SOROSWAP_USDC: "$",
   };
+
+  const depositAssets: AssetType[] = [
+    ASSET_TYPES.XLM,
+    ASSET_TYPES.USDC,
+    ASSET_TYPES.AQUARIUS_USDC,
+    ASSET_TYPES.SOROSWAP_USDC,
+  ];
 
   return (
     <AnimatePresence>
@@ -109,7 +117,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({ isOpen, onClose }) =
                   Select Asset
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {Object.values(ASSET_TYPES).map((asset) => (
+                  {depositAssets.map((asset) => (
                     <button
                       key={asset}
                       onClick={() => setSelectedAsset(asset)}

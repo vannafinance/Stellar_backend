@@ -19,21 +19,21 @@ import { useTheme } from "@/contexts/theme-context";
 const ITEMS_PER_PAGE = 4;
 
 const FILTER_OPTIONS = {
-  collateral: ["ETH", "USDC", "USDT"],
-  collateralFilters: ["All", "ETH", "USDC", "USDT"],
-  deposit: ["BTC", "ETH", "USDC"],
+  collateral: ["XLM", "USDC"],
+  collateralFilters: ["All", "XLM", "USDC"],
+  deposit: ["XLM", "USDC"],
   depositFilters: ["All"],
-  allChains: ["ETH", "USDC", "USDT"],
-  allChainsFilters: ["All", "ETH", "USDC", "USDT"],
+  allChains: ["XLM", "USDC"],
+  allChainsFilters: ["All", "XLM", "USDC"],
   all: ["Vault Deposit", "Vault Collateral", "Vault Total", "Vault Withdraw"],
   allFilters: ["All"],
-  vaults: ["USDC", "USDTO", "kHYPE", "USDe", "wHYPE", "wstHYPE", "HYPE"],
-  vaultsFilters: ["All", "USDC","USDT", "HYPE"],
-  curator: ["9summits"],
+  vaults: ["XLM", "USDC"],
+  vaultsFilters: ["All", "XLM", "USDC"],
+  curator: ["Vanna"],
   curatorFilters: ["All"],
-  provider: ["Kraken"],
+  provider: ["Stellar"],
   providerFilters: ["All"],
-  protocol: ["v3", "v2"]
+  protocol: ["v1"]
 };
 
 interface TableProps {

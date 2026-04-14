@@ -9,7 +9,7 @@ export interface TabItem {
   label: string;
 }
 
-type TabType = "gradient" | "solid" | "underline" | "ghost";
+type TabType = "gradient" | "solid" | "underline" | "ghost" | "ghost-compact" | "segment" | "border";
 
 interface AnimatedTabsProps {
   tabs: TabItem[];
@@ -116,6 +116,102 @@ export const AnimatedTabs = ({
   }
 
   
+
+  // Render segment type
+  if (type === "segment") {
+    return (
+      <div className={`flex gap-4 rounded-xl p-1.5 ${isDark ? "border border-[#333333] bg-[#111111]" : "border border-[#E2E2E2] bg-white"} ${containerClassName}`}>
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onTabChange(tab.id)}
+              className={`cursor-pointer flex-1 rounded-lg p-0.5 text-[12px] font-semibold transition-colors ${isActive ? "bg-linear-to-r from-[#FC5457] to-[#703AE6]" : "bg-transparent"}`}
+            >
+              <div className={`rounded-lg p-3 ${isDark ? "bg-[#111111] text-[#FFFFFF]" : "bg-white text-black"}`}>
+                {tab.label}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Render ghost-compact type
+  if (type === "ghost-compact") {
+    return (
+      <div
+        className={`flex gap-1 ${isDark ? "bg-[#222222]" : "bg-white"} p-1 rounded-lg w-full overflow-x-auto ${containerClassName}`}
+        onMouseLeave={() => setHoveredTab(null)}
+      >
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          const isHovered = hoveredTab === tab.id;
+          return (
+            <motion.button
+              key={tab.id}
+              type="button"
+              onClick={() => onTabChange(tab.id)}
+              onMouseEnter={() => setHoveredTab(tab.id)}
+              className={`cursor-pointer px-2 md:px-4 min-h-[39px] py-2 rounded-lg text-[12px] font-semibold text-center whitespace-nowrap ${tabClassName}`}
+              animate={{
+                backgroundColor: isActive
+                  ? isDark ? "#3D2A6E" : "#F1EBFD"
+                  : isHovered
+                    ? isDark ? "rgba(61, 42, 110, 0.5)" : "rgba(241, 235, 253, 0.5)"
+                    : "transparent",
+                color: isActive
+                  ? isDark ? "#B794F6" : "#703AE6"
+                  : isDark ? "#FFFFFF" : "#111111",
+              }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+            >
+              {tab.label}
+            </motion.button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Render border type — gradient border on active tab via background-clip trick
+  if (type === "border") {
+    const bgColor = isDark ? "#222222" : "#ffffff";
+    return (
+      <div className={`flex w-full gap-0 ${containerClassName}`}>
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <motion.div
+              key={tab.id}
+              onClick={() => onTabChange(tab.id)}
+              className={`h-10 px-3 flex items-center justify-center text-center text-[13px] font-semibold rounded-[8px] whitespace-nowrap cursor-pointer transition-colors ${
+                isActive
+                  ? isDark ? "text-[#F0F0F0]" : "text-[#1F1F1F]"
+                  : "text-[#9CA3AF]"
+              } ${tabClassName}`}
+              style={
+                isActive
+                  ? {
+                      background: `linear-gradient(${bgColor}, ${bgColor}) padding-box, linear-gradient(135deg, #FC5457 10%, #703AE6 80%) border-box`,
+                      border: "1.70px solid transparent",
+                    }
+                  : {}
+              }
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+            >
+              {tab.label}
+            </motion.div>
+          );
+        })}
+      </div>
+    );
+  }
 
   // Render gradient/solid/ghost types
   const containerPadding = (type === "solid" || type === "ghost") ? "p-[4px] w-fit h-fit" : "p-[6px]";

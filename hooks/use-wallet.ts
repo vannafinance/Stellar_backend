@@ -12,31 +12,66 @@ export const useWallet = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info' | '', text: string }>({ type: '', text: '' });
 
+  // Force reset loading state on mount to fix stuck "Connecting..." state
+  useEffect(() => {
+    console.log('[useWallet] Initializing, resetting loading state', { address, isLoadingStore, isLoading });
+    setIsLoading(false);
+    if (isLoadingStore) {
+      useUserStore.getState().set({ isLoading: false });
+    }
+  }, []);
+
   const refreshBalances = useCallback(async (walletAddress?: string) => {
     const targetAddress = walletAddress || address;
     if (!targetAddress) return;
 
     try {
-      // Get native XLM balance
-      const nativeBalance = await WalletService.getBalance(targetAddress);
-      
-      // Get deposited balances for all supported assets
-      const [xlmDeposited, usdcDeposited, eurcDeposited] = await Promise.all([
-        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.XLM),
-        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.USDC),
-        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.EURC),
+      // Create a promise that rejects after 15 seconds
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Balance refresh timeout')), 15000)
+      );
+
+      // Race between the actual request and the timeout
+      const tokenBalances = await Promise.race([
+        ContractService.getAllTokenBalances(targetAddress),
+        timeoutPromise
       ]);
 
+      // Update wallet balances immediately so UI is never blocked by deposited-balance calls.
       useUserStore.getState().set({
-        balance: nativeBalance,
-        depositedBalances: {
-          XLM: xlmDeposited,
-          USDC: usdcDeposited,
-          EURC: eurcDeposited,
-        },
+        balance: tokenBalances.XLM,
+        tokenBalances: tokenBalances,
       });
+      
+      // Get all deposited balances in parallel
+      const depositedBalancesPromise = Promise.all([
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.XLM),
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.USDC),
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.SOROSWAP_USDC),
+      ]);
+
+      try {
+        const [xlmDeposited, usdcDeposited, aquariusUsdcDeposited, soroswapUsdcDeposited] = await Promise.race([
+          depositedBalancesPromise,
+          timeoutPromise
+        ]);
+
+        useUserStore.getState().set({
+          depositedBalances: {
+            XLM: xlmDeposited,
+            USDC: usdcDeposited,
+            AQUARIUS_USDC: aquariusUsdcDeposited,
+            SOROSWAP_USDC: soroswapUsdcDeposited,
+          },
+        });
+      } catch (depositedError) {
+        console.warn('Deposited balances refresh failed; wallet balances still updated:', depositedError);
+      }
+      
     } catch (error) {
       console.error('Error refreshing balances:', error);
+      // Don't throw - just log the error so connection isn't blocked
     }
   }, [address]);
 
@@ -53,6 +88,7 @@ export const useWallet = () => {
         useUserStore.getState().set({
           address: walletAddress,
           isConnected: connected,
+          isLoading: false,
         });
         await refreshBalances(walletAddress);
       } else {
@@ -60,11 +96,14 @@ export const useWallet = () => {
           address: null,
           isConnected: false,
           balance: '0',
-          depositedBalances: { XLM: '0', USDC: '0', EURC: '0' }
+          tokenBalances: { XLM: '0', USDC: '0', BLEND_USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' },
+          depositedBalances: { XLM: '0', USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' },
+          isLoading: false,
         });
       }
     } catch (error) {
       console.error('Error checking connection:', error);
+      useUserStore.getState().set({ isLoading: false });
     }
   }, [refreshBalances]);
 
@@ -83,20 +122,32 @@ export const useWallet = () => {
       setIsLoading(true);
       useUserStore.getState().set({ isLoading: true, manuallyDisconnected: false });
       
+      console.log('Starting wallet connection...');
       const result = await WalletService.connectWallet();
       
       if (result.success) {
+        console.log('Wallet connected successfully:', result.address);
+        
+        // Set address and connected state immediately - don't wait for balance refresh
         useUserStore.getState().set({
           address: result.address,
           isConnected: true,
           manuallyDisconnected: false,
         });
-        await refreshBalances(result.address);
+        
+        // Refresh balances asynchronously with timeout to prevent hanging
+        console.log('Refreshing balances asynchronously...');
+        refreshBalances(result.address).catch((error) => {
+          console.error('Error refreshing balances after connection:', error);
+        });
+        
         setMessage({ type: 'success', text: 'Wallet connected successfully!' });
       } else {
+        console.error('Wallet connection failed:', result.error);
         setMessage({ type: 'error', text: result.error || 'Failed to connect wallet' });
       }
     } catch (error: any) {
+      console.error('Wallet connection error:', error);
       setMessage({ type: 'error', text: error?.message || 'Failed to connect wallet' });
     } finally {
       setIsLoading(false);
@@ -105,13 +156,21 @@ export const useWallet = () => {
   }, [refreshBalances]);
 
   const disconnectWallet = useCallback(() => {
+    console.log('Disconnecting wallet (keeping margin account data in localStorage)');
+    
+    // Don't clear localStorage - margin accounts should persist across wallet connections
+    // Only clear the in-memory state
+    
     useUserStore.getState().set({
       address: null,
       isConnected: false,
       balance: '0',
-      depositedBalances: { XLM: '0', USDC: '0', EURC: '0' },
+      tokenBalances: { XLM: '0', USDC: '0', BLEND_USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' },
+      depositedBalances: { XLM: '0', USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' },
       manuallyDisconnected: true, // Mark as manually disconnected to prevent auto-reconnect
+      isLoading: false,
     });
+    setIsLoading(false);
     setMessage({ type: 'info', text: 'Wallet disconnected' });
   }, []);
 
@@ -144,10 +203,11 @@ export const useDeposit = () => {
     try {
       const balance = await WalletService.getBalance(targetAddress);
       
-      const [xlmDeposited, usdcDeposited, eurcDeposited] = await Promise.all([
+      const [xlmDeposited, usdcDeposited, aquariusUsdcDeposited, soroswapUsdcDeposited] = await Promise.all([
         ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.XLM),
         ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.USDC),
-        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.EURC),
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
       useUserStore.getState().set({
@@ -155,7 +215,8 @@ export const useDeposit = () => {
         depositedBalances: {
           XLM: xlmDeposited,
           USDC: usdcDeposited,
-          EURC: eurcDeposited,
+          AQUARIUS_USDC: aquariusUsdcDeposited,
+          SOROSWAP_USDC: soroswapUsdcDeposited,
         },
       });
     } catch (error) {
@@ -220,10 +281,11 @@ export const useWithdraw = () => {
     try {
       const balance = await WalletService.getBalance(targetAddress);
       
-      const [xlmDeposited, usdcDeposited, eurcDeposited] = await Promise.all([
+      const [xlmDeposited, usdcDeposited, aquariusUsdcDeposited, soroswapUsdcDeposited] = await Promise.all([
         ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.XLM),
         ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.USDC),
-        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.EURC),
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getDepositedBalance(targetAddress, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
       useUserStore.getState().set({
@@ -231,7 +293,8 @@ export const useWithdraw = () => {
         depositedBalances: {
           XLM: xlmDeposited,
           USDC: usdcDeposited,
-          EURC: eurcDeposited,
+          AQUARIUS_USDC: aquariusUsdcDeposited,
+          SOROSWAP_USDC: soroswapUsdcDeposited,
         },
       });
     } catch (error) {

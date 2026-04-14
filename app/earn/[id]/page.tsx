@@ -6,39 +6,26 @@ import { Details } from "@/components/earn/details-tab";
 import { YourPositions } from "@/components/earn/your-positions";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import Image from "next/image";
-import { useState, use, useMemo } from "react";
+import { useState, use, useMemo, useEffect } from "react";
 import { ActivityTab } from "@/components/earn/acitivity-tab";
 import { AnalyticsTab } from "@/components/earn/analytics-tab";
 import { MarginManagersTab } from "@/components/earn/margin-managers-tab";
 import { CollateralLimitsTab } from "@/components/earn/collateral-limits-tab";
 import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { iconPaths } from "@/lib/constants";
-import { formatNumber } from "@/lib/utils/format-value";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
+import { setSelectedPool } from "@/store/selected-pool-store";
+import { AssetType } from "@/lib/stellar-utils";
+import { usePoolData } from "@/hooks/use-earn";
 
-// Helper function to parse values with K/M/B suffixes
-const parseAmountValue = (value?: string): number => {
-  if (!value) return 0;
-  
-  // Remove $ and commas
-  const cleaned = value.replace(/[$,]/g, '').trim();
-  
-  // Check for suffix
-  const lastChar = cleaned.slice(-1).toUpperCase();
-  const numPart = cleaned.slice(0, -1);
-  
-  if (lastChar === 'K') {
-    return parseFloat(numPart) * 1000;
-  } else if (lastChar === 'M') {
-    return parseFloat(numPart) * 1000000;
-  } else if (lastChar === 'B') {
-    return parseFloat(numPart) * 1000000000;
-  } else {
-    // No suffix, just parse the number
-    return parseFloat(cleaned) || 0;
-  }
-};
+// Approximate USD prices for testnet display (no live oracle)
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0 };
+
+const fmt = (n: number, decimals = 4) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M`
+  : n >= 1_000 ? `${(n / 1_000).toFixed(2)}K`
+  : n.toFixed(decimals);
 
 const tabs = [
   { id: "your-positions", label: "Your Positions" },
@@ -49,13 +36,25 @@ const tabs = [
   { id: "margin-managers", label: "Margin Managers" },
 ];
 
+const toInternalAsset = (value: string): AssetType => {
+  if (value === "AqUSDC" || value === "AquiresUSDC" || value === "AQUARIUS_USDC") return "AQUARIUS_USDC";
+  if (value === "SoUSDC" || value === "SoroswapUSDC" || value === "SOROSWAP_USDC") return "SOROSWAP_USDC";
+  return value.toUpperCase() as AssetType;
+};
+
+const toDisplayAsset = (value: string) => {
+  if (value === "AQUARIUS_USDC" || value === "AquiresUSDC") return "AqUSDC";
+  if (value === "SOROSWAP_USDC" || value === "SoroswapUSDC") return "SoUSDC";
+  return value;
+};
+
 export default function EarnPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { isDark } = useTheme();
   const router = useRouter();
   const selectedVault = useEarnVaultStore((state) => state.selectedVault);
   const [activeTab, setActiveTab] = useState<string>("details");
-  
+
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
   };
@@ -64,163 +63,141 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
     router.push("/earn");
   };
 
+  // Set selected pool when page loads or id changes
+  useEffect(() => {
+    const assetType = toInternalAsset(id);
+    if (assetType === 'XLM' || assetType === 'USDC' || assetType === 'AQUARIUS_USDC' || assetType === 'SOROSWAP_USDC') {
+      setSelectedPool(assetType as AssetType, {
+        id: toDisplayAsset(id),
+        chain: assetType,
+        title: toDisplayAsset(id),
+        tag: "Active"
+      });
+    }
+  }, [id]);
+
   // Get vault data - either from store or use id as fallback
   const vaultData = useMemo(() => {
     if (selectedVault && selectedVault.id === id) {
       return selectedVault;
     }
-    // Fallback data if store is empty (e.g., direct URL access)
+    const internalAsset = toInternalAsset(id);
+    const displayAsset = toDisplayAsset(id);
     return {
-      id: id,
-      chain: "ETH",
-      title: id,
+      id: displayAsset,
+      chain: internalAsset,
+      title: displayAsset,
       tag: "Active",
     };
   }, [selectedVault, id]);
 
   // Get icon path for the asset
   const iconPath = useMemo(() => {
-    // Try to get icon from iconPaths, fallback to eth-icon
-    const assetName = vaultData.title.toUpperCase();
-    return iconPaths[assetName] || "/icons/eth-icon.png";
+    const exact = iconPaths[vaultData.title];
+    const uppercase = iconPaths[vaultData.title.toUpperCase()];
+    return exact || uppercase || "/icons/stellar.svg";
   }, [vaultData.title]);
 
-  // Prepare account stats items
+  // Live pool data from on-chain contracts (auto-refreshes every 30s)
+  const { pools } = usePoolData();
+
+  // Build header stats entirely from live contract data
   const accountStatsItems = useMemo(() => {
-    const assetName = vaultData.title;
-    
-    // Parse amounts from vault data
-    const totalSupplyAmount = parseAmountValue(
-      'assetsSupplied' in vaultData ? vaultData.assetsSupplied?.title : undefined
-    );
-    const totalBorrowedAmount = parseAmountValue(
-      'assetsBorrowed' in vaultData ? vaultData.assetsBorrowed?.title : undefined
-    );
-    
-    // Calculate Available Liquidity = Total Supply - Total Borrowed
-    const availableLiquidity = totalSupplyAmount - totalBorrowedAmount;
-    
-    const utilizationRate = parseFloat(
-      ('utilizationRate' in vaultData ? vaultData.utilizationRate?.title?.replace('%', '') : undefined) || "6.5"
-    );
-    const supplyApy = parseFloat(
-      ('supplyApy' in vaultData ? vaultData.supplyApy?.title?.replace('%', '') : undefined) || "2.5"
-    );
+    const asset = toInternalAsset(vaultData.title);
+    const displayAsset = toDisplayAsset(vaultData.title);
+    const pool = pools[asset as keyof typeof pools];
+    const price = TOKEN_PRICES[asset] ?? 1;
+
+    const totalSupply = parseFloat(pool?.totalSupply || '0');
+    const availableLiquidity = parseFloat(pool?.availableLiquidity || '0');
+    const utilizationRate = parseFloat(pool?.utilizationRate || '0');
+    const supplyAPY = parseFloat(pool?.supplyAPY || '0');
 
     return [
       {
         id: "1",
         name: "Total Supply",
-        amount: `$${formatNumber(totalSupplyAmount || 1000)}`,
-        amountInToken: `${formatNumber(20)} ${assetName}`,
+        amount: `$${fmt(totalSupply * price, 2)}`,
+        amountInToken: `${fmt(totalSupply)} ${displayAsset}`,
       },
       {
         id: "2",
         name: "Available Liquidity",
-        amount: `$${formatNumber(availableLiquidity || 3400)}`,
-        amountInToken: `${formatNumber(30.4)} ${assetName}`,
+        amount: `$${fmt(availableLiquidity * price, 2)}`,
+        amountInToken: `${fmt(availableLiquidity)} ${displayAsset}`,
       },
       {
         id: "3",
         name: "Utilization Rate",
-        amount: `${formatNumber(utilizationRate)}%`,
+        amount: `${utilizationRate.toFixed(2)}%`,
       },
       {
         id: "4",
         name: "Supply APY",
-        amount: `${formatNumber(supplyApy)}%`,
+        amount: `${supplyAPY.toFixed(2)}%`,
       },
     ];
-  }, [vaultData]);
+  }, [pools, vaultData.title]);
 
   return (
-    <main className="flex flex-col gap-[40px]">
-      <header className="pt-[40px] px-[80px] w-full h-fit">
-        <div className="w-full h-fit flex flex-col gap-[20px]">
+    <main className="flex flex-col gap-5">
+      <header className="pt-4 sm:pt-5 px-4 sm:px-10 lg:px-30 w-full h-fit">
+        <div className="w-full h-fit flex flex-col gap-3">
           <nav aria-label="Breadcrumb">
             <button
               type="button"
               onClick={handleBackToPools}
-              className={`w-fit h-fit flex gap-[12px] items-center cursor-pointer text-[16px] font-medium hover:text-[#703AE6] transition-colors ${
+              className={`w-fit h-fit flex gap-[10px] items-center cursor-pointer text-[15px] font-medium hover:text-[#703AE6] transition-colors ${
                 isDark ? "text-white" : "text-[#5A5555]"
               }`}
             >
-              <svg
-                width="9"
-                height="16"
-                viewBox="0 0 9 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M8 1L1 8L8 15"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+              <svg width="8" height="14" viewBox="0 0 9 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 1L1 8L8 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               Back to pools
             </button>
           </nav>
-          <div className="w-full h-fit flex gap-[16px] items-center">
-            <div className="flex gap-[16px]">
-              <Image
-                src={iconPath}
-                alt={`${vaultData.title}-icon`}
-                width={36}
-                height={36}
-              />
-              <div className="w-fit h-fit flex gap-[8px] items-center">
-                <h1 className={`w-fit h-fit text-[24px] font-bold ${
-                  isDark ? "text-white" : "text-[#181822]"
+          <div className="w-full h-fit flex gap-3 items-center">
+            <Image
+              src={iconPath}
+              alt={`${vaultData.title}-icon`}
+              width={34}
+              height={34}
+            />
+            <div className="w-fit h-fit flex gap-2 items-center">
+              <h1 className={`w-fit h-fit text-[25px] font-bold ${isDark ? "text-white" : "text-[#181822]"}`}>
+                {vaultData.title}
+              </h1>
+              <div className="w-fit h-fit flex gap-2 items-center">
+                <span className={`text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
+                  isDark ? "bg-[#222222] text-white" : "bg-[#EEEEEE] text-[#0C0C0C]"
                 }`}>
-                  {vaultData.title}
-                </h1>
-                <div className="w-fit h-fit flex gap-[8px] items-center">
-                  <span className={`text-[12px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
-                    isDark ? "bg-[#222222] text-white" : "bg-[#F4F4F4] text-[#0C0C0C]"
-                  }`}>
-                    V3
-                  </span>
-                  <span className={`text-[12px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
-                    isDark ? "bg-[#222222] text-white" : "bg-[#F4F4F4] text-[#0C0C0C]"
-                  }`}>
-                    {vaultData.tag}
-                  </span>
-                </div>
+                  Active
+                </span>
+                <span className="text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] bg-[#703AE6] text-white">
+                  {vaultData.tag}
+                </span>
               </div>
-            </div>
-            <div className={`text-[16px] font-semibold w-fit h-[48px] rounded-[12px] py-[12px] pr-[16px] pl-[8px] flex gap-[4px] ${
-              isDark ? "bg-[#222222] text-white" : "bg-[#F4F4F4]"
-            }`}>
-              Network:{" "}
-              <Image
-                src={iconPath}
-                alt={`${vaultData.chain}-icon`}
-                width={20}
-                height={20}
-              />
             </div>
           </div>
         </div>
       </header>
-      
-      <section className="px-[80px]" aria-label="Vault Statistics">
+
+      <section className="px-4 sm:px-10 lg:px-30" aria-label="Vault Statistics">
         <AccountStatsGhost items={accountStatsItems} />
       </section>
 
-      <section className="px-[80px] pb-[80px] w-full h-fit" aria-label="Vault Details and Actions">
-        <div className="flex gap-[20px] w-full h-fit">
-          <article className="w-[700px] h-full flex flex-col gap-[24px]">
-            <nav className="w-full h-[48px]" aria-label="Vault Information Tabs">
+      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-8 lg:pb-16 w-full h-fit" aria-label="Vault Details and Actions">
+        <div className="flex flex-col lg:flex-row gap-4 w-full h-fit">
+          <article className="flex-1 min-w-0 h-full flex flex-col gap-3">
+            <nav className="w-full" aria-label="Vault Information Tabs">
               <AnimatedTabs
                 tabs={tabs}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
-                type="underline"
-                tabClassName="w-[130px] h-[48px] text-[12px]"
-                containerClassName="w-full"
+                type="border"
+                containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
+                tabClassName="!flex-1 !px-2 text-[12px]"
               />
             </nav>
             {activeTab === "your-positions" && <YourPositions />}
@@ -230,8 +207,35 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
             {activeTab === "margin-managers" && <MarginManagersTab />}
             {activeTab === "collateral-limits" && <CollateralLimitsTab />}
           </article>
-          <aside aria-label="Transaction Form">
+          <aside className="w-full lg:w-[420px] shrink-0 flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start" aria-label="Transaction Form">
             <Form />
+
+            {/* How it works */}
+            <div className={`w-full rounded-2xl border p-4 flex flex-col gap-3 ${
+              isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
+            }`}>
+              <p className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
+                How it works
+              </p>
+              <div className="flex flex-col gap-3">
+                {[
+                  { step: "1", title: "Supply assets", desc: `Deposit ${vaultData.title} into the vault to provide liquidity` },
+                  { step: "2", title: "Receive vault shares", desc: `Get b${vaultData.title} tokens representing your share of the pool` },
+                  { step: "3", title: "Earn yield", desc: "Borrowers pay interest which accrues to your position automatically" },
+                  { step: "4", title: "Withdraw anytime", desc: "Redeem your vault shares for the underlying asset plus earned yield" },
+                ].map((item) => (
+                  <div key={item.step} className="flex gap-3 items-start">
+                    <div className="w-6 h-6 rounded-full bg-[#703AE6]/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[11px] font-bold text-[#703AE6]">{item.step}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{item.title}</span>
+                      <span className={`text-[12px] font-medium leading-relaxed ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>{item.desc}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </aside>
         </div>
       </section>

@@ -12,6 +12,74 @@ export const farmTableHeadings = [
 
 export const farmTableBody = {
   rows: [
+    // Row 0: Soroswap AMM, XLM/USDC on Stellar (Testnet)
+    {
+      cell: [
+        {
+          chain: "XLM",
+          titles: ["XLM", "USDC"],
+          tags: ["Soroswap", "0.30%", "Testnet"],
+        },
+        {
+          title: "Soroswap",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+      ],
+    },
+    // Row 1: Aquarius AMM, XLM/USDC on Stellar (Testnet)
+    {
+      cell: [
+        {
+          chain: "XLM",
+          titles: ["XLM", "USDC"],
+          tags: ["Aquarius", "0.30%", "Testnet"],
+        },
+        {
+          title: "Aquarius",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+      ],
+    },
     // Row 1: V3 Protocol, 9summits Curator, Kraken Provider, ETH Chain
     {
       cell: [
@@ -299,191 +367,75 @@ export const singleAssetTableHeadings = [
   { label: "Utilization", id: "utilization", icon: true },
 ];
 
+// Blend Capital uses a SINGLE pool contract for all assets.
+// The pool address is CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF (TestnetV2).
+// The asset to deposit/withdraw is specified via the `tokens_out` field in ExternalProtocolCall.
+export const BLEND_POOL_ASSETS_CONFIG = [
+  { symbol: "XLM", iconPath: "/icons/stellar.svg" },
+  { symbol: "USDC", iconPath: "/icons/usdc-icon.svg" },
+];
+
 export const singleAssetTableBody = {
   rows: [
-    // Row 1: USDC - V3, Aave, 9summits (No Provider)
+    // Row 1: XLM - Blend Supply Pool
     {
       cell: [
         {
-          chain: "ETH",
+          chain: "XLM",
+          title: "XLM",
+          tags: ["Blend", "Supply"],
+        },
+        {
+          title: "Blend",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+        {
+          title: "—",
+        },
+      ],
+    },
+    // Row 2: USDC - Blend Supply Pool
+    {
+      cell: [
+        {
+          chain: "USDC",
           title: "USDC",
-          tags: ["V3", "Aave", "9summits"],
+          tags: ["Blend", "Supply"],
         },
         {
-          title: "Aave",
+          title: "Blend",
         },
         {
-          title: "$250M",
+          title: "—",
         },
         {
-          title: "$180M",
+          title: "—",
         },
         {
-          title: "4.25%",
+          title: "—",
         },
         {
-          title: "11.5%",
+          title: "—",
         },
         {
-          title: "$45.2k",
+          title: "—",
         },
         {
-          title: "72%",
-        },
-      ],
-    },
-    // Row 2: USDT - V2, Compound, Lido (No Provider)
-    {
-      cell: [
-        {
-          chain: "USDC",
-          title: "USDT",
-          tags: ["V2", "Compound", "Lido"],
-        },
-        {
-          title: "Compound",
-        },
-        {
-          title: "$300M",
-        },
-        {
-          title: "$220M",
-        },
-        {
-          title: "3.80%",
-        },
-        {
-          title: "9.2%",
-        },
-        {
-          title: "$52.8k",
-        },
-        {
-          title: "73.3%",
-        },
-      ],
-    },
-    // Row 3: ETH - V3, Aave, 9summits (No Provider)
-    {
-      cell: [
-        {
-          chain: "USDT",
-          title: "ETH",
-          tags: ["V3", "Aave", "9summits"],
-        },
-        {
-          title: "Aave",
-        },
-        {
-          title: "$500M",
-        },
-        {
-          title: "$380M",
-        },
-        {
-          title: "2.15%",
-        },
-        {
-          title: "6.8%",
-        },
-        {
-          title: "$125.5k",
-        },
-        {
-          title: "76%",
-        },
-      ],
-    },
-    // Row 4: wstHYPE - V2, Lido, 9summits (No Provider)
-    {
-      cell: [
-        {
-          chain: "ETH",
-          title: "wstHYPE",
-          tags: ["V2", "Lido", "9summits"],
-        },
-        {
-          title: "Lido",
-        },
-        {
-          title: "$180M",
-        },
-        {
-          title: "$140M",
-        },
-        {
-          title: "5.50%",
-        },
-        {
-          title: "13.2%",
-        },
-        {
-          title: "$38.4k",
-        },
-        {
-          title: "77.8%",
-        },
-      ],
-    },
-    // Row 5: HYPE - V3, Aave, Lido (No Provider)
-    {
-      cell: [
-        {
-          chain: "USDC",
-          title: "HYPE",
-          tags: ["V3", "Aave", "Lido"],
-        },
-        {
-          title: "Aave",
-        },
-        {
-          title: "$150M",
-        },
-        {
-          title: "$115M",
-        },
-        {
-          title: "6.75%",
-        },
-        {
-          title: "16.8%",
-        },
-        {
-          title: "$28.9k",
-        },
-        {
-          title: "76.7%",
-        },
-      ],
-    },
-    // Row 6: kHYPE - V2, Compound, Compound (No Provider)
-    {
-      cell: [
-        {
-          chain: "USDT",
-          title: "kHYPE",
-          tags: ["V2", "Compound", "Compound"],
-        },
-        {
-          title: "Compound",
-        },
-        {
-          title: "$95M",
-        },
-        {
-          title: "$72M",
-        },
-        {
-          title: "4.90%",
-        },
-        {
-          title: "12.1%",
-        },
-        {
-          title: "$19.7k",
-        },
-        {
-          title: "75.8%",
+          title: "—",
         },
       ],
     },
@@ -585,4 +537,3 @@ export const LEVERAGE_HEALTH_STATS_ITEMS = [
     amount: "N/A",
   },
 ];
-

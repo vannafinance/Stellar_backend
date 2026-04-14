@@ -1,26 +1,27 @@
 "use client";
 
 import { Carousel } from "@/components/ui/carousel";
-import { NetworkDropdown } from "@/components/network-dropdown";
 import {
   CAROUSEL_ITEMS,
   MARGIN_ACCOUNT_INFO_ITEMS,
   MARGIN_ACCOUNT_MORE_DETAILS_ITEMS,
 } from "@/lib/constants/margin";
 import { motion } from "framer-motion";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
 import { AccountStats } from "@/components/margin/account-stats";
-import { Position } from "@/lib/types";
-import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
-import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
+import { CreateMarginAccount } from "@/components/margin/create-margin-account";
+import { useMarginAccountInfoStore, checkUserMarginAccount, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
 import { ACCOUNT_STATS_ITEMS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+
+// Liquidation threshold from RiskEngine contract (BALANCE_TO_BORROW_THRESHOLD = 1.1)
+const LIQUIDATION_THRESHOLD = 1.1;
 
 const Margin = () => {
   const { isDark } = useTheme();
@@ -51,17 +52,7 @@ const Margin = () => {
   }, [switchToRepayTab]);
 
   const userAddress = useUserStore((state) => state.address);
-
-  
-
-  // Account statistics state
-  const [accountStats, setAccountStats] = useState({
-    netHealthFactor: 567777,
-    collateralLeftBeforeLiquidation: 173663,
-    netAvailableCollateral: 1000,
-    netAmountBorrowed: 770,
-    netProfitAndLoss: 0,
-  });
+  const isConnected = useUserStore((state) => state.isConnected);
 
   // Get margin account info from global store using selector to prevent unnecessary re-renders
   const totalBorrowedValue = useMarginAccountInfoStore(
@@ -90,7 +81,61 @@ const Margin = () => {
   const hasMarginAccount = useMarginAccountInfoStore(
     (state) => state.hasMarginAccount
   );
+  const marginAccountAddress = useMarginAccountInfoStore(
+    (state) => state.marginAccountAddress
+  );
 
+  // Check for margin account when user address changes or wallet connects
+  useEffect(() => {
+    if (userAddress && isConnected) {
+      // Check for existing margin account whenever wallet connects
+      checkUserMarginAccount(userAddress).catch(console.error);
+    }
+    // Note: We don't clear margin account on disconnect to preserve localStorage data
+  }, [userAddress, isConnected]);
+
+  // Refresh borrowed balances when margin account is available
+  useEffect(() => {
+    // Only refresh if wallet is connected, has margin account, and has valid address
+    if (isConnected && hasMarginAccount && marginAccountAddress && marginAccountAddress.length > 10) {
+      refreshBorrowedBalances(marginAccountAddress);
+      
+      // Set up periodic refresh every 30 seconds
+      const interval = setInterval(() => {
+        if (isConnected && marginAccountAddress) {
+          refreshBorrowedBalances(marginAccountAddress);
+        }
+      }, 30000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [isConnected, hasMarginAccount, marginAccountAddress]);
+
+
+  // ── Live account stats derived from on-chain data ───────────────────────────
+  const accountStats = useMemo(() => {
+    const netHealthFactor =
+      totalBorrowedValue > 0
+        ? totalCollateralValue / totalBorrowedValue
+        : totalCollateralValue > 0
+        ? 999
+        : 0;
+
+    const collateralLeftBeforeLiquidation = Math.max(
+      0,
+      totalCollateralValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
+    );
+
+    const netAvailableCollateral = Math.max(0, totalCollateralValue - totalBorrowedValue);
+
+    return {
+      netHealthFactor,
+      collateralLeftBeforeLiquidation,
+      netAvailableCollateral,
+      netAmountBorrowed: totalBorrowedValue,
+      netProfitAndLoss: 0,
+    };
+  }, [totalCollateralValue, totalBorrowedValue]);
 
   // Format data for InfoCard component
   const marginAccountInfo = {
@@ -137,10 +182,10 @@ const Margin = () => {
   }, {} as Record<string, string>);
 
   return (
-    <main className="w-full">
+    <main className="w-full px-4 sm:px-10 lg:px-30 pb-8 lg:pb-0">
       {/* Carousel section - displays promotional items */}
       <motion.section
-        className="w-full h-fit  pb-[48px] px-[80px] pt-[80px] "
+        className="w-full h-fit pt-3 sm:pt-4 pb-3 sm:pb-4"
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{
@@ -154,7 +199,7 @@ const Margin = () => {
 
       {userAddress && (
         <motion.section
-          className="px-[80px]  w-full h-[405px]"
+          className="w-full h-auto pb-2 sm:pb-0"
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
@@ -163,39 +208,53 @@ const Margin = () => {
           <AccountStats
             items={ACCOUNT_STATS_ITEMS}
             values={accountStatsValues}
+            gridCols="grid-cols-5"
           />
         </motion.section>
       )}
 
       {/* Main leverage section */}
-      <section className=" w-full p-[80px]  flex flex-col gap-[48px]">
-        {/* Section header with network dropdown */}
+      <section className="w-full pt-6 pb-4 sm:pb-6 lg:pb-10 flex flex-col gap-3">
+        {/* Section heading */}
         <motion.header
-          className="w-full flex gap-[20px] items-center"
+          className="w-full flex items-center gap-3"
           initial={{ opacity: 0, x: -20 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.4, ease: "easeOut" }}
         >
-          <h1 className={`text-[34px] font-semibold ${isDark ? "text-white" : ""}`}>
+          <h1 className={`text-[20px] font-bold ${isDark ? "text-white" : ""}`}>
             Leverage your Collateral
           </h1>
-          <div className="flex-shrink-0">
-            <NetworkDropdown />
-          </div>
         </motion.header>
 
-        {/* Two column layout: Leverage form and Info card */}
-        <div className="flex gap-[36px] relative" ref={leverageCollateralRef}>
-          {/* Left: Leverage collateral form */}
-          <LeverageCollateral
-            switchToRepayTab={switchToRepayTab}
-            onTabSwitched={() => setSwitchToRepayTab(false)}
-          />
+        {/* Two-column layout */}
+        <div className="flex flex-col lg:grid lg:grid-cols-2 items-start gap-6" ref={leverageCollateralRef}>
+          {/* Left: Leverage collateral form or Create Account */}
+          <div className="w-full">
+            {hasMarginAccount ? (
+              <LeverageCollateral
+                key={`leverage-${marginAccountAddress}`}
+                switchToRepayTab={switchToRepayTab}
+                onTabSwitched={() => setSwitchToRepayTab(false)}
+              />
+            ) : (
+              <motion.div
+                key={`create-${userAddress}`}
+                className="w-full"
+                initial={{ opacity: 0, x: -20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              >
+                <CreateMarginAccount />
+              </motion.div>
+            )}
+          </div>
 
           {/* Right: Margin account info card - sticky */}
           <motion.aside
-            className="flex flex-col gap-[20px] w-full h-fit sticky top-[80px] self-start"
+            className="flex flex-col gap-3 h-fit sticky top-4 self-start"
             initial={{ opacity: 0, x: 20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
@@ -203,7 +262,7 @@ const Margin = () => {
           >
             {/* Info card header */}
             <motion.header
-              className="flex gap-[10px]"
+              className="flex gap-[10px] items-start"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -211,26 +270,24 @@ const Margin = () => {
             >
               {/* Vanna logo icon */}
               <motion.div
-                className={`border-[1px] flex flex-col justify-center items-center p-2 rounded-[11px] w-[62px] h-[62px] ${
-                  ""
-                }`}
+                className="border-[1px] flex flex-col justify-center items-center p-1.5 rounded-[11px] w-11 h-11"
                 initial={{ scale: 0, rotate: -180 }}
                 whileInView={{ scale: 1, rotate: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4, type: "spring", stiffness: 200 }}
               >
                 <Image
-                  alt={"vanna"}
-                  src={"/logos/vanna-icon.png"}
-                  width={34.82}
-                  height={31.28}
+                  alt="vanna"
+                  src="/logos/vanna-icon.png"
+                  width={22}
+                  height={20}
                 />
               </motion.div>
-              <div className="flex flex-col">
-                <h2 className={`w-full text-[24px] font-bold ${isDark ? "text-white" : ""}`}>
+              <div className="flex flex-col flex-1">
+                <h2 className={`text-[18px] font-bold ${isDark ? "text-white" : ""}`}>
                   Margin Account Info
                 </h2>
-                <p className={`w-full text-[16px] font-medium text-[#A3A3A3]`}>
+                <p className="w-full text-[13px] font-medium text-[#A3A3A3]">
                   Stay updated details and status.
                 </p>
               </div>
@@ -258,13 +315,37 @@ const Margin = () => {
                 },
               ]}
             />
+
+            {/* Margin Account Status */}
+            {userAddress && marginAccountAddress && (
+              <motion.div
+                className={`p-4 rounded-lg border ${
+                  isDark
+                    ? "bg-green-900/10 border-green-700/30"
+                    : "bg-green-50 border-green-200"
+                }`}
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.3, delay: 0.2 }}
+              >
+                <div className="text-xs space-y-1">
+                  <p className={`font-medium ${isDark ? "text-green-400" : "text-green-700"}`}>
+                    Active Margin Account
+                  </p>
+                  <p className={`font-mono ${isDark ? "text-green-300" : "text-green-600"}`}>
+                    {marginAccountAddress.slice(0, 8)}...{marginAccountAddress.slice(-6)}
+                  </p>
+                </div>
+              </motion.div>
+            )}
           </motion.aside>
         </div>
 
-        {/* Positions table section */}
-        {userAddress && (
+        {/* Positions table section - only show if user has margin account */}
+        {userAddress && hasMarginAccount && (
           <motion.section
-            className="w-full h-fit "
+            className="w-full h-fit"
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-100px" }}

@@ -7,6 +7,8 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { MAX_LEVERAGE, MODE_CONFIG } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+import { useUserStore } from "@/store/user";
+import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 type Mode = "Deposit" | "Borrow";
 
@@ -26,7 +28,24 @@ export const BorrowBox = ({
   onBorrowItemsChange,
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
+  const getTokenBalanceKey = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC") return "BLEND_USDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC") return "AQUARIUS_USDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC") return "SOROSWAP_USDC";
+    return symbol;
+  };
+  const getBorrowedBalanceKey = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC") return "AQUSDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC") return "SOUSDC";
+    return symbol;
+  };
   const config = MODE_CONFIG[mode];
+
+  // Store access
+  const tokenBalances = useUserStore((state) => state.tokenBalances);
+  const borrowedBalances = useMarginAccountInfoStore((state) => state.borrowedBalances);
+  const isLoadingBorrowedBalances = useMarginAccountInfoStore((state) => state.isLoadingBorrowedBalances);
 
   // Form state
   const [selectedOptions, setSelectedOptions] = useState<
@@ -196,7 +215,9 @@ export const BorrowBox = ({
               </motion.button>
               <div className={`text-[12px] font-medium ${
                 isDark ? "text-[#919191]" : "text-neutral-400"
-              }`}>18000 USDC</div> 
+              }`}>
+                Unified Balance: {tokenBalances[getTokenBalanceKey(selectedOptions[0] || 'XLM') as keyof typeof tokenBalances] || tokenBalances.XLM} {selectedOptions[0] || 'XLM'}
+              </div> 
               </div>
               
             </motion.div>
@@ -240,13 +261,17 @@ export const BorrowBox = ({
                             isDark ? "text-white" : ""
                           }`}>
                             <div>
-                              {inputValue > 0 ? inputValue : "0"}{" "}
+                                {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
+                                  parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].amount).toFixed(4) : 
+                                  "0.0000"}{" "}
                                 {selectedOption}
                             </div>
                             <div className={`text-[10px] ${
                               isDark ? "text-[#919191]" : "text-[#111111]"
                             }`}>
-                              {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD
+                                {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
+                                  parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].usdValue).toFixed(2) : 
+                                  "0.00"} USD
                             </div>
                           </div>
                         </div>
@@ -300,13 +325,17 @@ export const BorrowBox = ({
                           isDark ? "text-white" : ""
                         }`}>
                           <div>
-                            {inputValue > 0 ? inputValue : "0"}{" "}
+                              {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
+                                parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].amount).toFixed(4) : 
+                                "0.0000"} {" "}
                             {selectedOption}
                           </div>
                           <div className={`text-[10px] ${
                             isDark ? "text-[#919191]" : "text-[#111111]"
                           }`}>
-                            {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD
+                              {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
+                                parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].usdValue).toFixed(2) : 
+                                "0.00"} USD
                           </div>
                         </div>
                       </div>
