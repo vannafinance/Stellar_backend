@@ -143,9 +143,8 @@ export const WithdrawLiquidity = () => {
             <Dropdown
               items={DropdownOptions}
               setSelectedOption={(option) => {
-                const optionString = typeof option === 'string' ? option : option.toString();
-                setSelectedOption(optionString);
-                useSelectedPoolStore.getState().set({ selectedAsset: toInternalAsset(optionString) as AssetType });
+                setSelectedOption(option);
+                useSelectedPoolStore.getState().set({ selectedAsset: toInternalAsset(option) as AssetType });
               }}
               selectedOption={selectedOption}
               classname="w-fit gap-[4px] items-center"

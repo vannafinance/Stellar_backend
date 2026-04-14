@@ -93,7 +93,7 @@ const CollateralComponent = (props: Collateral) => {
         setSelectedBalanceType(newBalanceType);
       }
     }
-  }, [isEditing, props.collaterals?.id, props.collaterals?.amount, props.collaterals?.amountInUsd, props.collaterals?.asset, props.collaterals?.balanceType]); // Only depend on isEditing and collateral id
+  }, [isEditing, props.collaterals?.amount, props.collaterals?.amountInUsd, props.collaterals?.asset, props.collaterals?.balanceType]);
 
   // Calculate USD value from input (1:1 conversion)
   useEffect(() => {
@@ -134,7 +134,6 @@ const CollateralComponent = (props: Collateral) => {
     if (!props.onSave || !props.id) return;
 
     const updatedCollateral: Collaterals = {
-      id: props.id,
       asset: selectedCurrency,
       amount: parseFloat(valueInput) || 0,
       amountInUsd: parseFloat(valueInUsd) || 0,
@@ -669,7 +668,7 @@ export const Collateral = memo(CollateralComponent, (prevProps, nextProps) => {
   
   // Compare all fields
   return (
-    prevCollateral.id === nextCollateral.id &&
+    prevProps.id === nextProps.id &&
     prevCollateral.asset === nextCollateral.asset &&
     prevCollateral.amount === nextCollateral.amount &&
     prevCollateral.amountInUsd === nextCollateral.amountInUsd &&

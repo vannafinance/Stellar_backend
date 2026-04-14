@@ -7,6 +7,7 @@ interface ModalProps {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  bottomSheet?: boolean;
 }
 
 export const Modal = ({ open, onClose, children }: ModalProps) => {

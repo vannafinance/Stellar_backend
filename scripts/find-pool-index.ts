@@ -20,7 +20,7 @@ const main = async () => {
   for (const [label, ids] of [['XLM,USDC', [xlmId, usdcId]], ['USDC,XLM', [usdcId, xlmId]]] as const) {
     try {
       const vec = StellarSdk.xdr.ScVal.scvVec(
-        (ids as string[]).map((id: string) => StellarSdk.nativeToScVal(id, { type: 'address' }))
+        ids.map((id) => StellarSdk.nativeToScVal(id, { type: 'address' }))
       );
       const tx = new StellarSdk.TransactionBuilder(tempAcc, {
         fee: StellarSdk.BASE_FEE, networkPassphrase: NETWORK_PASSPHRASE

@@ -33,7 +33,7 @@ export const SupplyLiquidityTab = () => {
   const [selectedOption, setSelectedOption] = useState<string>(toDisplayAsset(selectedAsset));
   const [value, setValue] = useState<string>("");
   const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
-  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' });
+  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', BLEND_USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' });
   
   const userAddress = useUserStore((state) => state.address);
   const balance = useUserStore((state) => state.balance);
@@ -135,9 +135,8 @@ export const SupplyLiquidityTab = () => {
           <Dropdown
             items={DropdownOptions}
             setSelectedOption={(option) => {
-              const optionString = typeof option === 'string' ? option : option.toString();
-              setSelectedOption(optionString);
-              useSelectedPoolStore.getState().set({ selectedAsset: toInternalAsset(optionString) as AssetType });
+              setSelectedOption(option);
+              useSelectedPoolStore.getState().set({ selectedAsset: toInternalAsset(option) as AssetType });
             }}
             selectedOption={selectedOption}
             classname="w-fit gap-[4px] items-center"

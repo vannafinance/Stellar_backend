@@ -331,10 +331,7 @@ export const LeverageAssetsTab = () => {
         // Cap requested borrow by current account health to avoid guaranteed
         // RiskEngine rejections (applies to all supported collateral symbols).
         if (multiplier > 1) {
-          const latestMarginState = useMarginAccountInfoStore.getState().get((state) => ({
-            totalBorrowedValue: state.totalBorrowedValue,
-            totalCollateralValue: state.totalCollateralValue,
-          }));
+          const latestMarginState = useMarginAccountInfoStore.getState();
           const liveTotalBorrowedValue = latestMarginState.totalBorrowedValue;
           const liveTotalCollateralValue = latestMarginState.totalCollateralValue;
           const threshold = 1.1;
