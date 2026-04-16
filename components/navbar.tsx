@@ -52,6 +52,7 @@ export const Navbar = (props: Navbar) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const walletMenuRef = useRef<HTMLDivElement>(null);
   const walletCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
