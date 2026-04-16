@@ -49,7 +49,7 @@ export const TokenSearchModal = ({
   return (
     <Modal open={isOpen} onClose={onClose} bottomSheet>
       <div
-        className={`w-[440px] rounded-[20px] flex flex-col overflow-hidden ${
+        className={`w-full max-w-[440px] rounded-[20px] flex flex-col overflow-hidden ${
           isDark ? "bg-[#222222] border border-[#333333]" : "bg-white border border-[#E2E2E2]"
         }`}
         style={{ height: "min(580px, 85vh)" }}

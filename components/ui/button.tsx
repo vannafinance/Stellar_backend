@@ -32,11 +32,11 @@ export const Button = (props: Button) => {
       aria-label={props.ariaLabel || props.text}
       className={`${props.width || "w-full"} h-fit ${
         props.size == "medium"
-          ? "py-[16px] px-[12px] text-[16px] rounded-[12px]"
+          ? "py-[12px] px-[10px] text-[14px] sm:py-[16px] sm:px-[12px] sm:text-[16px] rounded-[12px]"
           : props.size == "large"
-          ? "rounded-[16px] text-[20px] py-[20px] px-[16px]"
+          ? "rounded-xl text-[13px] py-2.5 px-3 sm:text-[13px] sm:py-2.5 sm:px-4"
           : props.type === "navbar"
-          ? "text-[12px] py-[12px] px-[24px]"
+          ? "text-[13px] py-[10px] px-[20px]"
           : "text-[12px] p-[8px]"
       } disabled:cursor-not-allowed transition cursor-pointer rounded-[8px] font-semibold ${
         props.type == "solid"

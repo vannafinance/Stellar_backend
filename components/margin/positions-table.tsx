@@ -14,14 +14,32 @@ interface PositionstableProps {
   onOpenPositionClick?: () => void;
 }
 
-const ITEMS_PER_PAGE = 3;
+const ITEMS_PER_PAGE = 5;
 
-export const Positionstable = ({ onRepayClick, onOpenPositionClick }: PositionstableProps) => {
+const getTokenIcon = (asset: string): string => {
+  return (
+    COIN_ICONS[asset as keyof typeof COIN_ICONS] ||
+    COIN_ICONS[asset.replace("0x", "") as keyof typeof COIN_ICONS] ||
+    "/icons/eth-icon.png"
+  );
+};
+
+const formatTokenName = (asset: string): string => {
+  if (asset.startsWith("0x")) return asset.split("0x")[1] || asset;
+  return asset;
+};
+
+export const Positionstable = ({
+  onRepayClick,
+  onOpenPositionClick,
+}: PositionstableProps) => {
   const { isDark } = useTheme();
   const positions = useCollateralBorrowStore((state) => state.position);
   const [activeTab, setActiveTab] = useState<string>("currentPositions");
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
+  const hasMarginAccount = useMarginAccountInfoStore(
+    (state) => state.hasMarginAccount,
+  );
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Filter positions based on active tab
@@ -37,366 +55,366 @@ export const Positionstable = ({ onRepayClick, onOpenPositionClick }: Positionst
   const totalPages = Math.ceil(filteredPositions.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
-  const paginatedPositions: Position[] = filteredPositions.slice(startIndex, endIndex);
+  const paginatedPositions: Position[] = filteredPositions.slice(
+    startIndex,
+    endIndex,
+  );
 
-  // Reset to page 1 when tab changes
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     setCurrentPage(1);
   };
 
-  // Scroll to top when page changes
   useEffect(() => {
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
     }
   }, [currentPage, activeTab]);
 
-  // Pagination handlers
   const handlePreviousPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
-    }
+    if (currentPage > 1) setCurrentPage(currentPage - 1);
   };
 
   const handleNextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1);
-    }
+    if (currentPage < totalPages) setCurrentPage(currentPage + 1);
   };
 
+  // ── EMPTY STATE ──
+  const renderEmpty = () => (
+    <section
+      className={`w-full h-[402px] border rounded-[8px] flex flex-col items-center justify-center ${
+        isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
+      }`}
+    >
+      <div className="w-fit h-fit">
+        {activeTab === "currentPositions" ? (
+          <Button
+            size="small"
+            type="ghost"
+            text="Open Position"
+            onClick={onOpenPositionClick}
+            disabled={false}
+          />
+        ) : (
+          <p
+            className={`text-[14px] font-medium ${
+              isDark ? "text-[#919191]" : "text-[#76737B]"
+            }`}
+          >
+            No positions history available
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  // ── POSITION CARD ──
+  const renderPositionCard = (item: Position, idx: number) => (
+    <motion.article
+      key={item.positionId}
+      className={`flex border rounded-[12px] w-full ${
+        isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
+      }`}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.4, delay: idx * 0.08, ease: "easeOut" }}
+    >
+      {/* Collateral column */}
+      <div className="w-full flex flex-col gap-[6px] py-[16px] px-[12px]">
+        <motion.div
+          className="flex gap-[8px] items-center"
+          initial={{ opacity: 0, x: -10 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.3, delay: idx * 0.08 + 0.1 }}
+        >
+          <Image
+            src={getTokenIcon(item.collateral.asset)}
+            alt={item.collateral.asset}
+            width={20}
+            height={20}
+            className="rounded-[10px] shrink-0"
+          />
+          <div className="flex flex-col gap-[1px]">
+            <div
+              className={`text-[13px] font-medium leading-tight ${
+                isDark ? "text-white" : ""
+              }`}
+            >
+              {item.collateral.amount} {formatTokenName(item.collateral.asset)}
+            </div>
+            <div
+              className={`text-[11px] font-medium ${
+                isDark ? "text-[#919191]" : "text-[#76737B]"
+              }`}
+            >
+              ${item.collateralUsdValue}
+            </div>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Borrowed assets column */}
+      <div className="w-full flex flex-col gap-[6px] py-[16px] px-[12px]">
+        {item.borrowed.map((borrowedItem, borrowedIdx) => (
+          <motion.div
+            key={borrowedIdx}
+            className="flex gap-[8px] items-center"
+            initial={{ opacity: 0, x: -10 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{
+              duration: 0.3,
+              delay: idx * 0.08 + borrowedIdx * 0.05 + 0.15,
+            }}
+          >
+            <Image
+              src={getTokenIcon(borrowedItem.assetData.asset)}
+              alt={borrowedItem.assetData.asset}
+              width={20}
+              height={20}
+              className="rounded-[10px] shrink-0"
+            />
+            <div className="flex flex-col gap-[1px]">
+              <div
+                className={`text-[13px] font-medium leading-tight ${
+                  isDark ? "text-white" : ""
+                }`}
+              >
+                {borrowedItem.assetData.amount}{" "}
+                {formatTokenName(borrowedItem.assetData.asset)}
+              </div>
+              <div
+                className={`text-[11px] font-medium ${
+                  isDark ? "text-[#919191]" : "text-[#76737B]"
+                }`}
+              >
+                ${borrowedItem.usdValue}
+              </div>
+            </div>
+            {borrowedItem.percentage > 0 && (
+              <div className="h-fit bg-[#F1EBFD] rounded-[4px] py-[1px] px-[6px] text-[10px] font-medium text-[#703AE6]">
+                {borrowedItem.percentage}%
+              </div>
+            )}
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Leverage column */}
+      <motion.div
+        className={`flex flex-col justify-center w-full py-[16px] px-[12px] text-[14px] font-semibold ${
+          isDark ? "text-white" : ""
+        }`}
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.3, delay: idx * 0.08 + 0.2 }}
+      >
+        {item.leverage > 0 ? (
+          <span className="text-[#703AE6]">{item.leverage}x</span>
+        ) : (
+          <span className={isDark ? "text-[#666666]" : "text-[#A0A0A0]"}>
+            -
+          </span>
+        )}
+      </motion.div>
+
+      {/* Interest accrued column */}
+      <motion.div
+        className={`w-full flex items-center gap-[4px] text-[13px] font-medium py-[16px] px-[12px] ${
+          isDark ? "text-white" : ""
+        }`}
+        initial={{ opacity: 0, x: 10 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.3, delay: idx * 0.08 + 0.25 }}
+      >
+        {item.interestAccrued > 0 ? (
+          <>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 14 14"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="shrink-0"
+            >
+              <path
+                d="M6 3.33333H7.33333V4.66667H6V3.33333ZM6 6H7.33333V10H6V6ZM6.66667 0C2.98667 0 0 2.98667 0 6.66667C0 10.3467 2.98667 13.3333 6.66667 13.3333C10.3467 13.3333 13.3333 10.3467 13.3333 6.66667C13.3333 2.98667 10.3467 0 6.66667 0ZM6.66667 12C3.72667 12 1.33333 9.60667 1.33333 6.66667C1.33333 3.72667 3.72667 1.33333 6.66667 1.33333C9.60667 1.33333 12 3.72667 12 6.66667C12 9.60667 9.60667 12 6.66667 12Z"
+                fill={isDark ? "#FFFFFF" : "black"}
+              />
+            </svg>
+            ${item.interestAccrued}
+          </>
+        ) : (
+          <span className={isDark ? "text-[#666666]" : "text-[#A0A0A0]"}>
+            $0
+          </span>
+        )}
+      </motion.div>
+
+      {/* Action column */}
+      <motion.div
+        className="flex flex-col justify-center w-full py-[16px] px-[12px]"
+        initial={{ opacity: 0, scale: 0.9 }}
+        whileInView={{ opacity: 1, scale: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.3, delay: idx * 0.08 + 0.3 }}
+      >
+        <div className="w-fit">
+          <Button
+            size="small"
+            type="gradient"
+            disabled={!item.isOpen}
+            text={item.isOpen ? "Repay" : "Repaid"}
+            onClick={item.isOpen && onRepayClick ? onRepayClick : undefined}
+          />
+        </div>
+      </motion.div>
+    </motion.article>
+  );
 
   return (
-    <section className="w-full flex flex-col gap-[16px]">
-      {/* Table title */}
-      <motion.h2
-        className={`text-[24px] font-bold ${isDark ? "text-white" : ""}`}
+    <section className="w-full flex flex-col gap-3">
+      {/* Title with position count */}
+      <motion.div
+        className="flex items-center gap-[12px]"
         initial={{ opacity: 0, y: -20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.4, ease: "easeOut" }}
       >
-        Positions
-      </motion.h2>
+        <h2 className={`text-[20px] font-bold ${isDark ? "text-white" : ""}`}>
+          Positions
+        </h2>
+        {filteredPositions.length > 0 && (
+          <span className="px-[10px] py-[3px] rounded-full bg-[#F1EBFD] text-[#703AE6] text-[13px] font-semibold">
+            {filteredPositions.length}
+          </span>
+        )}
+      </motion.div>
 
-      <nav className="w-fit h-fit">
-        <AnimatedTabs type="solid" tabs={[{id:"currentPositions",label:"Current Positions"},{id:"positionsHistory",label:"Positions History"}]} activeTab={activeTab} onTabChange={handleTabChange}/>
+      <nav className="w-full sm:w-fit h-fit">
+        <AnimatedTabs
+          type="solid"
+          customTabWidth="w-auto"
+          tabClassName="!py-2 !px-3 !h-9"
+          tabs={[
+            { id: "currentPositions", label: "Current Positions" },
+            { id: "positionsHistory", label: "Positions History" },
+          ]}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+        />
       </nav>
 
-      {hasMarginAccount && filteredPositions.length > 0 ? <section className="rounded-[12px] w-full ">
-        {/* Table headers */}
-        <ul className="flex " role="row">
-          {TABLE_ROW_HEADINGS.map((item, idx) => {
-            return (
-              <motion.li
-                className={`w-full pt-[11.25px] px-[12px] pb-[12px] font-medium text-[14px] ${
-                  isDark ? "text-[#999999]" : "text-[#464545]"
-                }`}
-                key={item}
-                initial={{ opacity: 0, y: -10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.3, delay: idx * 0.05 }}
-              >
-                {item}
-              </motion.li>
-            );
-          })}
-        </ul>
-
-        {/* Table rows */}
-        <section 
-          ref={scrollContainerRef}
-          className="flex flex-col gap-[10px] max-h-[400px] overflow-y-auto pr-[4px] thin-scrollbar"
-        >
-          {paginatedPositions.map((item, idx) => {
-            return (
-              <motion.article
-                key={item.positionId}
-                className={`flex border-[1px] rounded-[12px] w-full ${
-                  isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
-                }`}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{
-                  duration: 0.4,
-                  delay: idx * 0.1,
-                  ease: "easeOut",
-                }}
-              >
-                {/* Collateral column */}
-                <div className="w-full flex gap-[8px] py-[20px] px-[12px] items-center">
-                  {/* Collateral icon */}
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    whileInView={{ scale: 1 }}
-                    viewport={{ once: true }}
-                    transition={{
-                      duration: 0.3,
-                      delay: idx * 0.1 + 0.1,
-                      type: "spring",
-                      stiffness: 200,
-                    }}
-                  >
-                    <Image
-                      src={
-                        COIN_ICONS[
-                          item.collateral.asset as keyof typeof COIN_ICONS
-                        ]
-                      }
-                      alt={item.collateral.asset}
-                      width={20}
-                      height={20}
-                      className="rounded-[10px] flex-shrink-0"
-                    />
-                  </motion.div>
-
-                  {/* Collateral amount and USD value */}
-                  <motion.div
-                    className="flex flex-col gap-[2px]"
-                    initial={{ opacity: 0, x: -10 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.3, delay: idx * 0.1 + 0.15 }}
-                  >
-                    <div className={`text-[14px] font-medium ${isDark ? "text-white" : ""}`}>
-                      ${item.collateral.amount}{" "}
-                      {item.collateral.asset.split("0x")}
-                    </div>
-                    <div className={`text-[12px] font-medium ${isDark ? "text-white" : ""}`}>
-                      ${item.collateralUsdValue}
-                    </div>
-                  </motion.div>
-                </div>
-
-                {/* Borrowed assets column */}
-                <div className="w-full flex flex-col gap-[15px] py-[20px] px-[12px]">
-                  {item.borrowed.map((borrowedItem, borrowedIdx) => {
-                    return (
-                      <motion.div
-                        key={borrowedIdx}
-                        className="flex gap-[8px] items-center"
-                        initial={{ opacity: 0, x: -10 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        viewport={{ once: true }}
-                        transition={{
-                          duration: 0.3,
-                          delay: idx * 0.1 + borrowedIdx * 0.05 + 0.2,
-                        }}
-                      >
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          whileInView={{ scale: 1 }}
-                          viewport={{ once: true }}
-                          transition={{
-                            duration: 0.2,
-                            delay: idx * 0.1 + borrowedIdx * 0.05 + 0.25,
-                            type: "spring",
-                            stiffness: 200,
-                          }}
-                        >
-                          <Image
-                            src={
-                              COIN_ICONS[
-                                borrowedItem.assetData
-                                  .asset as keyof typeof COIN_ICONS
-                              ]
-                            }
-                            alt={borrowedItem.assetData.asset}
-                            width={20}
-                            height={20}
-                            className="rounded-[10px] flex-shrink-0"
-                          />
-                        </motion.div>
-
-                        <motion.div
-                          className="flex flex-col gap-[2px]"
-                          initial={{ opacity: 0 }}
-                          whileInView={{ opacity: 1 }}
-                          viewport={{ once: true }}
-                          transition={{
-                            duration: 0.3,
-                            delay: idx * 0.1 + borrowedIdx * 0.05 + 0.3,
-                          }}
-                        >
-                          <div className={`text-[14px] font-medium ${isDark ? "text-white" : ""}`}>
-                            ${borrowedItem.assetData.amount}{" "}
-                            {borrowedItem.assetData.asset.split("0x")}
-                          </div>
-                          <div className={`text-[12px] font-medium ${isDark ? "text-white" : ""}`}>
-                            ${borrowedItem.usdValue}
-                          </div>
-                        </motion.div>
-                        {borrowedItem.percentage && (
-                          <motion.div
-                            className="flex justify-end"
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            whileInView={{ opacity: 1, scale: 1 }}
-                            viewport={{ once: true }}
-                            transition={{
-                              duration: 0.3,
-                              delay: idx * 0.1 + borrowedIdx * 0.05 + 0.35,
-                            }}
-                          >
-                            <div className="w-full h-fit bg-[#F1EBFD] rounded-[4px] py-[2px] px-[8px] text-[10px] font-medium">
-                              {borrowedItem.percentage}%
-                            </div>
-                          </motion.div>
-                        )}
-                      </motion.div>
-                    );
-                  })}
-                </div>
-
-                {/* Leverage column */}
-                <motion.div
-                  className={`flex flex-col justify-center w-full py-[20px] px-[12px] text-[14px] font-medium ${
-                    isDark ? "text-white" : ""
+      {hasMarginAccount && filteredPositions.length > 0 ? (
+        <div className="w-full overflow-x-auto no-scrollbar">
+          <section className="rounded-[12px] min-w-[700px]">
+            {/* Table headers */}
+            <ul className="flex" role="row">
+              {TABLE_ROW_HEADINGS.map((item, idx) => (
+                <motion.li
+                  className={`w-full pt-[11.25px] px-[12px] pb-[12px] font-medium text-[12px] sm:text-[13px] ${
+                    isDark ? "text-[#999999]" : "text-[#464545]"
                   }`}
-                  initial={{ opacity: 0 }}
-                  whileInView={{ opacity: 1 }}
+                  key={item}
+                  initial={{ opacity: 0, y: -10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ duration: 0.3, delay: idx * 0.1 + 0.4 }}
+                  transition={{ duration: 0.3, delay: idx * 0.05 }}
                 >
-                  {item.leverage}x
-                </motion.div>
+                  {item}
+                </motion.li>
+              ))}
+            </ul>
 
-                {/* Interest accrued column */}
-                <motion.div
-                  className={`w-full flex gap-[4px] items-center text-[14px] font-medium py-[20px] px-[12px] ${
-                    isDark ? "text-white" : ""
-                  }`}
-                  initial={{ opacity: 0, x: 10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.3, delay: idx * 0.1 + 0.45 }}
-                >
-                  {/* Info icon (if position is open) */}
-                  {item.isOpen && (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 14 14"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="flex-shrink-0"
-                    >
-                      <path
-                        d="M6 3.33333H7.33333V4.66667H6V3.33333ZM6 6H7.33333V10H6V6ZM6.66667 0C2.98667 0 0 2.98667 0 6.66667C0 10.3467 2.98667 13.3333 6.66667 13.3333C10.3467 13.3333 13.3333 10.3467 13.3333 6.66667C13.3333 2.98667 10.3467 0 6.66667 0ZM6.66667 12C3.72667 12 1.33333 9.60667 1.33333 6.66667C1.33333 3.72667 3.72667 1.33333 6.66667 1.33333C9.60667 1.33333 12 3.72667 12 6.66667C12 9.60667 9.60667 12 6.66667 12Z"
-                        fill={isDark ? "#FFFFFF" : "black"}
-                      />
-                    </svg>
-                  )}
-                  {item.interestAccrued} USD
-                </motion.div>
+            {/* Position rows */}
+            <section
+              ref={scrollContainerRef}
+              className="flex flex-col gap-[8px] max-h-[520px] overflow-y-auto pr-[4px] thin-scrollbar"
+            >
+              {paginatedPositions.map((item, idx) =>
+                renderPositionCard(item, idx),
+              )}
+            </section>
 
-                {/* Action column */}
-                <motion.div
-                  className="flex flex-col justify-center w-full  py-[20px] px-[12px]"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.3, delay: idx * 0.1 + 0.5 }}
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <motion.div
+                className="flex items-center justify-center gap-[16px] py-[16px]"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <button
+                  type="button"
+                  onClick={handlePreviousPage}
+                  disabled={currentPage === 1}
+                  className={`flex items-center justify-center w-[40px] h-[40px] transition-colors ${
+                    currentPage === 1
+                      ? "cursor-not-allowed opacity-30"
+                      : "cursor-pointer hover:opacity-70"
+                  } ${isDark ? "text-white" : "text-[#111111]"}`}
+                  aria-label="Previous page"
                 >
-                  <div className="w-fit">
-                    <Button
-                      size="small"
-                      type="gradient"
-                      disabled={item.isOpen ? false : true}
-                      text={item.isOpen ? "Repay" : "Repaid"}
-                      onClick={item.isOpen && onRepayClick ? onRepayClick : undefined}
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M7.5 9L4.5 6L7.5 3"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     />
-                  </div>
-                </motion.div>
-              </motion.article>
-            );
-          })}
-        </section>
+                  </svg>
+                </button>
 
-        {/* Pagination controls */}
-        {totalPages > 1 && (
-          <motion.div
-            className="flex items-center justify-center gap-[16px] py-[16px]"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <button
-              type="button"
-              onClick={handlePreviousPage}
-              disabled={currentPage === 1}
-              className={`flex items-center justify-center w-[40px] h-[40px] transition-colors ${
-                currentPage === 1
-                  ? "cursor-not-allowed opacity-30"
-                  : "cursor-pointer hover:opacity-70"
-              } ${isDark ? "text-white" : "text-[#111111]"}`}
-              aria-label="Previous page"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M7.5 9L4.5 6L7.5 3"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+                <span className="px-[24px] py-[8px] rounded-full bg-[#F1EBFD] text-[#703AE6] text-[14px] font-semibold">
+                  {currentPage} of {totalPages}
+                </span>
 
-            <span className="px-[24px] py-[8px] rounded-full bg-[#F1EBFD] text-[#703AE6] text-[14px] font-semibold">
-              {currentPage} of {totalPages}
-            </span>
-
-            <button
-              type="button"
-              onClick={handleNextPage}
-              disabled={currentPage === totalPages}
-              className={`flex items-center justify-center w-[40px] h-[40px] transition-colors ${
-                currentPage === totalPages
-                  ? "cursor-not-allowed opacity-30"
-                  : "cursor-pointer hover:opacity-70"
-              } ${isDark ? "text-white" : "text-[#111111]"}`}
-              aria-label="Next page"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M4.5 9L7.5 6L4.5 3"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          </motion.div>
-        )}
-      </section>:<section className={`w-full h-[402px] border-[1px] rounded-[8px] flex flex-col items-center justify-center ${
-        isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
-      }`}>
-        <div className="w-fit h-fit">
-          {activeTab === "currentPositions" ? (
-            <Button size="small" type="ghost" text="Open Position" onClick={onOpenPositionClick} disabled={false}/>
-          ) : (
-            <p className={`text-[14px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>No positions history available</p>
-          )}
+                <button
+                  type="button"
+                  onClick={handleNextPage}
+                  disabled={currentPage === totalPages}
+                  className={`flex items-center justify-center w-[40px] h-[40px] transition-colors ${
+                    currentPage === totalPages
+                      ? "cursor-not-allowed opacity-30"
+                      : "cursor-pointer hover:opacity-70"
+                  } ${isDark ? "text-white" : "text-[#111111]"}`}
+                  aria-label="Next page"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M4.5 9L7.5 6L4.5 3"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </motion.div>
+            )}
+          </section>
         </div>
-        
-        </section>}
+      ) : (
+        renderEmpty()
+      )}
     </section>
   );
 };

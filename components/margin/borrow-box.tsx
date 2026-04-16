@@ -159,127 +159,139 @@ export const BorrowBox = ({
 
   return (
     <motion.section
-      className={`flex flex-col gap-[20px] rounded-[16px] py-[24px] px-[16px] border-[1px] ${
-        isDark ? "bg-[#111111]" : "bg-white"
+      className={`w-full rounded-2xl p-3 sm:p-4 flex flex-col gap-3 sm:gap-4 border transition-colors ${
+        isDark
+          ? "bg-[#1A1A1A] border-[#2A2A2A]"
+          : "bg-white border-[#EEEEEE]"
       }`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
     >
       {/* Top section: Asset selector or borrowed items display */}
-      <header className="flex justify-between ">
+      <header className="flex justify-between gap-3">
         {/* Deposit mode: Single asset selector */}
         {mode === "Deposit" && (
           <>
             <motion.div
-              className="flex gap-[10px] items-top "
+              className="flex flex-col gap-2"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
             >
-              {/* Asset dropdown */}
-              <div>
-                <Dropdown
+              {/* Asset dropdown pill */}
+              <Dropdown
+                dropdownClassname="text-[13px] gap-2"
+                items={DropdownOptions}
+                selectedOption={selectedOptions[0] || DropdownOptions[0]}
+                setSelectedOption={handleSetSelectedOption(0)}
+                classname={`gap-2 px-3 py-2 rounded-full text-[14px] font-semibold transition-colors ${
+                  isDark
+                    ? "bg-[#333333] hover:bg-[#3D3D3D] text-white"
+                    : "bg-[#EEEEEE] hover:bg-[#E2E2E2]"
+                }`}
+              />
 
-                  dropdownClassname="text-[14px] gap-[10px] "
-                  items={DropdownOptions}
-                  selectedOption={selectedOptions[0] || DropdownOptions[0]}
-                  setSelectedOption={handleSetSelectedOption(0)}
-                  classname="text-[16px] font-medium gap-[8px]"
-                />
+              {/* Balance */}
+              <div
+                className={`text-[12px] font-medium ${
+                  isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                }`}
+              >
+                Balance:{" "}
+                {tokenBalances[
+                  getTokenBalanceKey(
+                    selectedOptions[0] || "XLM",
+                  ) as keyof typeof tokenBalances
+                ] || tokenBalances.XLM}{" "}
+                {selectedOptions[0] || "XLM"}
               </div>
+            </motion.div>
 
-              {/* Max Value button */}
-              <div className="flex flex-col gap-[6px] items-center">
-               <motion.button
+            {/* Borrowed Amount + Max Value */}
+            <motion.div
+              className="flex flex-col items-end gap-2"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <motion.button
                 type="button"
                 onClick={handleMaxLeverage}
-                className="h-fit cursor-pointer rounded-[8px] bg-gradient p-[1px]"
+                className="h-fit cursor-pointer rounded-lg bg-gradient p-[1px]"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 transition={{ duration: 0.2 }}
                 aria-label="Set maximum leverage"
               >
-                <motion.div
-                  className={`py-[8px] px-[16px] rounded-[8px] text-[14px] font-medium ${
+                <div
+                  className={`py-1.5 px-4 rounded-lg text-[13px] font-semibold ${
                     leverage === MAX_LEVERAGE
                       ? "bg-gradient text-white"
                       : isDark
-                      ? "bg-[#111111] text-white"
-                      : "bg-white"
-                  } `}
+                        ? "bg-[#1A1A1A] text-white"
+                        : "bg-white text-[#111111]"
+                  }`}
                 >
                   Max Value
-                </motion.div>
-                
-              </motion.button>
-              <div className={`text-[12px] font-medium ${
-                isDark ? "text-[#919191]" : "text-neutral-400"
-              }`}>
-                Unified Balance: {tokenBalances[getTokenBalanceKey(selectedOptions[0] || 'XLM') as keyof typeof tokenBalances] || tokenBalances.XLM} {selectedOptions[0] || 'XLM'}
-              </div> 
-              </div>
-              
-            </motion.div>
-
-            {/* Borrowed Amount section for Deposit mode */}
-            <motion.div
-              className="flex flex-col justify-end items-end gap-[12px]"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="flex flex-col items-end gap-[12px]">
-                <div className={`text-[14px] font-medium ${
-                  isDark ? "text-white" : ""
-                }`}>Borrowed Amount:</div>
-                <div className="flex gap-[12px]">
-                  {Array.from({ length: 1 }).map((_, idx) => {
-                    const selectedOption =
-                      selectedOptions[0] || DropdownOptions[0];
-                    const inputValue = inputValues[0] || 0;
-
-                    return (
-                      <motion.div
-                        key={idx}
-                        className="flex gap-[12px]"
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <div className="flex gap-[4px] justify-start">
-                          <div className="flex flex-col justify-top items-top">
-                            <Image
-                              src={iconPaths[selectedOption]}
-                              alt={selectedOption}
-                              width={16}
-                              height={16}
-                            />
-                          </div>
-
-                          <div className={`text-[12px] font-medium flex flex-col gap-[4px] ${
-                            isDark ? "text-white" : ""
-                          }`}>
-                            <div>
-                                {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
-                                  parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].amount).toFixed(4) : 
-                                  "0.0000"}{" "}
-                                {selectedOption}
-                            </div>
-                            <div className={`text-[10px] ${
-                              isDark ? "text-[#919191]" : "text-[#111111]"
-                            }`}>
-                                {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
-                                  parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].usdValue).toFixed(2) : 
-                                  "0.00"} USD
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
                 </div>
-              </div>
+              </motion.button>
+
+              {/* Borrowed balance row */}
+              {Array.from({ length: 1 }).map((_, idx) => {
+                const selectedOption = selectedOptions[0] || DropdownOptions[0];
+                return (
+                  <motion.div
+                    key={idx}
+                    className="flex items-center gap-2"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <Image
+                      src={iconPaths[selectedOption]}
+                      alt={selectedOption}
+                      width={16}
+                      height={16}
+                      className="rounded-full shrink-0"
+                    />
+                    <div
+                      className={`flex flex-col gap-0.5 text-right ${
+                        isDark ? "text-white" : "text-[#111111]"
+                      }`}
+                    >
+                      <span className="text-[13px] font-semibold">
+                        {borrowedBalances[
+                          getBorrowedBalanceKey(selectedOption)
+                        ]
+                          ? parseFloat(
+                              borrowedBalances[
+                                getBorrowedBalanceKey(selectedOption)
+                              ].amount,
+                            ).toFixed(4)
+                          : "0.0000"}{" "}
+                        {selectedOption}
+                      </span>
+                      <span
+                        className={`text-[11px] ${
+                          isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                        }`}
+                      >
+                        {borrowedBalances[
+                          getBorrowedBalanceKey(selectedOption)
+                        ]
+                          ? parseFloat(
+                              borrowedBalances[
+                                getBorrowedBalanceKey(selectedOption)
+                              ].usdValue,
+                            ).toFixed(2)
+                          : "0.00"}{" "}
+                        USD
+                      </span>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </motion.div>
           </>
         )}
@@ -287,72 +299,81 @@ export const BorrowBox = ({
         {/* Borrow mode: Display borrowed items */}
         {mode === "Borrow" && (
           <motion.div
-            className="w-full flex justify-between items-center"
+            className="w-full flex justify-between items-start gap-4"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
           >
             {/* Borrowed items list */}
-            <div className="flex flex-col gap-[12px]">
-              <div className={`text-[14px] font-medium ${
-                isDark ? "text-white" : ""
-              }`}>Borrowed Amount:</div>
-              <div className="flex gap-[12px]">
+            <div className="flex flex-col gap-2">
+              <span
+                className={`text-[13px] font-medium ${
+                  isDark ? "text-[#A7A7A7]" : "text-[#777777]"
+                }`}
+              >
+                Borrowed Amount
+              </span>
+              <div className="flex gap-3">
                 {Array.from({ length: config.maxItems }).map((_, idx) => {
                   const selectedOption =
                     selectedOptions[idx] || DropdownOptions[0];
-                  const inputValue = inputValues[idx] || 0;
-
                   return (
                     <motion.div
                       key={idx}
-                      className="flex gap-[12px]"
+                      className="flex items-center gap-2"
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.3, delay: idx * 0.1 }}
                     >
-                      <div className="flex gap-[4px] justify-start">
-                        <div className="flex flex-col justify-top items-top">
-                          <Image
-                            src={iconPaths[selectedOption]}
-                            alt={selectedOption}
-                            width={16}
-                            height={16}
-                          />
-                        </div>
-
-                        <div className={`text-[12px] font-medium flex flex-col gap-[4px] ${
-                          isDark ? "text-white" : ""
-                        }`}>
-                          <div>
-                              {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
-                                parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].amount).toFixed(4) : 
-                                "0.0000"} {" "}
-                            {selectedOption}
-                          </div>
-                          <div className={`text-[10px] ${
-                            isDark ? "text-[#919191]" : "text-[#111111]"
-                          }`}>
-                              {borrowedBalances[getBorrowedBalanceKey(selectedOption)] ? 
-                                parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOption)].usdValue).toFixed(2) : 
-                                "0.00"} USD
-                          </div>
-                        </div>
+                      <Image
+                        src={iconPaths[selectedOption]}
+                        alt={selectedOption}
+                        width={16}
+                        height={16}
+                        className="rounded-full shrink-0"
+                      />
+                      <div
+                        className={`flex flex-col gap-0.5 ${
+                          isDark ? "text-white" : "text-[#111111]"
+                        }`}
+                      >
+                        <span className="text-[13px] font-semibold">
+                          {borrowedBalances[
+                            getBorrowedBalanceKey(selectedOption)
+                          ]
+                            ? parseFloat(
+                                borrowedBalances[
+                                  getBorrowedBalanceKey(selectedOption)
+                                ].amount,
+                              ).toFixed(4)
+                            : "0.0000"}{" "}
+                          {selectedOption}
+                        </span>
+                        <span
+                          className={`text-[11px] ${
+                            isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                          }`}
+                        >
+                          {borrowedBalances[
+                            getBorrowedBalanceKey(selectedOption)
+                          ]
+                            ? parseFloat(
+                                borrowedBalances[
+                                  getBorrowedBalanceKey(selectedOption)
+                                ].usdValue,
+                              ).toFixed(2)
+                            : "0.00"}{" "}
+                          USD
+                        </span>
                       </div>
                       {idx < config.maxItems - 1 && (
-                        <motion.span
-                          className={`text-[20px] font-bold ${
-                            isDark ? "text-white" : ""
+                        <span
+                          className={`text-[18px] font-bold px-1 ${
+                            isDark ? "text-[#555555]" : "text-[#CCCCCC]"
                           }`}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{
-                            duration: 0.3,
-                            delay: (idx + 1) * 0.1,
-                          }}
                         >
                           :
-                        </motion.span>
+                        </span>
                       )}
                     </motion.div>
                   );
@@ -362,21 +383,25 @@ export const BorrowBox = ({
 
             {/* Total borrowed value */}
             {showTotal && (
-              <div className="flex flex-col justify-end items-end gap-[12px]">
-                <div className={`text-[14px] font-medium ${
-                  isDark ? "text-white" : ""
-                }`}>
-                  Total Borrowable Amount:
-                </div>
-                <div className={`text-[14px] font-medium ${
-                  isDark ? "text-white" : ""
-                }`}>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span
+                  className={`text-[13px] font-medium ${
+                    isDark ? "text-[#A7A7A7]" : "text-[#777777]"
+                  }`}
+                >
+                  Total Borrowable
+                </span>
+                <span
+                  className={`text-[15px] font-bold ${
+                    isDark ? "text-white" : "text-[#111111]"
+                  }`}
+                >
                   $
                   {totalBorrowedValue.toLocaleString("en-US", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
-                </div>
+                </span>
               </div>
             )}
           </motion.div>
@@ -386,194 +411,204 @@ export const BorrowBox = ({
       {/* Input boxes for borrow items */}
       {showInputBoxes && (
         <motion.section
-          className="flex gap-[8px] items-center justify-center relative z-10"
+          className="flex gap-3 items-center justify-center relative z-10"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          {/* Map through max items */}
           {Array.from({ length: config.maxItems }).map((_, idx) => {
-              const selectedOption = selectedOptions[idx] || DropdownOptions[0];
-              const inputValue = inputValues[idx] || 0;
-              
-              // Calculate item data inline (no need for displayItems)
-              const item: BorrowInfo | null = selectedOption && inputValue > 0 ? {
-                assetData: {
-                  asset: `0x${selectedOption}`,
-                  amount: inputValue.toString(),
-                },
-                percentage: totalDeposit > 0 ? Number(((inputValue / totalDeposit) * 100).toFixed(2)) : 0,
-                usdValue: inputValue,
-              } : null;
-              return (
-                <motion.div
-                  key={idx}
-                  className="flex gap-[8px] items-center"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: idx * 0.1 }}
+            const selectedOption = selectedOptions[idx] || DropdownOptions[0];
+            const inputValue = inputValues[idx] || 0;
+
+            const item: BorrowInfo | null =
+              selectedOption && inputValue > 0
+                ? {
+                    assetData: {
+                      asset: `0x${selectedOption}`,
+                      amount: inputValue.toString(),
+                    },
+                    percentage:
+                      totalDeposit > 0
+                        ? Number(
+                            ((inputValue / totalDeposit) * 100).toFixed(2),
+                          )
+                        : 0,
+                    usdValue: inputValue,
+                  }
+                : null;
+
+            return (
+              <motion.div
+                key={idx}
+                className="flex gap-3 items-center w-full"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3, delay: idx * 0.1 }}
+              >
+                <div
+                  className={`flex-1 rounded-2xl p-3 sm:p-4 border ${
+                    isDark
+                      ? "bg-[#111111] border-[#2A2A2A]"
+                      : "bg-[#F7F7F7] border-[#EEEEEE]"
+                  }`}
                 >
-                  <motion.div
-                    className={`p-[16px] border-[1px] rounded-[16px] flex justify-between items-center ${
-                      isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
-                    }`}
-                    whileHover={{ scale: 1.02 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <div className="flex flex-col gap-[16px]">
-                      <div>
-                        <Dropdown
-                          dropdownClassname="text-[14px] gap-[10px] "
-                          items={DropdownOptions}
-                          selectedOption={
-                            selectedOptions[idx] || DropdownOptions[0]
-                          }
-                          setSelectedOption={handleSetSelectedOption(idx)}
-                          classname="text-[16px] font-medium gap-[8px]"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-[4px]">
-                        <div>
-                          <label
-                            htmlFor={`borrow-amount-input-${idx}`}
-                            className="sr-only"
-                          >
-                            Borrow amount for {selectedOption}
-                          </label>
-                          <input
-                            id={`borrow-amount-input-${idx}`}
-                            onChange={handleInputChange(idx)}
-                            className={`w-full text-[20px] focus:border-[0px] focus:outline-none font-medium placeholder:text-[#C7C7C7] ${
-                              isDark ? "placeholder:text-[#A7A7A7] text-white bg-[#222222]" : "bg-[#F7F7F7]"
-                            }`}
-                            type="text"
-                            placeholder="0.0"
-                            value={inputValues[idx]?.toString() || ""}
-                          />
-                        </div>
-                        <div
-                          className={`text-[12px] font-medium ${
-                            isDark ? "text-[#919191]" : "text-[#76737B]"
-                          }`}
-                          aria-live="polite"
-                        >
-                          {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD
-                        </div>
-                      </div>
-                    </div>
-                    <div className="w-full flex flex-col justify-end items-end gap-[20px] ">
-                      <div>
-                        <Dropdown dropdownClassname="text-[14px] gap-[10px] " items={["Amount in %","Amount in $"]}  selectedOption={selectedAmountType} setSelectedOption={setSelectedAmountType} classname="text-[16px] font-medium gap-[8px]" />
-                      </div>
-                      <div className="px-[10px] flex flex-col justify-end items-end gap-[4px]">
-                        <input 
-                          type="text" 
-                          placeholder="0.0" 
-                          onChange={handlePercentageInputChange(idx)} 
-                          className={`focus:outline-none text-[20px] font-semibold w-full text-right placeholder:text-[#C7C7C7] ${
-                            isDark ? "placeholder:text-[#A7A7A7] text-white bg-[#222222]" : "bg-[#F7F7F7]"
-                          }`}
-                          value={percentageInputValues[idx] || 0} 
-                        />
-                        <div className={`text-[12px] font-medium ${
-                          isDark ? "text-[#919191]" : "text-[#76737B]"
-                        }`}>
-                          {item
-                            ? `1${selectedOption} = $1.00` // 1:1 conversion
-                            : "0.00 USD"}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                  {idx < config.maxItems - 1 && (
-                    <motion.div
-                      className={`text-[20px] font-bold w-[36px] h-[36px] rounded-[48px] flex items-center justify-center ${
-                        isDark ? "text-white" : ""
+                  {/* Row 1: token selector + amount type */}
+                  <div className="flex items-center justify-between mb-3">
+                    <Dropdown
+                      dropdownClassname="text-[13px] gap-2"
+                      items={DropdownOptions}
+                      selectedOption={selectedOptions[idx] || DropdownOptions[0]}
+                      setSelectedOption={handleSetSelectedOption(idx)}
+                      classname={`gap-2 px-3 py-2 rounded-full text-[13px] font-semibold transition-colors ${
+                        isDark
+                          ? "bg-[#2A2A2A] hover:bg-[#333333] text-white"
+                          : "bg-white hover:bg-[#EEEEEE]"
                       }`}
-                      initial={{ opacity: 0, scale: 0 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ duration: 0.3, delay: (idx + 1) * 0.1 }}
-                    >
-                      :
-                    </motion.div>
-                  )}
-                </motion.div>
-              );
-            })}
+                    />
+                    <Dropdown
+                      dropdownClassname="text-[13px] gap-2"
+                      items={["Amount in %", "Amount in $"]}
+                      selectedOption={selectedAmountType}
+                      setSelectedOption={setSelectedAmountType}
+                      classname={`gap-1.5 text-[12px] font-medium ${
+                        isDark ? "text-[#A7A7A7]" : "text-[#777777]"
+                      }`}
+                    />
+                  </div>
+
+                  {/* Row 2: amount inputs */}
+                  <div className="flex items-end justify-between gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label
+                        htmlFor={`borrow-amount-input-${idx}`}
+                        className="sr-only"
+                      >
+                        Borrow amount for {selectedOption}
+                      </label>
+                      <input
+                        id={`borrow-amount-input-${idx}`}
+                        onChange={handleInputChange(idx)}
+                        className={`text-[22px] font-semibold bg-transparent outline-none w-[120px] placeholder:opacity-30 ${
+                          isDark
+                            ? "text-white placeholder:text-[#555555]"
+                            : "text-[#111111] placeholder:text-[#CCCCCC]"
+                        }`}
+                        type="text"
+                        placeholder="0"
+                        value={inputValues[idx]?.toString() || ""}
+                      />
+                      <span
+                        className={`text-[12px] font-medium ${
+                          isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                        }`}
+                        aria-live="polite"
+                      >
+                        {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1">
+                      <input
+                        type="text"
+                        placeholder="0"
+                        onChange={handlePercentageInputChange(idx)}
+                        className={`focus:outline-none text-[22px] font-semibold text-right bg-transparent w-[80px] placeholder:opacity-30 ${
+                          isDark
+                            ? "text-white placeholder:text-[#555555]"
+                            : "text-[#111111] placeholder:text-[#CCCCCC]"
+                        }`}
+                        value={percentageInputValues[idx] || 0}
+                      />
+                      <span
+                        className={`text-[12px] font-medium ${
+                          isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                        }`}
+                      >
+                        {item ? `1 ${selectedOption} = $1.00` : "0.00 USD"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {idx < config.maxItems - 1 && (
+                  <span
+                    className={`text-[18px] font-bold shrink-0 ${
+                      isDark ? "text-[#555555]" : "text-[#CCCCCC]"
+                    }`}
+                  >
+                    :
+                  </span>
+                )}
+              </motion.div>
+            );
+          })}
         </motion.section>
       )}
 
       {/* Leverage slider */}
       <motion.section
-        className="relative z-0 flex items-center justify-between"
+        className="relative z-0 flex items-start justify-between"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, delay: 0.2 }}
       >
-        <div className={`flex gap-[2px] items-center rounded-[8px] border-[1px] p-[2px] ${
-          isDark ? "bg-[#111111]" : "bg-white"
-        }`}>
-          {/* - Button */}
+        {/* -/+ stepper */}
+        <div
+          className={`flex gap-0.5 items-center rounded-lg border p-0.5 shrink-0 ${
+            isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E2E2E2]"
+          }`}
+        >
           <motion.button
             type="button"
-            onClick={() => {
-              if (leverage > 1) {
-                setLeverage(leverage - 1);
-              }
-            }}
-            disabled={leverage === 1}
-            className={`w-[20px] h-[40px] flex items-center justify-center rounded-[6px] text-[16px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+            onClick={() => leverage > 1 && setLeverage(leverage - 1)}
+            disabled={leverage <= 1}
+            className={`w-4 h-8 flex items-center justify-center rounded-md text-[14px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
               isDark ? "text-white hover:bg-[#222222]" : "hover:bg-[#F7F7F7]"
             }`}
-            whileHover={{ scale: leverage === 1 ? 1.05 : 1 }}
-            whileTap={{ scale: leverage === 1 ? 0.95 : 1 }}
-            aria-label="Increase leverage"
+            whileHover={{ scale: leverage > 1 ? 1.05 : 1 }}
+            whileTap={{ scale: leverage > 1 ? 0.95 : 1 }}
+            aria-label="Decrease leverage"
           >
-            -
+            −
           </motion.button>
-          
-          {/* Input */}
+
           <input
             value={leverage}
             type="number"
             min={1}
             max={MAX_LEVERAGE}
             onChange={handleLeverageChange}
-            className={`w-[40px] h-[40px] focus:outline-none bg-transparent p-[10px] text-[16px] font-medium text-center border-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+            className={`w-8 h-8 focus:outline-none bg-transparent px-1 text-[14px] font-medium text-center border-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
               isDark ? "text-white" : ""
             }`}
           />
-          
-          {/* + Button */}
+
           <motion.button
             type="button"
-            onClick={() => {
-              if (leverage < MAX_LEVERAGE) {
-                setLeverage(leverage + 1);
-              }
-            }}
+            onClick={() => leverage < MAX_LEVERAGE && setLeverage(leverage + 1)}
             disabled={leverage >= MAX_LEVERAGE}
-            className={`w-[20px] h-[40px] flex items-center justify-center rounded-[6px] text-[16px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+            className={`w-4 h-8 flex items-center justify-center rounded-md text-[14px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
               isDark ? "text-white hover:bg-[#222222]" : "hover:bg-[#F7F7F7]"
             }`}
-            whileHover={{ scale: leverage >= MAX_LEVERAGE ? 1.05 : 1 }}
-            whileTap={{ scale: leverage >= MAX_LEVERAGE ? 0.95 : 1 }}
-            aria-label="Decrease leverage"
+            whileHover={{ scale: leverage < MAX_LEVERAGE ? 1.05 : 1 }}
+            whileTap={{ scale: leverage < MAX_LEVERAGE ? 0.95 : 1 }}
+            aria-label="Increase leverage"
           >
             +
           </motion.button>
         </div>
-        <div className="w-[500px] px-[5px]">
+
+        {/* Slider */}
+        <div className="flex-1 min-w-0 pl-4 pr-0 mt-1.5">
           <LeverageSlider
-          value={leverage}
-          onChange={setLeverage}
-          max={MAX_LEVERAGE}
-          min={1}
-          step={1}
-          markers={[1,3,5,7,10]}
-        />
+            value={leverage}
+            onChange={setLeverage}
+            max={MAX_LEVERAGE}
+            min={1}
+            step={1}
+            markers={[1, 3, 5, 7, 10]}
+          />
         </div>
-        
       </motion.section>
     </motion.section>
   );
