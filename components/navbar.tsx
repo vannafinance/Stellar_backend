@@ -53,6 +53,7 @@ export const Navbar = (props: Navbar) => {
   const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const walletMenuRef = useRef<HTMLDivElement>(null);
+  const walletMenuMobileRef = useRef<HTMLDivElement>(null);
   const walletCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -60,6 +61,18 @@ export const Navbar = (props: Navbar) => {
       if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
       if (walletCloseTimeoutRef.current) clearTimeout(walletCloseTimeoutRef.current);
     };
+  }, []);
+
+  // Close wallet menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inDesktop = walletMenuRef.current?.contains(target);
+      const inMobile = walletMenuMobileRef.current?.contains(target);
+      if (!inDesktop && !inMobile) setIsWalletDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   const handleNavItemClickWithLink = (item: { title: string; link: string }) => {
@@ -327,12 +340,58 @@ export const Navbar = (props: Navbar) => {
             {!address ? (
               <Button size="small" type="gradient" disabled={isLoading} onClick={connectWallet} text={isLoading ? "..." : "Connect"} ariaLabel="Connect your Freighter wallet" />
             ) : (
-              <motion.button whileTap={{ scale: 0.97 }} onClick={handleWalletClick}
-                className={`flex items-center gap-1.5 py-1.5 pl-2 pr-2.5 rounded-lg text-[12px] font-semibold cursor-pointer ${isDark ? "bg-[#1C1C1C] border border-[#2A2A2A] text-white" : "bg-[#F7F7F7] border border-[#DFDFDF] text-[#1F1F1F]"}`}
-              >
-                <Image src="/coins/xlmbg.png" width={16} height={16} alt="Stellar" className="rounded-full" />
-                <span className="font-mono">{address.slice(0, 4) + "..." + address.slice(-3)}</span>
-              </motion.button>
+              <div className="relative" ref={walletMenuMobileRef}>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={handleWalletClick}
+                  className={`flex items-center gap-1.5 py-1.5 pl-2 pr-2.5 rounded-lg text-[12px] font-semibold cursor-pointer ${isDark ? "bg-[#1C1C1C] border border-[#2A2A2A] text-white" : "bg-[#F7F7F7] border border-[#DFDFDF] text-[#1F1F1F]"}`}
+                >
+                  <Image src="/coins/xlmbg.png" width={16} height={16} alt="Stellar" className="rounded-full" />
+                  <span className="font-mono">{address.slice(0, 4) + "..." + address.slice(-3)}</span>
+                </motion.button>
+                <AnimatePresence>
+                  {isWalletDropdownOpen && (
+                    <motion.div initial={{ opacity: 0, y: 6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.97 }} transition={{ duration: 0.18, ease: "easeOut" }}
+                      className={`absolute right-0 top-full mt-[10px] w-[280px] rounded-[14px] overflow-hidden z-50 ${isDark ? "bg-[#161616] border border-[#2A2A2A]" : "bg-white border border-[#E8E8E8]"}`}
+                      style={{ boxShadow: isDark ? "0 12px 40px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(255,255,255,0.04)" : "0 12px 40px rgba(0,0,0,0.1), 0 0 0 0.5px rgba(0,0,0,0.04)" }}
+                    >
+                      <div className={`px-4 py-3 border-b ${isDark ? "border-[#222222]" : "border-[#F0F0F0]"}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #FC5457 10%, #703AE6 80%)" }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="2" y="6" width="20" height="14" rx="3" stroke="white" strokeWidth="2" /><circle cx="7" cy="16" r="1.5" fill="white" /></svg>
+                          </div>
+                          <div>
+                            <p className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`}>Freighter Wallet</p>
+                            <button onClick={() => { navigator.clipboard.writeText(address); }} className={`flex items-center gap-1 text-[11px] font-mono mt-0.5 cursor-pointer ${isDark ? "text-[#666] hover:text-[#9F7BEE]" : "text-[#999] hover:text-[#703AE6]"}`}>
+                              {address.slice(0, 6) + "..." + address.slice(-4)}
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M5 15V5C5 3.89 5.89 3 7 3H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-[6px]">
+                        <div className={`flex items-center gap-3 px-3 py-[10px] rounded-[10px] ${isDark ? "text-[#C0C0C0]" : "text-[#3A3A3A]"}`}>
+                          <div className={`w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0 ${isDark ? "bg-[#242424]" : "bg-[#F0F0F0]"}`}><Image src="/coins/xlmbg.png" width={16} height={16} alt="Network" /></div>
+                          <div className="flex-1"><p className="text-[13px] font-semibold leading-tight">Stellar Testnet</p><p className={`text-[11px] mt-0.5 ${isDark ? "text-[#666]" : "text-[#999]"}`}>Network</p></div>
+                          <span className="text-[11px] font-semibold text-emerald-500">Active</span>
+                        </div>
+                        <button onClick={toggleTheme} className={`w-full flex items-center gap-3 px-3 py-[10px] rounded-[10px] cursor-pointer transition-colors ${isDark ? "text-[#C0C0C0] hover:bg-[#1E1E1E]" : "text-[#3A3A3A] hover:bg-[#F5F5F5]"}`}>
+                          <div className={`w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0 ${isDark ? "bg-[#242424]" : "bg-[#F0F0F0]"}`}>
+                            {isDark ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4" stroke="#A0A0A0" strokeWidth="1.5"/><path d="M12 2V4M12 20V22M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M2 12H4M20 12H22M4.22 19.78L5.64 18.36M18.36 5.64L19.78 4.22" stroke="#A0A0A0" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                          </div>
+                          <div className="flex-1 text-left"><p className="text-[13px] font-semibold leading-tight">Dark Mode</p><p className={`text-[11px] mt-0.5 ${isDark ? "text-[#666]" : "text-[#999]"}`}>{isDark ? "On" : "Off"}</p></div>
+                          <div role="switch" aria-checked={isDark} className={`relative w-9 h-5 rounded-full transition-colors duration-200 shrink-0 ${isDark ? "bg-[#703AE6]" : "bg-[#D1D5DB]"}`}><span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${isDark ? "translate-x-4" : "translate-x-0"}`} /></div>
+                        </button>
+                      </div>
+                      <div className={`border-t mx-1.5 pt-1.5 pb-1.5 ${isDark ? "border-[#222]" : "border-[#F0F0F0]"}`}>
+                        <button onClick={handleDisconnect} className={`w-full flex items-center gap-3 px-3 py-[10px] rounded-[10px] cursor-pointer transition-colors ${isDark ? "text-[#FC5457] hover:bg-[#FC5457]/10" : "text-[#FC5457] hover:bg-[#FC5457]/5"}`}>
+                          <div className={`w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0 ${isDark ? "bg-[#FC5457]/10" : "bg-[#FC5457]/5"}`}><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 21H5C3.89 21 3 20.1 3 19V5C3 3.89 3.89 3 5 3H9" stroke="#FC5457" strokeWidth="1.5" strokeLinecap="round"/><path d="M16 17L21 12L16 7" stroke="#FC5457" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M21 12H9" stroke="#FC5457" strokeWidth="1.5" strokeLinecap="round"/></svg></div>
+                          <p className="text-[13px] font-semibold">Disconnect</p>
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             )}
             {/* Hamburger */}
             <motion.button type="button" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className={`flex flex-col justify-center items-center rounded-[8px] py-1.5 px-2 h-8.5 border cursor-pointer ${isDark ? "border-[#2A2A2A]" : "border-[#E5E7EB]"}`} aria-label="Toggle mobile menu" aria-expanded={isMobileMenuOpen} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -413,12 +472,6 @@ export const Navbar = (props: Navbar) => {
                     <div className={`my-1 mx-2 border-t ${isDark ? "border-[#2A2A2A]" : "border-[#E8E8E8]"}`} />
                     <motion.div className="px-2 pb-1" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: 0.2 }}>
                       <Button text="Deposit" size="small" type="gradient" disabled={false} width="w-full" onClick={() => { router.push("/portfolio"); setIsMobileMenuOpen(false); }} ariaLabel="Deposit funds" />
-                    </motion.div>
-                    <motion.div onClick={() => { handleDisconnect(); setIsMobileMenuOpen(false); }}
-                      className={`px-3 py-2 rounded-lg text-[12px] font-medium cursor-pointer transition-colors ${isDark ? "text-[#999999] hover:text-white hover:bg-[#222222]" : "text-[#777777] hover:text-[#111111] hover:bg-[#F5F5F5]"}`}
-                      initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15, delay: 0.25 }}
-                    >
-                      Disconnect Wallet
                     </motion.div>
                   </>
                 )}
