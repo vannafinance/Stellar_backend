@@ -12,6 +12,7 @@ import Image from "next/image";
 import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { AccountStats } from "@/components/margin/account-stats";
 import { CreateMarginAccount } from "@/components/margin/create-margin-account";
 import { useMarginAccountInfoStore, checkUserMarginAccount, refreshBorrowedBalances } from "@/store/margin-account-info-store";
@@ -27,6 +28,8 @@ export default function Home() {
   const { isDark } = useTheme();
   // State to trigger tab switch to Repay Loan
   const [switchToRepayTab, setSwitchToRepayTab] = useState(false);
+  // Mobile bottom sheet for leverage form
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   // Ref for scrolling to LeverageCollateral component
   const leverageCollateralRef = useRef<HTMLDivElement>(null);
@@ -228,8 +231,20 @@ export default function Home() {
           </h1>
         </motion.header>
 
-        {/* Two-column layout */}
-        <div className="flex flex-col lg:grid lg:grid-cols-2 items-start gap-6" ref={leverageCollateralRef}>
+        {/* Mobile bottom sheet for leverage form */}
+        <BottomSheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          {hasMarginAccount ? (
+            <LeverageCollateral
+              switchToRepayTab={switchToRepayTab}
+              onTabSwitched={() => setSwitchToRepayTab(false)}
+            />
+          ) : (
+            <CreateMarginAccount />
+          )}
+        </BottomSheet>
+
+        {/* Two-column layout — desktop only, mobile uses bottom sheet */}
+        <div className="hidden lg:grid lg:grid-cols-2 items-start gap-6" ref={leverageCollateralRef}>
           {/* Left: Leverage collateral form or Create Account */}
           <div className="w-full">
             {hasMarginAccount ? (

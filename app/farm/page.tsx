@@ -6,7 +6,6 @@ import { Carousel } from "@/components/ui/carousel";
 import { useTheme } from "@/contexts/theme-context";
 import {
   FARM_STATS_ITEMS,
-  MARGIN_ACCOUNT_STATS_ITEMS,
   farmTableHeadings,
   singleAssetTableHeadings,
 } from "@/lib/constants/farm";
@@ -16,7 +15,6 @@ import { useRouter } from "next/navigation";
 import { useFarmStore } from "@/store/farm-store";
 import { useBlendPoolStats, useUserBlendPositions, useAllAquariusPoolStats } from "@/hooks/use-farm";
 import { useAllSoroswapPoolStats } from "@/hooks/use-soroswap";
-import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useEffect } from "react";
 
 export default function FarmPage() {
@@ -31,14 +29,6 @@ export default function FarmPage() {
   const { positions: userPositions } = useUserBlendPositions();
   const aquariusPools = useAllAquariusPoolStats();
   const soroswapPools = useAllSoroswapPoolStats();
-  const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
-  const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
-  const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
-
-  useEffect(() => {
-    if (!marginAccountAddress) return;
-    refreshBorrowedBalances(marginAccountAddress);
-  }, [marginAccountAddress]);
 
   // Build real single-asset table rows from live pool data
   const singleAssetTableBody = useMemo(() => {
@@ -153,15 +143,6 @@ export default function FarmPage() {
     };
   }, [userPositions]);
 
-  const marginStatsValues = useMemo(() => ({
-    totalCollateral: totalCollateralValue != null ? `$${parseFloat(String(totalCollateralValue)).toFixed(2)}` : '—',
-    availableCollateral: null,
-    borrowedAssets: totalBorrowedValue != null ? `$${parseFloat(String(totalBorrowedValue)).toFixed(2)}` : '—',
-    crossAccountLeverage: null,
-    healthFactor: null,
-    pnl: null,
-    crossMarginRatio: null,
-  }), [totalCollateralValue, totalBorrowedValue]);
 
   // Get filter tab type options based on active tab
   const filterTabTypeOptions = useMemo(() => {
@@ -244,19 +225,14 @@ export default function FarmPage() {
         <Carousel items={farmCarouselItems} autoplayInterval={5000} />
       </section>
 
-      {/* Farm + Margin stats — only shown when wallet connected */}
-      {userAddress && FARM_STATS_ITEMS.length > 0 && MARGIN_ACCOUNT_STATS_ITEMS.length > 0 && (
+      {/* Farm stats — only shown when wallet connected */}
+      {userAddress && FARM_STATS_ITEMS.length > 0 && (
         <section className="w-full mb-6">
-          <div className={`w-full p-5 border rounded-2xl flex flex-col gap-8 ${isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"}`}>
-            <div className="flex flex-col gap-2">
-              <p className={`text-[16px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Farm Stats</p>
-              <AccountStats darkBackgroundColor="#111111" items={FARM_STATS_ITEMS} values={farmStatsValues} gridCols="grid-cols-2" backgroundColor="#FFFFFF" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <p className={`text-[16px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Margin Account Stats</p>
-              <AccountStats darkBackgroundColor="#111111" items={MARGIN_ACCOUNT_STATS_ITEMS} values={marginStatsValues} gridCols="grid-cols-3" backgroundColor="#FFFFFF" />
-            </div>
-          </div>
+          <AccountStats
+            items={FARM_STATS_ITEMS}
+            values={farmStatsValues}
+            gridCols="grid-cols-4"
+          />
         </section>
       )}
 

@@ -5,7 +5,7 @@ import { useFarmStore } from "@/store/farm-store";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
 import Image from "next/image";
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { iconPaths } from "@/lib/constants";
 import { AccountStatsGhost } from "@/components/earn/account-stats-ghost";
 import { Chart } from "@/components/earn/chart";
@@ -18,6 +18,13 @@ import { SOROSWAP_POOLS } from "@/lib/soroswap-utils";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { items } from "@/components/earn/details-tab";
 import { StatsCard } from "@/components/ui/stats-card";
+import { ChevronLeftIcon, SortIcon, CompassIcon, ShareIcon, MinusIcon, PlusIcon, WarningIcon } from "@/components/icons";
+import { Button } from "@/components/ui/button";
+import { FarmStatsCard } from "@/components/farm/stats";
+import { RangeSelector } from "@/components/farm/range-selector";
+import { DepositTokensForm } from "@/components/farm/deposit-tokens-form";
+import { farmStatsData, farmLiquidationStatsData } from "@/lib/constants/farm";
+import { useUserStore } from "@/store/user";
 import {
   useBlendPoolStats,
   useUserBlendPositions,
@@ -53,6 +60,9 @@ export default function FarmDetailPage() {
 
   const [activeUiTab, setActiveUiTab] = useState<string>("all-transactions");
   const [activeTab, setActiveTab] = useState<string>("current-position");
+  const [showAddLiquidity, setShowAddLiquidity] = useState(false);
+
+  const userAddress = useUserStore((state) => state.address);
 
   // Determine which token this page is for (xlm / usdc)
   const tokenSymbol = useMemo((): 'XLM' | 'USDC' | null => {
@@ -451,243 +461,249 @@ export default function FarmDetailPage() {
 
   const isMultiAsset = rowData?.tabType === 'multi' && farmData.titles && farmData.titles.length > 1;
 
+  // Range selector state for multi-asset add liquidity
+  const [usdcRangeMin, setUsdcRangeMin] = useState(0.0001);
+  const [usdcRangeMax, setUsdcRangeMax] = useState(0.0004);
+  const [ethRangeMin, setEthRangeMin] = useState(0.0001);
+  const [ethRangeMax, setEthRangeMax] = useState(0.0004);
+
+  const usdcChartData = useMemo(() => {
+    const data: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i <= 50; i++) {
+      const x = (i / 50) * 0.0005;
+      const norm = (x - 0.00025) / 0.0001;
+      const y = Math.max(10, Math.exp(-(norm * norm) / 2) * 100 + (Math.sin(i * 0.5) + 1) * 10);
+      data.push({ x, y });
+    }
+    return data;
+  }, []);
+
+  const ethChartData = useMemo(() => {
+    const data: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i <= 50; i++) {
+      const x = (i / 50) * 0.0005;
+      const norm2 = (x - 0.0003) / 0.00012;
+      const y = Math.max(10, Math.exp(-(norm2 * norm2) / 2) * 100 + (Math.cos(i * 0.4) + 1) * 10);
+      data.push({ x, y });
+    }
+    return data;
+  }, []);
+
+  const handleUsdcRangeChange = useCallback((min: number, max: number) => { setUsdcRangeMin(min); setUsdcRangeMax(max); }, []);
+  const handleEthRangeChange = useCallback((min: number, max: number) => { setEthRangeMin(min); setEthRangeMax(max); }, []);
+
+  const minPrice = useMemo(() => ethRangeMin === 0 ? "0.0000" : (usdcRangeMin / ethRangeMin).toFixed(4), [usdcRangeMin, ethRangeMin]);
+  const maxPrice = useMemo(() => ethRangeMax === 0 ? "0.0000" : (usdcRangeMax / ethRangeMax).toFixed(4), [usdcRangeMax, ethRangeMax]);
+  const [minPriceInput, setMinPriceInput] = useState(minPrice);
+  const [maxPriceInput, setMaxPriceInput] = useState(maxPrice);
+  useEffect(() => { setMinPriceInput(minPrice); setMaxPriceInput(maxPrice); }, [minPrice, maxPrice]);
+  const handlePriceInputChange = useCallback((value: string, setter: (val: string) => void) => {
+    const sanitized = value.replace(/[^0-9.]/g, '');
+    const parts = sanitized.split('.');
+    setter(parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : sanitized);
+  }, []);
+
   return (
     <main className="flex flex-col gap-5">
       {/* Header */}
       <header className="pt-4 sm:pt-5 px-4 sm:px-10 lg:px-30 w-full">
-        <div className="w-full flex flex-col gap-3">
-          <nav aria-label="Breadcrumb">
-            <button
-              type="button"
-              onClick={() => router.push("/farm")}
-              className={`w-fit h-fit flex gap-2 items-center cursor-pointer text-[15px] font-medium hover:text-[#703AE6] transition-colors ${isDark ? "text-white" : "text-[#5A5555]"}`}
-            >
-              <svg width="8" height="14" viewBox="0 0 9 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M8 1L1 8L8 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Back to pools
-            </button>
-          </nav>
-          <div className="flex gap-3 items-center flex-wrap">
-            {isMultiAsset ? (
-              <div className="flex items-center -space-x-[18px]">
-                {farmData.titles?.map((titleName: string, iconIdx: number) => {
-                  const assetIconPath = iconPaths[titleName.toUpperCase()];
-                  if (!assetIconPath) return null;
-                  return (
-                    <Image key={iconIdx} src={assetIconPath} alt={titleName} width={28} height={28}
-                      className={`rounded-full ${isDark ? "border border-black" : "border border-white"}`}
-                    />
-                  );
-                })}
-              </div>
-            ) : (
-              <Image src={iconPath} alt={`${farmData.title}-icon`} width={28} height={28} />
-            )}
-            <div className="flex gap-2 items-center flex-wrap">
-              <h1 className={`text-[20px] font-bold ${isDark ? "text-white" : "text-[#181822]"}`}>
-                {farmData.title}
-              </h1>
-              <div className="flex gap-2 items-center">
+        <div className="w-full flex flex-col sm:flex-row justify-between gap-4">
+          <div className="flex flex-col gap-3">
+            <nav aria-label="Breadcrumb">
+              <button type="button" onClick={() => router.push("/farm")}
+                className={`w-fit h-fit flex gap-2 items-center cursor-pointer text-[15px] font-medium hover:text-[#703AE6] transition-colors ${isDark ? "text-white" : "text-[#5A5555]"}`}
+              >
+                <ChevronLeftIcon />
+                Back to pools
+              </button>
+            </nav>
+            <div className="flex gap-2 items-center">
+              {isMultiAsset ? (
+                <div className="flex items-center -space-x-[12px] shrink-0">
+                  {farmData.titles?.map((titleName: string, iconIdx: number) => {
+                    const assetIconPath = iconPaths[titleName.toUpperCase()];
+                    if (!assetIconPath) return null;
+                    return (<Image key={iconIdx} src={assetIconPath} alt={titleName} width={24} height={24} className={`rounded-full w-6 h-6 sm:w-7 sm:h-7 ${isDark ? "border border-black" : "border border-white"}`} />);
+                  })}
+                </div>
+              ) : (
+                <Image src={iconPath} alt={`${farmData.title}-icon`} width={24} height={24} className="w-6 h-6 sm:w-7 sm:h-7 shrink-0" />
+              )}
+              <h1 className={`text-[18px] sm:text-[20px] font-bold shrink-0 ${isDark ? "text-white" : "text-[#181822]"}`}>{farmData.title}</h1>
+              <div className="flex gap-1 items-center shrink-0">
                 {farmData.tags.slice(0, 2).map((tag: string | number, i: number) => (
-                  <span key={i} className="text-[12px] font-semibold text-center rounded px-1.5 py-0.5 bg-[#703AE6] text-white">
-                    {tag}
-                  </span>
+                  <span key={i} className="text-[10px] sm:text-[12px] font-semibold text-center rounded px-1.5 py-0.5 bg-[#703AE6] text-white">{tag}</span>
                 ))}
               </div>
+              {isMultiAsset && (
+                <div className="flex gap-1 items-center shrink-0">
+                  <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center ${isDark ? "bg-[#333]" : "bg-[#F4F4F4]"}`}><SortIcon fill={isDark ? "#FFFFFF" : "#111111"} /></div>
+                  <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center ${isDark ? "bg-[#333]" : "bg-[#F4F4F4]"}`}><CompassIcon fill={isDark ? "#FFFFFF" : "#111111"} /></div>
+                  <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center ${isDark ? "bg-[#333]" : "bg-[#F4F4F4]"}`}><ShareIcon fill={isDark ? "#FFFFFF" : "#111111"} /></div>
+                </div>
+              )}
             </div>
           </div>
+          {isMultiAsset && !showAddLiquidity && (
+            <div className="w-fit h-fit shrink-0">
+              <Button type="solid" size="small" disabled={!userAddress} text="+ Add Liquidity" onClick={() => setShowAddLiquidity(true)} />
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Pool stats strip */}
-      <section className="px-4 sm:px-10 lg:px-30">
-        <AccountStatsGhost items={
-          isSoroswapEarly ? soroswapStatsItems :
-          isMultiAsset ? aquariusStatsItems :
-          statsItems
-        } />
-      </section>
+      {/* Stats bar — single asset only */}
+      {!isMultiAsset && (
+        <section className="px-4 sm:px-10 lg:px-30" aria-label="Pool Statistics">
+          <AccountStatsGhost items={isSoroswapEarly ? soroswapStatsItems : statsItems} />
+        </section>
+      )}
 
       {/* Main content */}
-      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-8 lg:pb-16 w-full">
+      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-24 lg:pb-16 w-full">
         <div className="flex flex-col lg:flex-row gap-4 w-full">
+
           {/* Article — left/main content */}
           <article className="flex-1 min-w-0 flex flex-col gap-3">
-          <nav className="w-full">
-            <AnimatedTabs
-              containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
-              tabClassName="!flex-1 !px-2 text-[12px]"
-              type="border"
-              tabs={UI_TABS}
-              activeTab={activeUiTab}
-              onTabChange={setActiveUiTab}
-            />
-          </nav>
+            {/* Single asset: tabs + content */}
+            {!isMultiAsset && (
+              <>
+                <nav className="w-full">
+                  <AnimatedTabs tabs={UI_TABS} activeTab={activeUiTab} onTabChange={setActiveUiTab} type="border"
+                    containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
+                    tabClassName="!flex-1 !px-2 text-[12px]"
+                  />
+                </nav>
+                {activeUiTab === "all-transactions" ? (
+                  <div className={`w-full flex flex-col gap-6 rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
+                    <Chart type="farm" heading={chartHeading} uptrend={myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined} customData={chartLiveData.length > 0 ? chartLiveData : undefined} />
+                    <Table filterDropdownPosition="right" tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
+                      heading={{ heading: "All Transactions", tabsItems: [{ id: "current-position", label: "Current Position" }, { id: "position-history", label: "Position History" }], tabType: "solid" }}
+                      activeTab={activeTab} onTabChange={setActiveTab} filters={{ filters: ["All"], customizeDropdown: true }}
+                      tableHeadings={activeTab === "current-position" ? positionTableHeadings : transactionTableHeadings}
+                      tableBody={tableBodyData}
+                    />
+                  </div>
+                ) : (
+                  <div className={`w-full flex flex-col gap-6 rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
+                    <h2 className={`text-[21px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Statistics</h2>
+                    <article className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
+                      {analyticsItems.map((item, idx) => (<StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />))}
+                    </article>
+                  </div>
+                )}
+              </>
+            )}
 
-          {activeUiTab === "all-transactions" ? (
-            <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
-              {/* Chart */}
-              {isSoroswapEarly ? (
-                <Chart
-                  type="farm"
-                  heading="My LP Position"
-                  uptrend={mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(4)} LP shares` : undefined}
-                  liveData={ssChartData.length > 0 ? ssChartData : undefined}
-                />
-              ) : isMultiAsset ? (
-                <Chart
-                  type="farm"
-                  heading="My LP Position"
-                  uptrend={myLpBalance > 0 ? `${myLpBalance.toFixed(4)} LP shares` : undefined}
-                  liveData={aqChartData.length > 0 ? aqChartData : undefined}
-                />
-              ) : (
-                <Chart
-                  type="farm"
-                  heading={chartHeading}
-                  uptrend={myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined}
-                  liveData={chartLiveData.length > 0 ? chartLiveData : undefined}
-                />
-              )}
-
-              {/* My position + history table */}
-              {isSoroswapEarly ? (
-                <Table
-                  filterDropdownPosition="right"
-                  tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
-                  heading={{
-                    heading: "My Position",
-                    tabsItems: [
-                      { id: "current-position", label: "Current Position" },
-                      { id: "position-history", label: "Position History" },
-                    ],
-                    tabType: "solid",
-                  }}
-                  activeTab={activeTab}
-                  onTabChange={setActiveTab}
-                  filters={{ filters: ["All"], customizeDropdown: true }}
-                  tableHeadings={
-                    activeTab === "current-position"
-                      ? soroswapPositionHeadings
-                      : transactionTableHeadings
-                  }
-                  tableBody={
-                    activeTab === "current-position"
-                      ? soroswapCurrentPositionBody
-                      : { rows: [] }
-                  }
-                />
-              ) : isMultiAsset ? (
-                <Table
-                  filterDropdownPosition="right"
-                  tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
-                  heading={{
-                    heading: "My Position",
-                    tabsItems: [
-                      { id: "current-position", label: "Current Position" },
-                      { id: "position-history", label: "Position History" },
-                    ],
-                    tabType: "solid",
-                  }}
-                  activeTab={activeTab}
-                  onTabChange={setActiveTab}
-                  filters={{ filters: ["All"], customizeDropdown: true }}
-                  tableHeadings={
-                    activeTab === "current-position"
-                      ? aquariusPositionHeadings
-                      : transactionTableHeadings
-                  }
-                  tableBody={
-                    activeTab === "current-position"
-                      ? aquariusCurrentPositionBody
-                      : aquariusHistoryBody
-                  }
-                />
-              ) : (
-                <Table
-                  filterDropdownPosition="right"
-                  tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
-                  heading={{
-                    heading: "My Position",
-                    tabsItems: [
-                      { id: "current-position", label: "Current Position" },
-                      { id: "position-history", label: "Position History" },
-                    ],
-                    tabType: "solid",
-                  }}
-                  activeTab={activeTab}
-                  onTabChange={setActiveTab}
-                  filters={{ filters: ["All"], customizeDropdown: true }}
-                  tableHeadings={
-                    activeTab === "current-position" ? positionTableHeadings : transactionTableHeadings
-                  }
-                  tableBody={tableBodyData}
-                />
-              )}
-
-              {/* No position hints */}
-              {isSoroswapEarly && mySSLpBalance <= 0 && activeTab === "current-position" && marginAccountAddress && (
-                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  No active LP position. Use the form on the right to add liquidity to {ssTokenA}/{ssTokenB}.
-                </p>
-              )}
-              {isMultiAsset && !isSoroswapEarly && myLpBalance <= 0 && activeTab === "current-position" && marginAccountAddress && (
-                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  No active LP position. Use the form on the right to add liquidity to {poolTokenA}/{poolTokenB}.
-                </p>
-              )}
-              {!isMultiAsset && !isSoroswapEarly && !posLoading && !eventsLoading && myBTokens === 0 && activeTab === "current-position" && marginAccountAddress && (
-                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  No active position in this pool. Use the form on the right to supply {tokenSymbol}.
-                </p>
-              )}
-              {!marginAccountAddress && (
-                <p className={`text-center text-sm py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  Connect a wallet and create a margin account to see your position.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className={`w-full h-fit flex flex-col gap-[24px] rounded-[20px] border-[1px] p-[24px] ${isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"}`}>
-              <h2 className={`text-[20px] font-semibold ${isDark ? "text-white" : ""}`}>Statistics</h2>
-              <article className="w-full h-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-[15px] gap-y-[15px]" aria-label="Pool Statistics">
-                {(isSoroswapEarly ? soroswapAnalyticsItems : isMultiAsset ? aquariusAnalyticsItems : analyticsItems).map((item, idx) => (
-                  <StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />
-                ))}
-              </article>
-            </div>
-          )}
+            {/* Multi asset: no tabs, different layout for default vs add-liquidity */}
+            {isMultiAsset && (
+              <>
+                {showAddLiquidity ? (
+                  <div className="w-full flex flex-col gap-3">
+                    <div className={`w-full rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
+                      <RangeSelector
+                        token1Name={farmData.titles?.[0] || "Token A"}
+                        token2Name={farmData.titles?.[1] || "Token B"}
+                        token1ChartData={usdcChartData} token2ChartData={ethChartData}
+                        token1MinValue={usdcRangeMin} token1MaxValue={usdcRangeMax}
+                        token2MinValue={ethRangeMin} token2MaxValue={ethRangeMax}
+                        onToken1RangeChange={handleUsdcRangeChange} onToken2RangeChange={handleEthRangeChange}
+                        height={250}
+                        xAxisLabels={["0.0000", "0.0001", "0.0002", "0.0003", "0.0004", "0.0005"]}
+                        showControls={true}
+                      />
+                    </div>
+                    <div className={`w-full flex flex-col sm:flex-row rounded-2xl border p-4 sm:p-5 gap-3 ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
+                      {[{ label: "Max Price", value: maxPriceInput, setter: setMaxPriceInput, ariaKey: "Maximum" }, { label: "Min Price", value: minPriceInput, setter: setMinPriceInput, ariaKey: "Minimum" }].map(({ label, value, setter, ariaKey }) => (
+                        <div key={label} className={`w-full flex flex-col gap-5 rounded-xl border p-4 sm:p-5 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-white border-[#E8E8E8]"}`}>
+                          <div>
+                            <h3 className={`text-[15px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{label}</h3>
+                            <p className="text-[12px] text-[#A7A7A7]">{farmData.title.split(" / ")[0]} per {farmData.title.split(" / ")[1]}</p>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <input type="text" value={value} onChange={(e) => handlePriceInputChange(e.target.value, setter)}
+                              className={`w-full text-[24px] font-bold outline-none bg-transparent ${isDark ? "text-white" : "text-[#111827]"}`}
+                              placeholder="0.0000" aria-label={`${ariaKey} price`} inputMode="decimal"
+                            />
+                            <div className="flex gap-1">
+                              <button type="button" disabled={!userAddress} className={`w-6 h-6 rounded flex items-center justify-center disabled:opacity-50 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F1EBFD]"}`}><MinusIcon /></button>
+                              <button type="button" disabled={!userAddress} className={`w-6 h-6 rounded flex items-center justify-center disabled:opacity-50 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F1EBFD]"}`}><PlusIcon /></button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`w-full flex flex-col gap-6 rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
+                    {isSoroswapEarly ? (
+                      <Chart type="farm" heading="My LP Position" uptrend={mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(4)} LP shares` : undefined} customData={ssChartData.length > 0 ? ssChartData : undefined} />
+                    ) : (
+                      <Chart type="farm" heading="My LP Position" uptrend={myLpBalance > 0 ? `${myLpBalance.toFixed(4)} LP shares` : undefined} customData={aqChartData.length > 0 ? aqChartData : undefined} />
+                    )}
+                    <Table filterDropdownPosition="right" tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
+                      heading={{ heading: "Your Transactions", tabsItems: [{ id: "current-position", label: "Current Position" }, { id: "position-history", label: "Position History" }], tabType: "solid" }}
+                      activeTab={activeTab} onTabChange={setActiveTab} filters={{ filters: ["All"], customizeDropdown: true }}
+                      tableHeadings={activeTab === "current-position" ? (isSoroswapEarly ? soroswapPositionHeadings : aquariusPositionHeadings) : transactionTableHeadings}
+                      tableBody={activeTab === "current-position" ? (isSoroswapEarly ? soroswapCurrentPositionBody : aquariusCurrentPositionBody) : (isSoroswapEarly ? { rows: [] } : aquariusHistoryBody)}
+                    />
+                    <Table filterDropdownPosition="right" tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
+                      heading={{ heading: "All Transactions" }} filters={{ filters: ["All"] }}
+                      tableHeadings={transactionTableHeadings}
+                      tableBody={isSoroswapEarly ? { rows: [] } : aquariusHistoryBody}
+                    />
+                  </div>
+                )}
+              </>
+            )}
           </article>
 
           {/* Aside — right sticky panel */}
           <aside className="w-full lg:w-[420px] shrink-0 flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start">
-            <Form />
+            {!isMultiAsset && <Form />}
 
-            {/* How it works */}
-            <div className={`w-full rounded-2xl border p-4 flex flex-col gap-3 ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"}`}>
-              <p className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>How it works</p>
-              <div className="flex flex-col gap-3">
-                {[
-                  { step: "1", title: "Choose a pool", desc: "Select a farm pool matching your strategy and risk appetite" },
-                  { step: "2", title: "Deposit assets", desc: "Supply tokens to earn LP fees and farm rewards automatically" },
-                  { step: "3", title: "Earn yield", desc: "Trading fees and protocol rewards accrue to your position" },
-                  { step: "4", title: "Withdraw anytime", desc: "Redeem your LP position for underlying assets plus earned yield" },
-                ].map((item) => (
-                  <div key={item.step} className="flex gap-3 items-start">
-                    <div className="w-6 h-6 rounded-full bg-[#703AE6]/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-[11px] font-bold text-[#703AE6]">{item.step}</span>
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <p className={`text-[12px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{item.title}</p>
-                      <p className={`text-[11px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>{item.desc}</p>
-                    </div>
+            {isMultiAsset && !showAddLiquidity && (
+              <FarmStatsCard items={farmStatsData} />
+            )}
+
+            {isMultiAsset && showAddLiquidity && (
+              <>
+                {!userAddress && (
+                  <div className={`w-full rounded-xl border p-4 flex items-center gap-3 ${isDark ? "bg-[#1A1A1A] border-[#595959] text-white" : "bg-[#FFF9E6] border-[#FFD700] text-[#111111]"}`} role="alert">
+                    <WarningIcon />
+                    <span className="text-[14px] font-medium">Connect your wallet to add liquidity</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          </aside>
+                )}
+                <DepositTokensForm assets={[farmData.title.split(" / ")[0] || "Token A", farmData.title.split(" / ")[1] || "Token B"]} />
+                <FarmStatsCard items={farmLiquidationStatsData} />
+              </>
+            )}
 
+            {/* How it works — single asset only */}
+            {!isMultiAsset && (
+              <div className={`w-full rounded-2xl border p-4 flex flex-col gap-3 ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"}`}>
+                <p className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>How it works</p>
+                <div className="flex flex-col gap-3">
+                  {[
+                    { step: "1", title: "Choose a pool", desc: "Select a farm pool matching your strategy and risk appetite" },
+                    { step: "2", title: "Deposit assets", desc: "Supply tokens to earn LP fees and farm rewards automatically" },
+                    { step: "3", title: "Earn yield", desc: "Trading fees and protocol rewards accrue to your position" },
+                    { step: "4", title: "Withdraw anytime", desc: "Redeem your LP position for underlying assets plus earned yield" },
+                  ].map((item) => (
+                    <div key={item.step} className="flex gap-3 items-start">
+                      <div className="w-6 h-6 rounded-full bg-[#703AE6]/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <span className="text-[11px] font-bold text-[#703AE6]">{item.step}</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <p className={`text-[12px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{item.title}</p>
+                        <p className={`text-[11px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </aside>
         </div>
       </section>
     </main>

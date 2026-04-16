@@ -163,18 +163,19 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
               alt={`${vaultData.title}-icon`}
               width={34}
               height={34}
+              className="w-7 h-7 sm:w-[34px] sm:h-[34px]"
             />
-            <div className="w-fit h-fit flex gap-2 items-center">
-              <h1 className={`w-fit h-fit text-[25px] font-bold ${isDark ? "text-white" : "text-[#181822]"}`}>
+            <div className="w-fit h-fit flex gap-2 items-center flex-wrap">
+              <h1 className={`w-fit h-fit text-[20px] sm:text-[25px] font-bold ${isDark ? "text-white" : "text-[#181822]"}`}>
                 {vaultData.title}
               </h1>
-              <div className="w-fit h-fit flex gap-2 items-center">
-                <span className={`text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
+              <div className="w-fit h-fit flex gap-1.5 items-center">
+                <span className={`text-[11px] sm:text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
                   isDark ? "bg-[#222222] text-white" : "bg-[#EEEEEE] text-[#0C0C0C]"
                 }`}>
-                  Active
+                  V3
                 </span>
-                <span className="text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] bg-[#703AE6] text-white">
+                <span className="text-[11px] sm:text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] bg-[#703AE6] text-white">
                   {vaultData.tag}
                 </span>
               </div>
@@ -187,17 +188,17 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
         <AccountStatsGhost items={accountStatsItems} />
       </section>
 
-      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-8 lg:pb-16 w-full h-fit" aria-label="Vault Details and Actions">
-        <div className="flex flex-col lg:flex-row gap-4 w-full h-fit">
+      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-24 lg:pb-16 w-full h-fit" aria-label="Vault Details and Actions">
+        <div className="flex flex-col lg:flex-row gap-5 lg:gap-4 w-full h-fit">
           <article className="flex-1 min-w-0 h-full flex flex-col gap-3">
-            <nav className="w-full" aria-label="Vault Information Tabs">
+            <nav className="w-full overflow-x-auto no-scrollbar" aria-label="Vault Information Tabs">
               <AnimatedTabs
                 tabs={tabs}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
                 type="border"
-                containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
-                tabClassName="!flex-1 !px-2 text-[12px]"
+                containerClassName={`w-full min-w-max sm:min-w-0 rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
+                tabClassName="!flex-1 !px-2 text-[12px] whitespace-nowrap"
               />
             </nav>
             {activeTab === "your-positions" && <YourPositions />}

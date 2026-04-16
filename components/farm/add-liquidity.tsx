@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useFarmStore } from "@/store/farm-store";
@@ -12,6 +12,10 @@ import { SoroswapService, SoroswapPoolStats } from "@/lib/soroswap-utils";
 import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
+import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
+import { InfoCard } from "../margin/info-card";
+import { MARGIN_ACCOUNT_INFO_ITEMS } from "@/lib/constants/margin";
+import { motion, AnimatePresence } from "framer-motion";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useBlendPoolStats } from "@/hooks/use-farm";
 import { useBlendStore } from "@/store/blend-store";
@@ -55,6 +59,18 @@ export const AddLiquidity = () => {
 
   const [selectedToken, setSelectedToken] = useState<TokenSymbol>(getInitialToken);
   const [value, setValue] = useState<string>("");
+  const [tokenDropdownOpen, setTokenDropdownOpen] = useState(false);
+  const tokenDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!tokenDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (tokenDropdownRef.current && !tokenDropdownRef.current.contains(e.target as Node)) setTokenDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [tokenDropdownOpen]);
   const [amountA, setAmountA] = useState<string>("");
   const [amountB, setAmountB] = useState<string>("");
   // Borrowed balances from margin account (amounts available to route into Blend)
@@ -484,235 +500,129 @@ export const AddLiquidity = () => {
     );
   }
 
+  // Margin account info for InfoCard
+  const marginAccountInfo = {
+    totalBorrowedValue: useMarginAccountInfoStore.getState().totalBorrowedValue,
+    totalCollateralValue: useMarginAccountInfoStore.getState().totalCollateralValue,
+    totalValue: useMarginAccountInfoStore.getState().totalValue,
+    avgHealthFactor: useMarginAccountInfoStore.getState().avgHealthFactor,
+    timeToLiquidation: useMarginAccountInfoStore.getState().timeToLiquidation,
+    borrowRate: useMarginAccountInfoStore.getState().borrowRate,
+    liquidationPremium: useMarginAccountInfoStore.getState().liquidationPremium,
+    liquidationFee: useMarginAccountInfoStore.getState().liquidationFee,
+    debtLimit: useMarginAccountInfoStore.getState().debtLimit,
+    minDebt: useMarginAccountInfoStore.getState().minDebt,
+    maxDebt: useMarginAccountInfoStore.getState().maxDebt,
+  };
+
+  // Token selector as inline token pills
+  const token = selectedToken;
+  const tokenBalance = availableToDeployNum;
+
+  const getButtonText = () => {
+    if (!userAddress) return "Connect Wallet";
+    if (txStatus === "loading") return "Processing...";
+    if (parseFloat(value) <= 0 || !value) return "Enter Amount";
+    if (parseFloat(value) > availableToDeployNum) return `Insufficient ${token} Balance`;
+    return "Add Liquidity";
+  };
+
   return (
-    <div className="w-full h-fit flex flex-col gap-[16px]">
-      {/* Token selector tabs */}
-      <div className={`w-full h-fit flex rounded-[12px] p-[4px] gap-[4px] ${
-        isDark ? "bg-[#1A1A1A]" : "bg-[#F0F0F0]"
-      }`}>
-        {SUPPORTED_TOKENS.map((token) => (
-          <button
-            key={token}
-            type="button"
-            onClick={() => handleTokenSelect(token)}
-            className={`flex-1 flex items-center justify-center gap-[6px] py-[8px] rounded-[8px] text-[13px] font-semibold transition-all ${
-              selectedToken === token
-                ? "bg-[#703AE6] text-white"
-                : isDark
-                ? "text-[#919191] hover:text-white"
-                : "text-[#76737B] hover:text-[#111111]"
-            }`}
-          >
-            <Image
-              src={iconPaths[token] ?? "/icons/stellar.svg"}
-              alt={token}
-              width={16}
-              height={16}
-            />
-            {token}
-          </button>
-        ))}
-      </div>
-
-      {/* Amount input */}
-      <div className={`w-full h-fit p-[20px] rounded-[16px] ${
-        isDark ? "bg-[#111111]" : "bg-white"
-      }`}>
-        <div className="w-full flex items-center gap-[12px]">
-          <div className="w-full h-full flex flex-col gap-[8px]">
-            <input
-              type="number"
-              placeholder="0.00"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              min="0"
-              className={`w-full h-fit bg-transparent outline-none border-none text-[20px] font-semibold placeholder:text-[#CCCCCC] ${
-                isDark ? "text-white" : "text-black"
-              } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-            />
-            <div className={`text-[11px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              {isOverBalance ? (
-                <span className="text-red-500">Exceeds borrowed balance</span>
-              ) : (
-                "$0.00"
+    <div className="w-full h-fit flex flex-col gap-3">
+      {/* Input card */}
+      <div className={`w-full rounded-xl border flex flex-col ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-white border-[#E8E8E8]"}`}>
+        <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+          <input
+            type="text"
+            placeholder="0"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={txStatus === "loading"}
+            className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:text-[#555555] ${isDark ? "text-white" : "text-[#111111]"}`}
+          />
+          {/* Token dropdown pill */}
+          <div className="relative shrink-0" ref={tokenDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setTokenDropdownOpen(!tokenDropdownOpen)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all ${isDark ? "bg-[#1A1A1A] border border-[#2A2A2A] hover:bg-[#222]" : "bg-[#F7F7F7] border border-[#E8E8E8] hover:bg-[#F0F0F0]"}`}
+            >
+              <Image src={iconPath} alt={token} width={20} height={20} className="rounded-full w-5 h-5 flex-none" />
+              <span className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{token}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-3.5 h-3.5 transition-transform duration-200 ${isDark ? "text-[#AAA]" : "text-[#555]"} ${tokenDropdownOpen ? "rotate-180" : ""}`}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            <AnimatePresence>
+              {tokenDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }}
+                  className={`absolute right-0 top-full mt-1 z-50 rounded-xl border shadow-lg overflow-hidden min-w-[120px] ${isDark ? "bg-[#222222] border-[#333333]" : "bg-white border-[#E8E8E8]"}`}
+                >
+                  {SUPPORTED_TOKENS.map((t) => (
+                    <button key={t} type="button"
+                      onClick={() => { handleTokenSelect(t); setTokenDropdownOpen(false); }}
+                      className={`flex items-center gap-2 w-full px-4 py-2.5 text-[13px] font-medium transition-colors ${selectedToken === t ? "text-[#703AE6]" : isDark ? "text-white hover:bg-[#333]" : "text-[#111] hover:bg-[#F5F5F5]"}`}
+                    >
+                      <Image src={iconPaths[t] ?? "/coins/xlmbg.png"} alt={t} width={16} height={16} className="rounded-full" />
+                      {t}
+                    </button>
+                  ))}
+                </motion.div>
               )}
-            </div>
+            </AnimatePresence>
           </div>
-          <div className="flex flex-col items-end gap-[12px]">
-            <div className="flex items-center gap-[6px]">
-              <Image src={iconPath} alt={selectedToken} width={20} height={20} />
-              <span className={`text-[14px] font-semibold ${
-                isDark ? "text-white" : "text-[#111111]"
-              }`}>
-                {selectedToken}
-              </span>
-            </div>
-            <div className="flex flex-col items-end gap-[4px]">
-              <div className="flex items-center gap-[6px]">
-                <span className={`text-[11px] font-medium ${
-                  isDark ? "text-[#919191]" : "text-[#5C5B5B]"
-                }`}>
-                  {isLoadingBorrowedBalances
-                    ? "Loading..."
-                    : `Available: ${availableToDeployNum.toFixed(4)}`}
-                </span>
-                {!isLoadingBorrowedBalances && (
-                  <button
-                    type="button"
-                    onClick={handleMaxClick}
-                    className="text-[11px] font-semibold text-[#703AE6] underline cursor-pointer"
-                  >
-                    Max
-                  </button>
-                )}
-              </div>
-              <span className={`text-[11px] font-medium ${
-                isDark ? "text-[#4CAF50]" : "text-[#2E7D32]"
-              }`}>
-                {loadingBlendBalance
-                  ? "..."
-                  : `In Blend Pool: ${parseFloat(blendBalance).toFixed(4)}`}
-              </span>
-            </div>
+        </div>
+        <div className="flex items-center justify-between px-3 pb-3">
+          <div className="flex items-center gap-1">
+            {DEPOSIT_PERCENTAGES.map((pct) => (
+              <motion.button
+                key={pct}
+                type="button"
+                disabled={txStatus === "loading"}
+                onClick={() => { setValue(((tokenBalance * pct) / 100).toFixed(6)); }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.93 }}
+                transition={{ duration: 0.1 }}
+                className={`px-2 py-1 rounded-lg text-[10px] font-semibold cursor-pointer border transition-all ${
+                  isDark
+                    ? "bg-[#2A2A2A] text-[#A7A7A7] border-[#333333] hover:text-white"
+                    : "bg-[#F0F0F0] text-[#888888] hover:text-[#555555] border-[#E2E2E2]"
+                } ${txStatus === "loading" ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                {pct}%
+              </motion.button>
+            ))}
           </div>
+          <span
+            className={`text-[11px] font-medium underline cursor-pointer shrink-0 ${isDark ? "text-[#555555]" : "text-[#AAAAAA]"}`}
+            onClick={handleMaxClick}
+          >
+            Balance: {tokenBalance.toLocaleString()} {token}
+          </span>
         </div>
       </div>
-
-      {/* Info box */}
-      {isInputValid && (
-        <div className={`w-full h-fit rounded-[12px] p-[16px] flex flex-col gap-[10px] ${
-          isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
-        }`}>
-          <div className="flex justify-between items-center">
-            <span className={`text-[12px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              From
-            </span>
-            <span className={`text-[12px] font-semibold ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              Margin Borrow Balance
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className={`text-[12px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              You will supply
-            </span>
-            <span className={`text-[12px] font-semibold ${
-              isDark ? "text-white" : "text-[#111111]"
-            }`}>
-              {parseFloat(value).toFixed(4)} {selectedToken}
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className={`text-[12px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              Protocol
-            </span>
-            <span className={`text-[12px] font-semibold text-[#703AE6]`}>
-              Blend
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className={`text-[12px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              Supply APY
-            </span>
-            <span className={`text-[12px] font-semibold ${
-              isDark ? "text-white" : "text-[#111111]"
-            }`}>
-              {poolStats[selectedToken]?.supplyAPY ?? "—"}%
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Blend pool not configured warning */}
-      {blendConfigured === false && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-orange-500/30 ${
-          isDark ? "bg-orange-500/10" : "bg-orange-50"
-        }`}>
-          <p className="text-[12px] font-medium text-orange-600">
-            Blend pool is not yet configured in the Registry. Please ask the admin to call <code>set_blend_pool_address</code>.
-          </p>
-        </div>
-      )}
 
       {/* Margin account warning */}
       {userAddress && !marginAccountAddress && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-yellow-500/30 ${
-          isDark ? "bg-yellow-500/10" : "bg-yellow-50"
-        }`}>
-          <p className="text-[12px] font-medium text-yellow-600">
-            A margin account is required to supply to Blend. Please create one in the Margin section.
-          </p>
+        <div className={`w-full rounded-xl p-3 border text-[12px] font-medium ${isDark ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500" : "bg-yellow-50 border-yellow-200 text-yellow-700"}`}>
+          A margin account is required to supply to Blend. Please create one in the Margin section.
         </div>
       )}
 
-      {/* Position tracking info */}
-      {marginAccountAddress && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] flex flex-col gap-[6px] ${
-          isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
-        }`}>
-          <span className={`text-[11px] font-semibold ${isDark ? "text-[#CCCCCC]" : "text-[#444]"}`}>
-            Position Tracking
-          </span>
-          <p className={`text-[11px] ${isDark ? "text-[#919191]" : "text-[#76737B]"}`}>
-            Your Blend b-tokens are held by your margin account (not your wallet directly).
-            Track your position in the <strong>Current Position</strong> table below.
-          </p>
-          {availableToDeployNum === 0 && blendDeployed > 0 && (
-            <p className={`text-[11px] font-medium text-[#4CAF50]`}>
-              All borrowed {selectedToken} is deployed into Blend ({blendDeployed.toFixed(4)} {selectedToken}).
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Zero margin balance hint */}
-      {userAddress && marginAccountAddress && !isLoadingBorrowedBalances && totalBorrowed === 0 && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-blue-500/30 ${
-          isDark ? "bg-blue-500/10" : "bg-blue-50"
-        }`}>
-          <p className="text-[12px] font-medium text-blue-600">
-            No borrowed {selectedToken} available in your margin account. Borrow {selectedToken} first from the Margin section.
-          </p>
-        </div>
-      )}
-
-      {/* Transaction status */}
-      {txStatus === "success" && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-green-500/30 ${
-          isDark ? "bg-green-500/10" : "bg-green-50"
-        }`}>
-          <p className="text-[12px] font-medium text-green-600">
-            Deposit successful!{" "}
-            {txHash && (
-              <span className="break-all text-[11px] opacity-70">{txHash}</span>
-            )}
-          </p>
-        </div>
-      )}
-      {txStatus === "error" && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-red-500/30 ${
-          isDark ? "bg-red-500/10" : "bg-red-50"
-        }`}>
-          <p className="text-[12px] font-medium text-red-600">{txError}</p>
-        </div>
-      )}
+      <AnimatePresence>
+        {parseFloat(value) > 0 && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
+            <InfoCard data={marginAccountInfo} items={[...MARGIN_ACCOUNT_INFO_ITEMS]} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Button
         disabled={isSubmitDisabled}
-        type="gradient"
+        type="solid"
         size="large"
-        text={buttonText()}
+        text={getButtonText()}
         onClick={handleDeposit}
       />
     </div>

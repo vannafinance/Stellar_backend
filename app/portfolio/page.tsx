@@ -1,7 +1,7 @@
 "use client";
 
+import { Lender } from "@/components/portfolio/lender";
 import { PortfolioSection } from "@/components/portfolio/portfolio-section";
-import { AccountStatsGhost } from "@/components/earn/account-stats-ghost";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { Button } from "@/components/ui/button";
 import { DepositModal } from "@/components/portfolio/deposit-modal";
@@ -9,44 +9,19 @@ import { WithdrawModal } from "@/components/portfolio/withdraw-modal";
 import { useWallet } from "@/hooks/use-wallet";
 import { useTheme } from "@/contexts/theme-context";
 import { motion } from "framer-motion";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 
 export default function PortfolioPage() {
   const { isDark } = useTheme();
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("lender");
-  const { address, balance, depositedBalances, refreshBalances } = useWallet();
+  const { refreshBalances } = useWallet();
 
   const tabs = [
     { id: "lender", label: "Lender" },
     { id: "trader", label: "Trader" },
   ];
-
-  // Calculate total deposited value
-  const totalDepositedValue = useMemo(() => {
-    const xlmValue = parseFloat(depositedBalances.XLM || '0');
-    const usdcValue = parseFloat(depositedBalances.USDC || '0');
-    return xlmValue + usdcValue;
-  }, [depositedBalances]);
-
-  // Portfolio account stats items with real data
-  const accountStatsItems = useMemo(() => {
-    if (!address) {
-      return [
-        { id: "1", name: "Total Assets", amount: "Connect Wallet" },
-        { id: "2", name: "Net P&L", amount: "Connect Wallet" },
-        { id: "3", name: "Total Volume", amount: "Connect Wallet" },
-      ];
-    }
-
-    return [
-      { id: "1", name: "Total Assets", amount: `$${totalDepositedValue.toFixed(2)}` },
-      { id: "2", name: "Wallet Balance", amount: `${balance} XLM` },
-      { id: "3", name: "XLM Deposited", amount: `${depositedBalances.XLM} XLM` },
-      { id: "4", name: "USDC Deposited", amount: `${depositedBalances.USDC} USDC` },
-    ];
-  }, [address, balance, depositedBalances, totalDepositedValue]);
 
   return (
     <>
@@ -82,7 +57,7 @@ export default function PortfolioPage() {
                   onClick={() => setShowWithdrawModal(true)}
                 />
                 <Button
-                  text="Refresh"
+                  text="Transfer"
                   size="small"
                   type="ghost"
                   disabled={false}
@@ -110,16 +85,7 @@ export default function PortfolioPage() {
               tabClassName="w-auto sm:w-[120px] h-[38px] sm:h-[40px] text-[13px] sm:text-[16px]"
               containerClassName="w-full"
             />
-            {activeTab === "lender" && (
-              <div className="w-full h-fit">
-                <AccountStatsGhost
-                  items={accountStatsItems}
-                  type="background"
-                  gridCols="grid-cols-2"
-                  gridRows="grid-rows-3"
-                />
-              </div>
-            )}
+            {activeTab === "lender" && <Lender />}
             {activeTab === "trader" && (
               <div className={`text-center py-12 text-[14px] ${isDark ? "text-[#919191]" : "text-[#5C5B5B]"}`}>
                 Coming soon
