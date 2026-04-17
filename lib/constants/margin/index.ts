@@ -36,14 +36,17 @@ export const LEVERAGE_TABS = [
   {
     id: "leverage-assets",
     label: "Leverage your Assets",
+    shortLabel: "Leverage",
   },
   {
     id: "repay-loan",
     label: "Repay Loan",
+    shortLabel: "Repay",
   },
   {
     id: "transfer-collateral",
     label: "Transfer Collateral",
+    shortLabel: "Transfer",
   },
 ] as const;
 

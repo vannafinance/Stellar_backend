@@ -1,9 +1,8 @@
-import { DropdownOptions, iconPaths } from "@/lib/constants";
+import { DropdownOptions } from "@/lib/constants";
 import { Dropdown } from "../ui/dropdown";
 import { useState, useEffect, useCallback } from "react";
 import { LeverageSlider } from "../ui/leverage-slider";
 import { BorrowInfo } from "@/lib/types";
-import Image from "next/image";
 import { motion } from "framer-motion";
 import { MAX_LEVERAGE, MODE_CONFIG } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
@@ -45,7 +44,6 @@ export const BorrowBox = ({
   // Store access
   const tokenBalances = useUserStore((state) => state.tokenBalances);
   const borrowedBalances = useMarginAccountInfoStore((state) => state.borrowedBalances);
-  const isLoadingBorrowedBalances = useMarginAccountInfoStore((state) => state.isLoadingBorrowedBalances);
 
   // Form state
   const [selectedOptions, setSelectedOptions] = useState<
@@ -53,8 +51,6 @@ export const BorrowBox = ({
   >({});
   const [selectedAmountType, setSelectedAmountType] = useState<string>("Amount in %");
   const [inputValues, setInputValues] = useState<Record<number, number>>({});
-  const [percentageInputValues, setPercentageInputValues] = useState<Record<number, number>>({});
-  const [usdInputValues, setUsdInputValues] = useState<Record<number, number>>({});
 
   // Combined useEffect: Create BorrowInfo items and notify parent
   useEffect(() => {
@@ -92,7 +88,6 @@ export const BorrowBox = ({
     : (inputValues[0] || 0);
 
   // Simplified UI visibility flags
-  const showInputBoxes = config.showInputBoxes;
   const showTotal = config.showTotal;
 
   // Handler for max leverage click
@@ -132,15 +127,6 @@ export const BorrowBox = ({
     };
   }, []);
 
-  const handlePercentageInputChange = useCallback((idx: number) => {
-    return (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(e.target.value) || 0;
-      setPercentageInputValues((prev) => ({
-        ...prev,
-        [idx]: value,
-      }));
-    };
-  }, []);
 
   const handleLeverageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
@@ -157,402 +143,275 @@ export const BorrowBox = ({
     }
   }, [setLeverage, MAX_LEVERAGE]);
 
+  const bgColor = isDark ? "#1A1A1A" : "#ffffff";
+
   return (
     <motion.section
-      className={`w-full rounded-2xl p-3 sm:p-4 flex flex-col gap-3 sm:gap-4 border transition-colors ${
-        isDark
-          ? "bg-[#1A1A1A] border-[#2A2A2A]"
-          : "bg-white border-[#EEEEEE]"
-      }`}
+      className="w-full min-w-0 flex flex-col gap-3"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
     >
-      {/* Top section: Asset selector or borrowed items display */}
-      <header className="flex justify-between gap-3">
-        {/* Deposit mode: Single asset selector */}
-        {mode === "Deposit" && (
-          <>
-            <motion.div
-              className="flex flex-col gap-2"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3 }}
+      {/* ── Deposit mode card ─────────────────────────────────────────────── */}
+      {mode === "Deposit" && (
+        <article
+          className={`rounded-2xl p-3 sm:p-4 flex flex-col gap-1.5 sm:gap-2 transition-colors ${
+            isDark
+              ? "bg-[#1A1A1A] border border-[#2A2A2A]"
+              : "bg-white border border-[#EEEEEE]"
+          }`}
+        >
+          {/* Row 1: "Borrow" label + Max Value chip */}
+          <div className="flex items-center justify-between">
+            <span
+              className={`text-sm font-medium ${
+                isDark ? "text-[#A7A7A7]" : "text-[#888888]"
+              }`}
             >
-              {/* Asset dropdown pill */}
+              Borrow
+            </span>
+            <motion.div
+              className={`px-3 py-1 rounded-lg shrink-0 cursor-pointer text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                leverage === MAX_LEVERAGE ? "text-white" : isDark ? "text-white" : "text-[#111111]"
+              }`}
+              style={
+                leverage === MAX_LEVERAGE
+                  ? { background: "linear-gradient(135deg, #FC5457 10%, #703AE6 80%)", border: "1.20px solid transparent" }
+                  : {
+                      background: `linear-gradient(${bgColor}, ${bgColor}) padding-box, linear-gradient(135deg, #FC5457 10%, #703AE6 80%) border-box`,
+                      border: "1.20px solid transparent",
+                    }
+              }
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              onClick={handleMaxLeverage}
+              role="button"
+              aria-label="Set maximum leverage"
+            >
+              Max Value
+            </motion.div>
+          </div>
+
+          {/* Row 2: token dropdown + borrow amount display */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="shrink-0">
               <Dropdown
-                dropdownClassname="text-[13px] gap-2"
+                dropdownClassname="text-[14px] gap-2"
                 items={DropdownOptions}
                 selectedOption={selectedOptions[0] || DropdownOptions[0]}
                 setSelectedOption={handleSetSelectedOption(0)}
-                classname={`gap-2 px-3 py-2 rounded-full text-[14px] font-semibold transition-colors ${
+                classname={`gap-2 px-3 py-2 rounded-full! text-[14px] font-semibold transition-colors ${
                   isDark
-                    ? "bg-[#333333] hover:bg-[#3D3D3D] text-white"
-                    : "bg-[#EEEEEE] hover:bg-[#E2E2E2]"
+                    ? "bg-[#2A2A2A] hover:bg-[#333333] text-white"
+                    : "bg-[#EEEEEE] hover:bg-[#E2E2E2] text-[#111111]"
                 }`}
               />
-
-              {/* Balance */}
-              <div
-                className={`text-[12px] font-medium ${
-                  isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                }`}
-              >
-                Balance:{" "}
-                {tokenBalances[
-                  getTokenBalanceKey(
-                    selectedOptions[0] || "XLM",
-                  ) as keyof typeof tokenBalances
-                ] || tokenBalances.XLM}{" "}
-                {selectedOptions[0] || "XLM"}
-              </div>
-            </motion.div>
-
-            {/* Borrowed Amount + Max Value */}
-            <motion.div
-              className="flex flex-col items-end gap-2"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3 }}
+            </div>
+            <p
+              className={`flex-1 min-w-0 text-[22px] sm:text-[28px] font-semibold text-right ${
+                isDark ? "text-white" : "text-[#111111]"
+              }`}
             >
-              <motion.button
-                type="button"
-                onClick={handleMaxLeverage}
-                className="h-fit cursor-pointer rounded-lg bg-gradient p-[1px]"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-                aria-label="Set maximum leverage"
-              >
-                <div
-                  className={`py-1.5 px-4 rounded-lg text-[13px] font-semibold ${
-                    leverage === MAX_LEVERAGE
-                      ? "bg-gradient text-white"
-                      : isDark
-                        ? "bg-[#1A1A1A] text-white"
-                        : "bg-white text-[#111111]"
-                  }`}
-                >
-                  Max Value
-                </div>
-              </motion.button>
+              {borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])]
+                ? parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])].amount).toFixed(4)
+                : "0.00"}
+            </p>
+          </div>
 
-              {/* Borrowed balance row */}
-              {Array.from({ length: 1 }).map((_, idx) => {
-                const selectedOption = selectedOptions[0] || DropdownOptions[0];
-                return (
-                  <motion.div
-                    key={idx}
-                    className="flex items-center gap-2"
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <Image
-                      src={iconPaths[selectedOption]}
-                      alt={selectedOption}
-                      width={16}
-                      height={16}
-                      className="rounded-full shrink-0"
-                    />
-                    <div
-                      className={`flex flex-col gap-0.5 text-right ${
-                        isDark ? "text-white" : "text-[#111111]"
-                      }`}
-                    >
-                      <span className="text-[13px] font-semibold">
-                        {borrowedBalances[
-                          getBorrowedBalanceKey(selectedOption)
-                        ]
-                          ? parseFloat(
-                              borrowedBalances[
-                                getBorrowedBalanceKey(selectedOption)
-                              ].amount,
-                            ).toFixed(4)
-                          : "0.0000"}{" "}
-                        {selectedOption}
-                      </span>
-                      <span
-                        className={`text-[11px] ${
-                          isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                        }`}
-                      >
-                        {borrowedBalances[
-                          getBorrowedBalanceKey(selectedOption)
-                        ]
-                          ? parseFloat(
-                              borrowedBalances[
-                                getBorrowedBalanceKey(selectedOption)
-                              ].usdValue,
-                            ).toFixed(2)
-                          : "0.00"}{" "}
-                        USD
-                      </span>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </motion.div>
-          </>
-        )}
-
-        {/* Borrow mode: Display borrowed items */}
-        {mode === "Borrow" && (
-          <motion.div
-            className="w-full flex justify-between items-start gap-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
+          {/* Row 3: balance + ≈ USD */}
+          <div
+            className={`flex items-center justify-between text-sm font-medium ${
+              isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+            }`}
           >
-            {/* Borrowed items list */}
-            <div className="flex flex-col gap-2">
-              <span
-                className={`text-[13px] font-medium ${
-                  isDark ? "text-[#A7A7A7]" : "text-[#777777]"
-                }`}
-              >
-                Borrowed Amount
+            <span>
+              Balance:{" "}
+              {tokenBalances[getTokenBalanceKey(selectedOptions[0] || "XLM") as keyof typeof tokenBalances] || tokenBalances.XLM}{" "}
+              {selectedOptions[0] || "XLM"}
+            </span>
+            <span>
+              ≈{" "}
+              {borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])]
+                ? parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])].usdValue).toFixed(2)
+                : "0.00"}{" "}
+              USD
+            </span>
+          </div>
+        </article>
+      )}
+
+      {/* ── Borrow mode — stacked input cards ─────────────────────────────── */}
+      {mode === "Borrow" && (
+        <motion.div
+          className="w-full min-w-0 flex flex-col gap-3"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          {/* Borrowed Amount + Total Borrowable header */}
+          <div className="flex items-start justify-between gap-3 min-w-0 w-full">
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <span className={`text-[13px] font-medium ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>
+                Borrowed Amount:
               </span>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-x-3 gap-y-1.5">
                 {Array.from({ length: config.maxItems }).map((_, idx) => {
-                  const selectedOption =
-                    selectedOptions[idx] || DropdownOptions[0];
+                  const selectedOption = selectedOptions[idx] || DropdownOptions[0];
+                  const balKey = getBorrowedBalanceKey(selectedOption);
+                  const balance = borrowedBalances[balKey];
                   return (
-                    <motion.div
-                      key={idx}
-                      className="flex items-center gap-2"
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.3, delay: idx * 0.1 }}
-                    >
-                      <Image
-                        src={iconPaths[selectedOption]}
-                        alt={selectedOption}
-                        width={16}
-                        height={16}
-                        className="rounded-full shrink-0"
-                      />
-                      <div
-                        className={`flex flex-col gap-0.5 ${
-                          isDark ? "text-white" : "text-[#111111]"
-                        }`}
-                      >
-                        <span className="text-[13px] font-semibold">
-                          {borrowedBalances[
-                            getBorrowedBalanceKey(selectedOption)
-                          ]
-                            ? parseFloat(
-                                borrowedBalances[
-                                  getBorrowedBalanceKey(selectedOption)
-                                ].amount,
-                              ).toFixed(4)
-                            : "0.0000"}{" "}
-                          {selectedOption}
+                    <div key={idx} className="flex items-center gap-2">
+                      <div className="flex flex-col gap-0.5">
+                        <span className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
+                          {balance ? parseFloat(balance.amount).toFixed(4) : "0.0000"} {selectedOption}
                         </span>
-                        <span
-                          className={`text-[11px] ${
-                            isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                          }`}
-                        >
-                          {borrowedBalances[
-                            getBorrowedBalanceKey(selectedOption)
-                          ]
-                            ? parseFloat(
-                                borrowedBalances[
-                                  getBorrowedBalanceKey(selectedOption)
-                                ].usdValue,
-                              ).toFixed(2)
-                            : "0.00"}{" "}
-                          USD
+                        <span className={`text-[11px] ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+                          {balance ? parseFloat(balance.usdValue).toFixed(2) : "0.00"} USD
                         </span>
                       </div>
                       {idx < config.maxItems - 1 && (
-                        <span
-                          className={`text-[18px] font-bold px-1 ${
-                            isDark ? "text-[#555555]" : "text-[#CCCCCC]"
-                          }`}
-                        >
-                          :
-                        </span>
+                        <span className={`text-[16px] font-bold px-0.5 ${isDark ? "text-[#555555]" : "text-[#CCCCCC]"}`}>:</span>
                       )}
-                    </motion.div>
+                    </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Total borrowed value */}
             {showTotal && (
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                <span
-                  className={`text-[13px] font-medium ${
-                    isDark ? "text-[#A7A7A7]" : "text-[#777777]"
-                  }`}
-                >
-                  Total Borrowable
+              <div className="flex flex-col items-end gap-1 shrink-0 max-w-40 text-right">
+                <span className={`text-[13px] font-medium leading-tight ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>
+                  Total Borrowable Amount:
                 </span>
-                <span
-                  className={`text-[15px] font-bold ${
-                    isDark ? "text-white" : "text-[#111111]"
-                  }`}
-                >
-                  $
-                  {totalBorrowedValue.toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                <span className={`text-[15px] font-bold ${isDark ? "text-white" : "text-[#111111]"}`}>
+                  ${totalBorrowedValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             )}
-          </motion.div>
-        )}
-      </header>
+          </div>
 
-      {/* Input boxes for borrow items */}
-      {showInputBoxes && (
-        <motion.section
-          className="flex gap-3 items-center justify-center relative z-10"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-        >
-          {Array.from({ length: config.maxItems }).map((_, idx) => {
-            const selectedOption = selectedOptions[idx] || DropdownOptions[0];
-            const inputValue = inputValues[idx] || 0;
+          <div className="w-full min-w-0 flex flex-col gap-2">
+            {Array.from({ length: config.maxItems }).map((_, idx) => {
+              const selectedOption = selectedOptions[idx] || DropdownOptions[0];
+              const inputValue = inputValues[idx] || 0;
 
-            const item: BorrowInfo | null =
-              selectedOption && inputValue > 0
-                ? {
-                    assetData: {
-                      asset: `0x${selectedOption}`,
-                      amount: inputValue.toString(),
-                    },
-                    percentage:
-                      totalDeposit > 0
-                        ? Number(
-                            ((inputValue / totalDeposit) * 100).toFixed(2),
-                          )
-                        : 0,
-                    usdValue: inputValue,
-                  }
-                : null;
-
-            return (
-              <motion.div
-                key={idx}
-                className="flex gap-3 items-center w-full"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3, delay: idx * 0.1 }}
-              >
-                <div
-                  className={`flex-1 rounded-2xl p-3 sm:p-4 border ${
-                    isDark
-                      ? "bg-[#111111] border-[#2A2A2A]"
-                      : "bg-[#F7F7F7] border-[#EEEEEE]"
-                  }`}
+              return (
+                <motion.div
+                  key={idx}
+                  className="w-full min-w-0"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3, delay: idx * 0.1 }}
                 >
-                  {/* Row 1: token selector + amount type */}
-                  <div className="flex items-center justify-between mb-3">
-                    <Dropdown
-                      dropdownClassname="text-[13px] gap-2"
-                      items={DropdownOptions}
-                      selectedOption={selectedOptions[idx] || DropdownOptions[0]}
-                      setSelectedOption={handleSetSelectedOption(idx)}
-                      classname={`gap-2 px-3 py-2 rounded-full text-[13px] font-semibold transition-colors ${
-                        isDark
-                          ? "bg-[#2A2A2A] hover:bg-[#333333] text-white"
-                          : "bg-white hover:bg-[#EEEEEE]"
-                      }`}
-                    />
-                    <Dropdown
-                      dropdownClassname="text-[13px] gap-2"
-                      items={["Amount in %", "Amount in $"]}
-                      selectedOption={selectedAmountType}
-                      setSelectedOption={setSelectedAmountType}
-                      classname={`gap-1.5 text-[12px] font-medium ${
-                        isDark ? "text-[#A7A7A7]" : "text-[#777777]"
-                      }`}
-                    />
-                  </div>
-
-                  {/* Row 2: amount inputs */}
-                  <div className="flex items-end justify-between gap-3">
-                    <div className="flex flex-col gap-1">
-                      <label
-                        htmlFor={`borrow-amount-input-${idx}`}
-                        className="sr-only"
+                  <article
+                    className={`w-full min-w-0 rounded-2xl p-3 sm:p-4 flex flex-col gap-1.5 sm:gap-2 transition-colors ${
+                      isDark
+                        ? "bg-[#1A1A1A] border border-[#2A2A2A]"
+                        : "bg-white border border-[#EEEEEE]"
+                    }`}
+                  >
+                    {/* Row 1: amount type selector */}
+                    <div className="flex items-center justify-start sm:justify-between gap-2">
+                      <span
+                        className={`hidden sm:inline text-sm font-medium ${
+                          isDark ? "text-[#A7A7A7]" : "text-[#777777]"
+                        }`}
                       >
+                        Borrow
+                      </span>
+                      <Dropdown
+                        dropdownClassname="text-[13px] gap-2"
+                        items={["Amount in %", "Amount in $"]}
+                        selectedOption={selectedAmountType}
+                        setSelectedOption={setSelectedAmountType}
+                        classname={`gap-1 text-[10px] sm:text-[12px] font-semibold rounded-full! px-2 py-1 whitespace-nowrap ${
+                          isDark ? "bg-[#2A2A2A] text-[#A7A7A7]" : "bg-[#F0F0F0] text-[#888888]"
+                        }`}
+                        arrowClassname="size-3"
+                      />
+                    </div>
+
+                    {/* Row 2: token selector + input */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="shrink-0">
+                        <Dropdown
+                          dropdownClassname="text-[13px] gap-2"
+                          items={DropdownOptions}
+                          selectedOption={selectedOption}
+                          setSelectedOption={handleSetSelectedOption(idx)}
+                          classname={`gap-2 px-3 py-2 rounded-full! text-[14px] font-semibold transition-colors ${
+                            isDark
+                              ? "bg-[#2A2A2A] hover:bg-[#333333] text-white"
+                              : "bg-[#EEEEEE] hover:bg-[#E2E2E2] text-[#111111]"
+                          }`}
+                          arrowClassname="size-3"
+                        />
+                      </div>
+                      <label htmlFor={`borrow-input-${idx}`} className="sr-only">
                         Borrow amount for {selectedOption}
                       </label>
                       <input
-                        id={`borrow-amount-input-${idx}`}
+                        id={`borrow-input-${idx}`}
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={inputValues[idx] !== undefined ? inputValues[idx].toString() : ""}
                         onChange={handleInputChange(idx)}
-                        className={`text-[22px] font-semibold bg-transparent outline-none w-[120px] placeholder:opacity-30 ${
+                        className={`flex-1 min-w-0 text-[22px] sm:text-[28px] font-semibold bg-transparent text-right outline-none placeholder:opacity-40 ${
                           isDark
                             ? "text-white placeholder:text-[#555555]"
                             : "text-[#111111] placeholder:text-[#CCCCCC]"
                         }`}
-                        type="text"
-                        placeholder="0"
-                        value={inputValues[idx]?.toString() || ""}
                       />
-                      <span
-                        className={`text-[12px] font-medium ${
-                          isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                        }`}
-                        aria-live="polite"
-                      >
-                        {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD
-                      </span>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1">
-                      <input
-                        type="text"
-                        placeholder="0"
-                        onChange={handlePercentageInputChange(idx)}
-                        className={`focus:outline-none text-[22px] font-semibold text-right bg-transparent w-[80px] placeholder:opacity-30 ${
-                          isDark
-                            ? "text-white placeholder:text-[#555555]"
-                            : "text-[#111111] placeholder:text-[#CCCCCC]"
-                        }`}
-                        value={percentageInputValues[idx] || 0}
-                      />
-                      <span
-                        className={`text-[12px] font-medium ${
-                          isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                        }`}
-                      >
-                        {item ? `1 ${selectedOption} = $1.00` : "0.00 USD"}
+                    {/* Row 3: rate info + ≈ USD */}
+                    <div
+                      className={`flex items-center justify-between text-sm font-medium ${
+                        isDark ? "text-[#A7A7A7]" : "text-[#888888]"
+                      }`}
+                    >
+                      <span>
+                        {selectedAmountType === "Amount in %"
+                          ? `% of ${totalDeposit > 0 ? `$${totalDeposit.toFixed(2)}` : "$0.00"}`
+                          : `1 ${selectedOption} = $1.00`}
                       </span>
+                      <span>≈ {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD</span>
                     </div>
-                  </div>
-                </div>
+                  </article>
 
-                {idx < config.maxItems - 1 && (
-                  <span
-                    className={`text-[18px] font-bold shrink-0 ${
-                      isDark ? "text-[#555555]" : "text-[#CCCCCC]"
-                    }`}
-                  >
-                    :
-                  </span>
-                )}
-              </motion.div>
-            );
-          })}
-        </motion.section>
+                </motion.div>
+              );
+            })}
+          </div>
+
+          {/* Total row */}
+          {showTotal && (
+            <div
+              className={`flex items-center justify-between text-sm font-medium ${
+                isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+              }`}
+            >
+              <span>
+                Total: $
+                {totalBorrowedValue.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+          )}
+        </motion.div>
       )}
 
-      {/* Leverage slider */}
+      {/* ── Leverage slider ───────────────────────────────────────────────── */}
       <motion.section
         className="relative z-0 flex items-start justify-between"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, delay: 0.2 }}
       >
-        {/* -/+ stepper */}
         <div
           className={`flex gap-0.5 items-center rounded-lg border p-0.5 shrink-0 ${
             isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E2E2E2]"
@@ -598,7 +457,6 @@ export const BorrowBox = ({
           </motion.button>
         </div>
 
-        {/* Slider */}
         <div className="flex-1 min-w-0 pl-4 pr-0 mt-1.5">
           <LeverageSlider
             value={leverage}

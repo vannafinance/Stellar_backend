@@ -463,7 +463,7 @@ export const LeverageAssetsTab = () => {
   return (
     <>
       <motion.section
-        className="w-full flex flex-col gap-2 pt-0"
+        className="w-full min-w-0 flex flex-col gap-2 pt-0"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, delay: 0.1 }}
@@ -484,7 +484,7 @@ export const LeverageAssetsTab = () => {
 
         {/* Deposit section */}
         <motion.section
-          className="w-full flex flex-col gap-1.5"
+          className="w-full min-w-0 flex flex-col gap-1.5"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -665,7 +665,7 @@ export const LeverageAssetsTab = () => {
 
         {/* Borrow section */}
         <motion.section
-          className="w-full flex flex-col gap-1"
+          className="w-full min-w-0 flex flex-col gap-1"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}

@@ -107,6 +107,15 @@ const CollateralComponent = (props: Collateral) => {
 
   const handlePercentageClick = (item: number) => {
     setPercentage(item);
+    const balance = hasCollateral && collateral
+      ? parseFloat(String(
+          selectedBalanceType === "WB"
+            ? tokenBalances[getTokenBalanceKey(selectedCurrency) as keyof typeof tokenBalances] || "0"
+            : collateral.unifiedBalance
+        )) || 0
+      : 0;
+    const calculatedAmount = (balance * item) / 100;
+    setValueInput(calculatedAmount.toString());
   };
 
   const handleViewSourcesClick = () => {

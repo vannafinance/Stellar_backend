@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import { Button } from "../ui/button";
 import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
-import { AnimatedTabs } from "../ui/animated-tabs";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { TABLE_ROW_HEADINGS, COIN_ICONS } from "@/lib/constants/margin";
@@ -276,6 +275,108 @@ export const Positionstable = ({
     </motion.article>
   );
 
+  // ── MOBILE POSITION CARD ──
+  const renderMobilePositionCard = (item: Position, idx: number) => {
+    const hasBorrow = item.borrowed.length > 0;
+    const lbl = `text-[11px] font-medium ${isDark ? "text-[#A0A0A0]" : "text-[#6B7280]"}`;
+    const val = `text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111]"}`;
+
+    return (
+      <motion.div
+        key={`mobile-${item.positionId}`}
+        className={`rounded-lg border p-3 flex flex-col gap-2.5 ${isDark ? "border-[#333333] bg-[#2A2A2A]" : "border-[#E2E2E2] bg-white"}`}
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.4, delay: idx * 0.08, ease: "easeOut" }}
+      >
+        {/* Collateral + Borrowed */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className={`${lbl} mb-1`}>Collateral Deposited</p>
+            <div className="flex gap-1.5 items-center">
+              <Image
+                src={getTokenIcon(item.collateral.asset)}
+                alt={item.collateral.asset}
+                width={16}
+                height={16}
+                className="rounded-full shrink-0"
+              />
+              <div>
+                <div className={`text-[12px] font-medium leading-tight ${isDark ? "text-white" : ""}`}>
+                  {item.collateral.amount} {formatTokenName(item.collateral.asset)}
+                </div>
+                <div className={`text-[10px] ${isDark ? "text-[#919191]" : "text-[#76737B]"}`}>
+                  ${item.collateralUsdValue}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className={`${lbl} mb-1`}>Borrowed Assets</p>
+            {hasBorrow ? (
+              <div className="flex flex-col gap-1">
+                {item.borrowed.map((borrowedItem, borrowedIdx) => (
+                  <div key={borrowedIdx} className="flex gap-1.5 items-center">
+                    <Image
+                      src={getTokenIcon(borrowedItem.assetData.asset)}
+                      alt={borrowedItem.assetData.asset}
+                      width={16}
+                      height={16}
+                      className="rounded-full shrink-0"
+                    />
+                    <div>
+                      <div className={`text-[12px] font-medium leading-tight ${isDark ? "text-white" : ""}`}>
+                        {borrowedItem.assetData.amount} {formatTokenName(borrowedItem.assetData.asset)}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[10px] ${isDark ? "text-[#919191]" : "text-[#76737B]"}`}>
+                          ${borrowedItem.usdValue}
+                        </span>
+                        {borrowedItem.percentage > 0 && (
+                          <span className="bg-[#F1EBFD] rounded px-1 text-[9px] font-medium text-[#703AE6]">
+                            {borrowedItem.percentage}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className={`text-[11px] italic ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>No borrows</div>
+            )}
+          </div>
+        </div>
+
+        {/* Stats strip */}
+        <div className={`rounded-md px-3 py-2 grid grid-cols-2 gap-2 ${isDark ? "bg-[#1A1A1A]" : "bg-[#F0F0F0]"}`}>
+          <div>
+            <p className={lbl}>Leverage</p>
+            <p className={`text-[13px] font-semibold ${item.leverage > 0 ? "text-[#703AE6]" : isDark ? "text-[#666]" : "text-[#A0A0A0]"}`}>
+              {item.leverage > 0 ? `${item.leverage}x` : "-"}
+            </p>
+          </div>
+          <div>
+            <p className={lbl}>Interest Accrued</p>
+            <p className={val}>{item.interestAccrued > 0 ? `$${item.interestAccrued}` : "$0"}</p>
+          </div>
+        </div>
+
+        {/* Action */}
+        <div className="flex justify-end">
+          <Button
+            size="small"
+            type="gradient"
+            disabled={!item.isOpen}
+            text={item.isOpen ? "Repay" : "Repaid"}
+            onClick={item.isOpen && onRepayClick ? onRepayClick : undefined}
+          />
+        </div>
+      </motion.div>
+    );
+  };
+
   return (
     <section className="w-full flex flex-col gap-3">
       {/* Title with position count */}
@@ -296,122 +397,132 @@ export const Positionstable = ({
         )}
       </motion.div>
 
-      <nav className="w-full sm:w-fit h-fit">
-        <AnimatedTabs
-          type="solid"
-          customTabWidth="w-auto"
-          tabClassName="!py-2 !px-3 !h-9"
-          tabs={[
-            { id: "currentPositions", label: "Current Positions" },
-            { id: "positionsHistory", label: "Positions History" },
-          ]}
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-        />
+      <nav className={`w-full sm:w-fit flex gap-1 p-1 rounded-xl border ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}>
+        {[
+          { id: "currentPositions", label: "Current Positions", short: "Current" },
+          { id: "positionsHistory", label: "Positions History", short: "History" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleTabChange(tab.id)}
+            className={`flex-1 sm:flex-none rounded-lg px-4 py-2 text-[12px] sm:text-[13px] font-semibold transition-colors whitespace-nowrap ${
+              activeTab === tab.id
+                ? "bg-[#703AE6] text-white"
+                : isDark ? "text-[#999999]" : "text-[#9CA3AF]"
+            }`}
+          >
+            <span className="sm:hidden">{tab.short}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        ))}
       </nav>
 
       {hasMarginAccount && filteredPositions.length > 0 ? (
-        <div className="w-full overflow-x-auto no-scrollbar">
-          <section className="rounded-[12px] min-w-[700px]">
-            {/* Table headers */}
-            <ul className="flex" role="row">
-              {TABLE_ROW_HEADINGS.map((item, idx) => (
-                <motion.li
-                  className={`w-full pt-[11.25px] px-[12px] pb-[12px] font-medium text-[12px] sm:text-[13px] ${
-                    isDark ? "text-[#999999]" : "text-[#464545]"
-                  }`}
-                  key={item}
-                  initial={{ opacity: 0, y: -10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.3, delay: idx * 0.05 }}
-                >
-                  {item}
-                </motion.li>
-              ))}
-            </ul>
+        <>
+          {/* Desktop table */}
+          <div className="w-full overflow-x-auto no-scrollbar hidden md:block">
+            <section className="rounded-xl min-w-[700px]">
+              {/* Table headers */}
+              <ul className="flex" role="row">
+                {TABLE_ROW_HEADINGS.map((item, idx) => (
+                  <motion.li
+                    className={`w-full pt-[11.25px] px-3 pb-3 font-medium text-[12px] sm:text-[13px] ${
+                      isDark ? "text-[#999999]" : "text-[#464545]"
+                    }`}
+                    key={item}
+                    initial={{ opacity: 0, y: -10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.3, delay: idx * 0.05 }}
+                  >
+                    {item}
+                  </motion.li>
+                ))}
+              </ul>
 
-            {/* Position rows */}
-            <section
-              ref={scrollContainerRef}
-              className="flex flex-col gap-[8px] max-h-[520px] overflow-y-auto pr-[4px] thin-scrollbar"
-            >
-              {paginatedPositions.map((item, idx) =>
-                renderPositionCard(item, idx),
+              {/* Position rows */}
+              <section
+                ref={scrollContainerRef}
+                className="flex flex-col gap-2 max-h-[520px] overflow-y-auto pr-1 thin-scrollbar"
+              >
+                {paginatedPositions.map((item, idx) =>
+                  renderPositionCard(item, idx),
+                )}
+              </section>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <motion.div
+                  className="flex items-center justify-center gap-4 py-4"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <button
+                    type="button"
+                    onClick={handlePreviousPage}
+                    disabled={currentPage === 1}
+                    className={`flex items-center justify-center w-10 h-10 transition-colors ${
+                      currentPage === 1
+                        ? "cursor-not-allowed opacity-30"
+                        : "cursor-pointer hover:opacity-70"
+                    } ${isDark ? "text-white" : "text-[#111111]"}`}
+                    aria-label="Previous page"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M7.5 9L4.5 6L7.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  <span className="px-6 py-2 rounded-full bg-[#F1EBFD] text-[#703AE6] text-[14px] font-semibold">
+                    {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                    className={`flex items-center justify-center w-10 h-10 transition-colors ${
+                      currentPage === totalPages
+                        ? "cursor-not-allowed opacity-30"
+                        : "cursor-pointer hover:opacity-70"
+                    } ${isDark ? "text-white" : "text-[#111111]"}`}
+                    aria-label="Next page"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M4.5 9L7.5 6L4.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </motion.div>
               )}
             </section>
+          </div>
 
-            {/* Pagination */}
+          {/* Mobile cards */}
+          <div className={`md:hidden p-2 rounded-lg border flex flex-col gap-2 ${isDark ? "border-[#333333] bg-[#222222]" : "border-[#E2E2E2] bg-[#F7F7F7]"}`}>
+            {paginatedPositions.map((item, idx) => renderMobilePositionCard(item, idx))}
             {totalPages > 1 && (
-              <motion.div
-                className="flex items-center justify-center gap-[16px] py-[16px]"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
+              <div className="flex items-center justify-center gap-4 py-3">
                 <button
                   type="button"
                   onClick={handlePreviousPage}
                   disabled={currentPage === 1}
-                  className={`flex items-center justify-center w-[40px] h-[40px] transition-colors ${
-                    currentPage === 1
-                      ? "cursor-not-allowed opacity-30"
-                      : "cursor-pointer hover:opacity-70"
-                  } ${isDark ? "text-white" : "text-[#111111]"}`}
-                  aria-label="Previous page"
+                  className={`flex items-center justify-center w-8 h-8 transition-colors ${currentPage === 1 ? "cursor-not-allowed opacity-30" : "cursor-pointer hover:opacity-70"} ${isDark ? "text-white" : "text-[#111111]"}`}
                 >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M7.5 9L4.5 6L7.5 3"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7.5 9L4.5 6L7.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </button>
-
-                <span className="px-[24px] py-[8px] rounded-full bg-[#F1EBFD] text-[#703AE6] text-[14px] font-semibold">
-                  {currentPage} of {totalPages}
-                </span>
-
+                <span className="px-5 py-1.5 rounded-full bg-[#F1EBFD] text-[#703AE6] text-[13px] font-semibold">{currentPage} of {totalPages}</span>
                 <button
                   type="button"
                   onClick={handleNextPage}
                   disabled={currentPage === totalPages}
-                  className={`flex items-center justify-center w-[40px] h-[40px] transition-colors ${
-                    currentPage === totalPages
-                      ? "cursor-not-allowed opacity-30"
-                      : "cursor-pointer hover:opacity-70"
-                  } ${isDark ? "text-white" : "text-[#111111]"}`}
-                  aria-label="Next page"
+                  className={`flex items-center justify-center w-8 h-8 transition-colors ${currentPage === totalPages ? "cursor-not-allowed opacity-30" : "cursor-pointer hover:opacity-70"} ${isDark ? "text-white" : "text-[#111111]"}`}
                 >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M4.5 9L7.5 6L4.5 3"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4.5 9L7.5 6L4.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </button>
-              </motion.div>
+              </div>
             )}
-          </section>
-        </div>
+          </div>
+        </>
       ) : (
         renderEmpty()
       )}

@@ -55,15 +55,17 @@ export const AccountStats = ({
 
   return (
     <>
-      {/* Mobile: 2x2 grid */}
-      <div className="sm:hidden w-full grid grid-cols-2 gap-2">
-        {items.map((item, idx) => {
+      {/* Mobile/Small-tablet: 2x2 grid (< 768px) */}
+      <div className="md:hidden w-full grid grid-cols-2 gap-2">
+        {items.filter(item => item.id !== "netProfitAndLoss").map((item, idx, arr) => {
           const displayValue = values[item.id] ?? "-";
           const isLoading = displayValue === "⟳";
           return (
             <motion.article
               key={item.id}
               className={`rounded-2xl p-3 border ${
+                idx === arr.length - 1 && arr.length % 2 !== 0 ? "col-span-2" : ""
+              } ${
                 isDark ? `bg-[${darkBackgroundColor}]` : `bg-[${backgroundColor}]`
               }`}
               initial={{ opacity: 0, y: 10 }}
@@ -96,9 +98,9 @@ export const AccountStats = ({
         })}
       </div>
 
-      {/* Desktop/Tablet: grid layout */}
+      {/* Tablet/Desktop: grid layout (768px+) */}
       <div
-        className={`hidden sm:grid border rounded-[16px] w-full h-auto overflow-hidden ${gridCols} ${calculatedGridRows} ${
+        className={`hidden md:grid border rounded-2xl w-full h-auto overflow-hidden ${gridCols} ${calculatedGridRows} ${
           isDark ? `bg-[${darkBackgroundColor}]` : `bg-[${backgroundColor}]`
         }`}
       >

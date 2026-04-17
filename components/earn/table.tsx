@@ -5,6 +5,7 @@ import {
   useState,
   memo,
 } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { AnimatedTabs } from "../ui/animated-tabs";
 import { FilterDropdown } from "../ui/filter-dropdown";
 import { SearchBar } from "../ui/search-bar";
@@ -301,6 +302,9 @@ const applyFilters = (
 
 /* ---------- SIMPLE CELL RENDER HELPERS ---------- */
 
+const isStatusTag = (tag: string | number): boolean =>
+  /^(active|inactive|stable|paused|deprecated|live|closed|pending|liquidated)$/i.test(String(tag).trim());
+
 const CellContent = ({
   cell,
   showPieChart,
@@ -482,7 +486,6 @@ const TableRow = memo(
   ({
     row,
     visibleHeadings,
-    tableBodyBackground,
     tableHeadings,
     onRowClick,
     hoverBackground,
@@ -493,7 +496,6 @@ const TableRow = memo(
   }: {
     row: any;
     visibleHeadings: any[];
-    tableBodyBackground?: string;
     tableHeadings: TableProps["tableHeadings"];
     onRowClick?: (row: any, rowIndex: number) => void;
     hoverBackground?: string;
@@ -503,6 +505,7 @@ const TableRow = memo(
     isDark?: boolean;
   }) => {
     const hasHover = Boolean(hoverBackground);
+    const [mobileExpanded, setMobileExpanded] = useState(false);
     const visibleCells = row.cell.filter((_: any, cellIdx: number) => {
       const heading = tableHeadings[cellIdx];
       return heading && visibleHeadings.some((vh) => vh.label === heading.label);
@@ -513,36 +516,97 @@ const TableRow = memo(
     }, [onRowClick, row, rowIndex]);
 
     return (
-      <tr
-        onClick={onRowClick ? handleClick : undefined}
-        className={`group ${onRowClick ? "cursor-pointer" : ""} ${
-          hoverBackground || ""
-        } w-full h-fit rounded-[12px] py-[16px] px-[20px] flex gap-[16px] items-center ${
-          isDark
-            ? tableBodyBackground || "bg-[#222222]"
-            : tableBodyBackground || "bg-[#F7F7F7]"
-        } border-[1px]`}
-      >
-        {visibleCells.map((cell: any, idx: number) => (
-          <td
-            key={idx}
-            className={`flex flex-col gap-[6px] h-full ${
-              visibleHeadings.length - 1 === idx && !showProgressBar
-                ? "w-[120px] min-w-[120px] items-end"
-                : visibleHeadings.length - 1 === idx && showProgressBar
-                ? "w-full min-w-[120px] items-end"
-                : "w-full min-w-[120px] items-start"
-            }`}
+      <tr className={`group w-full h-fit rounded-xl border transition-colors ${
+        isDark ? "bg-[#1A1A1A] border-[#2A2A2A] hover:bg-[#222222]" : "bg-[#F7F7F7] border-[#EEEEEE] hover:bg-[#EFEFEF]"
+      }`}>
+        {/* Desktop: horizontal row */}
+        <td
+          onClick={onRowClick ? handleClick : undefined}
+          className={`hidden lg:flex gap-4 items-center w-full px-4 py-3 ${onRowClick ? "cursor-pointer" : ""}`}
+        >
+          {visibleCells.map((cell: any, idx: number) => (
+            <div key={idx} className="flex flex-col gap-1.5 h-full w-full min-w-0 items-start">
+              <CellContent cell={cell} showPieChart={showPieChart} showProgressBar={showProgressBar} isDark={isDark} hasHover={hasHover} />
+            </div>
+          ))}
+        </td>
+
+        {/* Mobile: accordion card */}
+        <td className="flex flex-col lg:hidden w-full">
+          <div
+            className="flex items-center justify-between px-4 py-3 cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); setMobileExpanded(!mobileExpanded); }}
           >
-            <CellContent
-              cell={cell}
-              showPieChart={showPieChart}
-              showProgressBar={showProgressBar}
-              isDark={isDark}
-              hasHover={hasHover}
-            />
-          </td>
-        ))}
+            <div className="flex-1 min-w-0">
+              {visibleCells[0] && (
+                <CellContent cell={visibleCells[0]} showPieChart={showPieChart} showProgressBar={showProgressBar} isDark={isDark} hasHover={hasHover} />
+              )}
+            </div>
+            <motion.svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke={isDark ? "#777777" : "#AAAAAA"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              className="shrink-0 ml-2"
+              animate={{ rotate: mobileExpanded ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <path d="m6 9 6 6 6-6" />
+            </motion.svg>
+          </div>
+
+          <AnimatePresence>
+            {mobileExpanded && visibleCells.length > 1 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className={`flex flex-col mx-4 mb-3 rounded-xl overflow-hidden ${isDark ? "bg-[#111111]" : "bg-white"}`}>
+                  {visibleCells.slice(1).map((cell: any, idx: number) => (
+                    <div key={idx} className="flex items-baseline justify-between gap-3 px-3 py-2">
+                      <span className={`text-[12px] font-medium shrink-0 ${isDark ? "text-[#888888]" : "text-[#777777]"}`}>
+                        {visibleHeadings[idx + 1]?.label}
+                      </span>
+                      <div className="flex items-baseline gap-1.5 flex-wrap justify-end">
+                        <span className={`text-[13px] font-medium ${isDark ? "text-white" : "text-[#111111]"}`}>
+                          {cell.title || cell.value || (cell.percentage !== undefined ? `${cell.percentage}%` : "")}
+                        </span>
+                        {cell.description && (
+                          <span className={`text-[11px] font-medium ${isDark ? "text-[#666666]" : "text-[#AAAAAA]"}`}>{cell.description}</span>
+                        )}
+                        {cell.onlyIcons && (
+                          <span className="flex items-center -space-x-[6px]">
+                            {cell.onlyIcons.map((icon: string, i: number) => (
+                              <Image key={i} src={iconPaths[icon]} alt={icon} width={16} height={16} className={`rounded-full ${isDark ? "border border-black" : "border border-white"}`} />
+                            ))}
+                          </span>
+                        )}
+                        {(cell.tag || cell.tags) && (
+                          <span className="flex items-center gap-1 flex-wrap">
+                            {(cell.tags || [cell.tag]).map((tag: string | number, i: number) => (
+                              <span key={i} className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                                isStatusTag(tag) ? "bg-[#703AE6] text-white" : isDark ? "bg-[#2A2A2A] text-[#A7A7A7]" : "bg-[#F0F0F0] text-[#555555]"
+                              }`}>{tag}</span>
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {onRowClick && (
+                  <div
+                    onClick={handleClick}
+                    className={`mx-4 mb-3 py-2 text-center text-[12px] font-semibold text-[#703AE6] cursor-pointer rounded-lg transition-colors ${isDark ? "bg-[#1A1A2A] hover:bg-[#222233]" : "bg-[#F1EBFD] hover:bg-[#E8DFFA]"}`}
+                  >
+                    View Details →
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </td>
       </tr>
     );
   }
@@ -850,14 +914,26 @@ export const Table = memo((props: TableProps) => {
       )}
 
       {hasTabs && (
-        <nav className="w-fit h-fit" aria-label="Table Navigation Tabs">
-          <AnimatedTabs
-            tabs={props.heading.tabsItems!}
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            type={props.heading.tabType}
-            tabClassName="text-[12px]"
-          />
+        <nav className={`flex gap-1 p-1 rounded-xl border w-fit ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-white border-[#E8E8E8]"}`} aria-label="Table Navigation Tabs">
+          {props.heading.tabsItems!.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleTabChange(tab.id)}
+                className={`text-center px-3 py-1.5 rounded-lg text-[14px] whitespace-nowrap transition-colors cursor-pointer ${
+                  isActive
+                    ? "bg-[#703AE6] text-white font-semibold"
+                    : isDark
+                    ? "text-[#555555] font-medium hover:text-[#A7A7A7]"
+                    : "text-[#A7A7A7] font-medium hover:text-[#555555]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </nav>
       )}
 
@@ -985,22 +1061,19 @@ export const Table = memo((props: TableProps) => {
       )}
 
       {hasData ? (
-        <table className="w-full h-fit rounded-[12px] flex flex-col gap-[8px]">
-          <thead>
-            <tr className="w-full h-fit rounded-[12px] px-[20px] flex gap-[16px]">
+        <table className="w-full h-fit flex flex-col gap-1">
+          <thead className="hidden lg:block">
+            <tr className="w-full h-fit px-4 py-3 flex gap-4">
               {visibleHeadings.map((item, idx) => {
-                const isLast = visibleHeadings.length - 1 === idx;
                 const isSorted = sortConfig.columnId === item.id;
                 const isDesc = isSorted && sortConfig.direction === "desc";
 
                 return (
                   <th
                     key={item.id}
-                    className={`whitespace-nowrap text-[14px] font-medium ${
-                      props.tableHeadingTextColor || "text-[#999999]"
-                    } min-w-[120px] h-fit flex ${
-                      isLast ? "justify-end w-[120px]" : "justify-start w-full whitespace-nowrap"
-                    } gap-[4px] items-center`}
+                    className={`whitespace-nowrap text-[13px] font-medium ${
+                      isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                    } min-w-0 h-fit flex justify-start w-full gap-1 items-center`}
                   >
                     {item.icon && (
                       <button
@@ -1031,13 +1104,12 @@ export const Table = memo((props: TableProps) => {
               })}
             </tr>
           </thead>
-          <tbody className="flex flex-col gap-[8px] w-full">
+          <tbody className="flex flex-col w-full gap-1.5">
             {paginatedData.map((row, idx) => (
               <TableRow
                 key={idx}
                 row={row}
                 visibleHeadings={visibleHeadings}
-                tableBodyBackground={props.tableBodyBackground}
                 tableHeadings={props.tableHeadings}
                 onRowClick={props.onRowClick}
                 hoverBackground={props.hoverBackground}

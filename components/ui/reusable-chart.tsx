@@ -25,9 +25,17 @@ interface ReusableChartProps {
    */
   height?: number;
   /**
-   * Show grid lines
+   * Show horizontal grid lines
    */
   showGrid?: boolean;
+  /**
+   * Show vertical grid lines (defaults to same as showGrid)
+   */
+  showVertGrid?: boolean;
+  /**
+   * Color for grid lines
+   */
+  gridColor?: string;
   /**
    * Format function for Y-axis labels
    */
@@ -44,6 +52,8 @@ export const ReusableChart = ({
   lineColor = "#7C35F8",
   height = 300,
   showGrid = true,
+  showVertGrid,
+  gridColor,
   formatYAxisLabel,
   textColor = "#181822",
 }: ReusableChartProps) => {
@@ -63,12 +73,12 @@ export const ReusableChart = ({
       },
       grid: {
         vertLines: {
-          visible: showGrid,
-          color: "rgba(226, 226, 226, 0.5)",
+          visible: showVertGrid !== undefined ? showVertGrid : showGrid,
+          color: gridColor ?? "rgba(226, 226, 226, 0.5)",
         },
         horzLines: {
           visible: showGrid,
-          color: "rgba(226, 226, 226, 0.5)",
+          color: gridColor ?? "rgba(226, 226, 226, 0.5)",
         },
       },
       rightPriceScale: {
@@ -90,6 +100,9 @@ export const ReusableChart = ({
         borderColor: "transparent",
         timeVisible: true,
         secondsVisible: false,
+        rightOffset: 0,
+        fixLeftEdge: true,
+        fixRightEdge: true,
       },
       width: chartContainerRef.current.clientWidth,
       height: height,
@@ -123,7 +136,7 @@ export const ReusableChart = ({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [gradientColors, lineColor, height, showGrid, formatYAxisLabel, textColor]);
+  }, [gradientColors, lineColor, height, showGrid, showVertGrid, gridColor, formatYAxisLabel, textColor]);
 
   // Update data when it changes
   useEffect(() => {

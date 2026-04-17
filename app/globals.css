@@ -125,7 +125,15 @@ html.dark * {
 
 /* Margin page 60/40 layout — outside @layer so it beats all Tailwind utilities */
 .margin-layout-cols {
-  grid-template-columns: 3fr 2fr !important;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) !important;
+}
+
+/* scrollbar-hide utility — hides scrollbar while keeping scroll functionality */
+@utility scrollbar-hide {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 

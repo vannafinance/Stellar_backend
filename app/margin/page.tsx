@@ -22,7 +22,6 @@ import {
 import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
 import { useTheme } from "@/contexts/theme-context";
-import { BottomSheet } from "@/components/ui/bottom-sheet";
 
 const Margin = () => {
   const { isDark } = useTheme();
@@ -259,10 +258,8 @@ const Margin = () => {
     return values;
   }, [accountStats, isLoadingMargin]);
 
-  const [sheetOpen, setSheetOpen] = useState(false);
-
   return (
-    <main className="w-full px-4 sm:px-10 lg:px-30 pb-8 lg:pb-0">
+    <main className="w-full h-[calc(100vh-56px)] lg:h-[calc(100vh-72px)] overflow-y-auto scrollbar-hide px-4 sm:px-10 lg:px-30 pb-8 lg:pb-0">
       {/* Error banner for margin data loading issues */}
       <AnimatePresence>
         {marginError && (
@@ -370,6 +367,7 @@ const Margin = () => {
       <section className="w-full pt-6 pb-4 sm:pb-6 lg:pb-10 flex flex-col gap-3">
         {/* Section heading */}
         <motion.header
+          ref={leverageCollateralRef}
           className="w-full flex items-center gap-3"
           initial={{ opacity: 0, x: -20 }}
           whileInView={{ opacity: 1, x: 0 }}
@@ -416,21 +414,11 @@ const Margin = () => {
           )}
         </motion.header>
 
-        {/* Mobile bottom sheet for leverage form */}
-        <BottomSheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <LeverageCollateral
-            switchToRepayTab={switchToRepayTab}
-            onTabSwitched={() => setSwitchToRepayTab(false)}
-          />
-        </BottomSheet>
-
-        {/* Two-column layout: 60% form / 40% info card */}
+        {/* Responsive layout — stacked on mobile/tablet, side-by-side on desktop */}
         <div
-          className="hidden lg:grid margin-layout-cols items-start gap-6"
-          style={{ gridTemplateColumns: "3fr 2fr" }}
-          ref={leverageCollateralRef}
+          className="flex flex-col lg:grid lg:items-start gap-5 sm:gap-6 margin-layout-cols min-w-0 w-full"
         >
-          <div className="w-full">
+          <div className="w-full min-w-0">
             <LeverageCollateral
               switchToRepayTab={switchToRepayTab}
               onTabSwitched={() => setSwitchToRepayTab(false)}
@@ -439,7 +427,7 @@ const Margin = () => {
 
           {/* Right: Margin account info card */}
           <motion.aside
-            className="flex flex-col gap-3 h-fit sticky top-4 self-start"
+            className="flex flex-col gap-3 h-fit w-full min-w-0 lg:sticky lg:top-4 lg:self-start"
             initial={{ opacity: 0, x: 20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}

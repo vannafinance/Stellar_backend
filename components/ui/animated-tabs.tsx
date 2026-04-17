@@ -7,6 +7,7 @@ import { useTheme } from "@/contexts/theme-context";
 export interface TabItem {
   id: string;
   label: string;
+  shortLabel?: string;
 }
 
 type TabType = "gradient" | "solid" | "underline" | "ghost" | "ghost-compact" | "segment" | "border";
@@ -189,7 +190,7 @@ export const AnimatedTabs = ({
             <motion.div
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`h-12 px-4 flex items-center justify-center text-center text-[14px] font-semibold rounded-[8px] whitespace-nowrap cursor-pointer transition-colors ${
+              className={`h-12 px-4 flex items-center justify-center text-center text-[14px] font-semibold rounded-lg whitespace-nowrap cursor-pointer transition-colors ${
                 isActive
                   ? isDark ? "text-[#F0F0F0]" : "text-[#1F1F1F]"
                   : "text-[#9CA3AF]"
@@ -205,7 +206,12 @@ export const AnimatedTabs = ({
               whileTap={{ scale: 0.95 }}
               transition={{ duration: 0.15 }}
             >
-              {tab.label}
+              {tab.shortLabel ? (
+                <>
+                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </>
+              ) : tab.label}
             </motion.div>
           );
         })}
@@ -230,7 +236,7 @@ export const AnimatedTabs = ({
   return (
     <div className={containerClassName}>
       <div
-        className={`border-[1px] ${containerWidth} flex gap-[16px] ${containerPadding} rounded-[12px] h-fit relative overflow-hidden ${
+        className={`border ${containerWidth} flex gap-4 ${containerPadding} rounded-xl h-fit relative overflow-hidden ${
           isDark ? "bg-[#111111]" : "bg-white"
         }`}
         onMouseLeave={() => setHoveredTab(null)}
@@ -243,7 +249,7 @@ export const AnimatedTabs = ({
             animate={{ x: `${currentIndex * 100}%` }}
             transition={SPRING_CONFIG}
           >
-            <div className={`rounded-[12px] h-full w-full ${isDark ? "bg-[#111111]" : "bg-white"}`} />
+            <div className={`rounded-xl h-full w-full ${isDark ? "bg-[#111111]" : "bg-white"}`} />
           </motion.div>
         )}
 
