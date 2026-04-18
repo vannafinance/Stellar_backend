@@ -19,12 +19,16 @@ import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
 import { ACCOUNT_STATS_ITEMS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+import { useAppModeStore } from "@/store/app-mode-store";
+import { LiteHome } from "@/components/lite-mode/lite-home";
 
 // Liquidation threshold from RiskEngine contract (BALANCE_TO_BORROW_THRESHOLD = 1.1)
 const LIQUIDATION_THRESHOLD = 1.1;
 
 export default function Home() {
   const { isDark } = useTheme();
+  const appMode = useAppModeStore((s) => s.mode);
+
   // State to trigger tab switch to Repay Loan
   const [switchToRepayTab, setSwitchToRepayTab] = useState(false);
 
@@ -180,6 +184,14 @@ export default function Home() {
 
     return acc;
   }, {} as Record<string, string>);
+
+  if (appMode === "lite") {
+    return (
+      <main className="w-full px-4 sm:px-10 lg:px-30 pb-8 pt-6">
+        <LiteHome />
+      </main>
+    );
+  }
 
   return (
     <main className="w-full px-4 sm:px-10 lg:px-30 pb-8 lg:pb-0">

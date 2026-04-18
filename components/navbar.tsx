@@ -9,6 +9,7 @@ import { tradeItems } from "@/lib/constants";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useWallet } from "@/hooks/use-wallet";
+import { useAppModeStore } from "@/store/app-mode-store";
 
 interface Navbar {
   items: {
@@ -25,6 +26,9 @@ export const Navbar = (props: Navbar) => {
   const { isDark, toggleTheme } = useTheme();
   useUserStore();
   const { address, connectWallet, disconnectWallet, isLoading } = useWallet();
+
+  const appMode = useAppModeStore((s) => s.mode);
+  const setAppMode = useAppModeStore((s) => s.set);
 
   const groupedItems = {
     primary: props.items.filter((item) => item.group === "primary"),
@@ -48,6 +52,15 @@ export const Navbar = (props: Navbar) => {
       }
     };
   }, []);
+
+  // Redirect to home when switching to lite mode from Pro-only pages
+  useEffect(() => {
+    if (appMode !== "lite") return;
+    const proOnlyRoutes = ["/portfolio", "/trade", "/farm", "/earn", "/analytics"];
+    if (proOnlyRoutes.some((r) => pathname.startsWith(r))) {
+      router.replace("/");
+    }
+  }, [appMode, pathname, router]);
 
   // Handler for nav item click with link
   const handleNavItemClickWithLink = (item: {
@@ -389,6 +402,47 @@ export const Navbar = (props: Navbar) => {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
         >
+          {/* Pro / Lite mode toggle */}
+          <div
+            role="switch"
+            aria-checked={appMode === "lite"}
+            aria-label="Toggle between Pro and Lite mode"
+            tabIndex={0}
+            onClick={() => setAppMode({ mode: appMode === "pro" ? "lite" : "pro" })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setAppMode({ mode: appMode === "pro" ? "lite" : "pro" });
+              }
+            }}
+            className="relative flex items-center rounded-[8px] border h-[40px] w-[96px] cursor-pointer select-none p-[3px] shrink-0"
+            style={{ background: isDark ? "#1A1A1A" : "#F4F4F4", borderColor: isDark ? "#2C2C2C" : "#E5E7EB" }}
+          >
+            <motion.div
+              className="absolute top-[3px] bottom-[3px] rounded-[6px]"
+              style={{ background: "linear-gradient(135deg, #703AE6 0%, #FF007A 100%)" }}
+              animate={{
+                left: appMode === "pro" ? "3px" : "50%",
+                right: appMode === "pro" ? "50%" : "3px",
+              }}
+              transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            />
+            <span
+              className={`relative z-10 flex-1 text-center text-[12px] font-bold transition-colors ${
+                appMode === "pro" ? "text-white" : isDark ? "text-[#595959]" : "text-[#A9A9A9]"
+              }`}
+            >
+              Pro
+            </span>
+            <span
+              className={`relative z-10 flex-1 text-center text-[12px] font-bold transition-colors ${
+                appMode === "lite" ? "text-white" : isDark ? "text-[#595959]" : "text-[#A9A9A9]"
+              }`}
+            >
+              Lite
+            </span>
+          </div>
+
           {address && (
             <Button
               size="small"
