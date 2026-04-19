@@ -8,7 +8,7 @@ import { OneClickStrategy } from "./one-click-strategy";
 import { OnboardingTutorial } from "./onboarding-tutorial";
 import { PositionsList } from "./positions-list";
 import { PositionDetail } from "./position-detail";
-import { MOCK_LITE_POSITIONS } from "./lite-position-types";
+import { MOCK_LITE_POSITIONS, buildRealPositions } from "./lite-position-types";
 import { aggregateByPool } from "./lite-position-math";
 
 const containerVariants: Variants = {
@@ -34,13 +34,21 @@ export const LiteHome = () => {
   const hasMarginAccount = useMarginAccountInfoStore((s) => s.hasMarginAccount);
   const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
   const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
+  const borrowedBalances = useMarginAccountInfoStore((s) => s.borrowedBalances);
+  const avgHealthFactor = useMarginAccountInfoStore((s) => s.avgHealthFactor);
 
-  /* Stellar EOA flow: positions come from on-chain margin-state.
-     MOCK_LITE_POSITIONS is used until real Stellar position fetching is wired up.
-     aggregateByPool collapses multiple deposits into the same vault into one row. */
+  /* Build positions: prefer real on-chain data when the user has an active
+     margin account with borrowed balances; fall back to Stellar-themed mocks. */
   const positions = useMemo(() => {
+    if (hasMarginAccount && Object.keys(borrowedBalances).length > 0) {
+      const hf = avgHealthFactor > 0
+        ? avgHealthFactor
+        : totalBorrowedValue > 0 ? totalCollateralValue / totalBorrowedValue : 999;
+      const real = buildRealPositions(borrowedBalances, totalCollateralValue, hf);
+      if (real.length > 0) return aggregateByPool(real);
+    }
     return aggregateByPool(MOCK_LITE_POSITIONS);
-  }, [hasMarginAccount, totalCollateralValue, totalBorrowedValue]);
+  }, [hasMarginAccount, borrowedBalances, totalCollateralValue, totalBorrowedValue, avgHealthFactor]);
 
   const hasPosition = positions.length > 0;
 
@@ -154,6 +162,7 @@ export const LiteHome = () => {
                 <PositionDetail
                   position={selectedPosition}
                   onBack={() => setSelectedPositionId(null)}
+                  onExitSuccess={() => setSelectedPositionId(null)}
                 />
               ) : (
                 <PositionsList

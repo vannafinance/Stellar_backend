@@ -8,12 +8,17 @@ export interface LitePosition {
   poolLabel: string;
   protocol: string;
   poolVersion: string;
+  /** 'single' = Blend lending pool; 'lp' = Soroswap/Aquarius AMM */
+  poolType: "single" | "lp";
+  poolTokens: string[];
   collateralAsset: string;
   collateralAmount: number;
   collateralUsd: number;
   borrowAsset: string;
   borrowAmount: number;
   borrowUsd: number;
+  /** true when collateralAsset === borrowAsset (both tokens live in the pool) */
+  isSameAsset: boolean;
   leverage: number;
   supplyApr: number;
   vannaFeeApr: number;
@@ -25,11 +30,11 @@ export interface LitePosition {
   openedAt: string;
 }
 
-/* ═══ Mock positions — numbers derived from lite-position-math ═══
+/* ═══ Mock positions — Stellar (XLM / USDC / Blend) themed ═══════════════
  *
- * All rows use the SAME formulas shipped with the math helper, so whatever the
- * sidebar displays matches the list. Stellar EOA integration will replace this
- * array with a real fetch; the shape and math are unchanged.
+ * These are displayed when no real margin account positions exist.
+ * Stellar integration replaces this array with real on-chain data;
+ * the shape and math are unchanged.
  */
 
 interface BuildArgs {
@@ -37,7 +42,9 @@ interface BuildArgs {
   poolId: string;
   protocol: string;
   poolVersion: string;
-  asset: string;
+  poolType: "single" | "lp";
+  poolTokens: string[];
+  asset: string;              // collateral & borrow asset (same-asset positions)
   priceUsd: number;
   collateralAmount: number;
   leverage: number;
@@ -66,12 +73,15 @@ const buildPosition = (a: BuildArgs): LitePosition => {
     poolLabel: a.asset,
     protocol: a.protocol,
     poolVersion: a.poolVersion,
+    poolType: a.poolType,
+    poolTokens: a.poolTokens,
     collateralAsset: a.asset,
     collateralAmount: a.collateralAmount,
     collateralUsd,
     borrowAsset: a.asset,
     borrowAmount,
     borrowUsd,
+    isSameAsset: true,
     leverage: a.leverage,
     supplyApr: a.supplyApr,
     vannaFeeApr: a.vannaFeeApr,
@@ -85,60 +95,153 @@ const buildPosition = (a: BuildArgs): LitePosition => {
 };
 
 export const MOCK_LITE_POSITIONS: LitePosition[] = [
-  /* User's spec: deposit 1 ETH, borrow 5 ETH → 6× leverage, ETH 5%, fee 6%.
-     netApr = 6·5 − 5·6 = 0%.  Shown so user can see break-even rendering. */
+  /* XLM 5× on Blend XLM pool — healthy, profitable.
+     netApr = 5×5.2 − 4×3.5 = 26 − 14 = 12%. */
   buildPosition({
-    id: "pos-eth-6x",
-    poolId: "eth-aave",
-    protocol: "Aave",
-    poolVersion: "V3",
-    asset: "ETH",
-    priceUsd: 3500,
-    collateralAmount: 1,
-    leverage: 6,
-    supplyApr: 5,
-    vannaFeeApr: 6,
-    healthFactor: 1.38,
-    liquidationLtv: 82,
-    status: "risky",
-    openedAt: "1d ago",
-    elapsedYears: 1 / 365,
-  }),
-  /* Same deposit size, USDC pool.  USDC 3%, fee 6%, 6×.
-     netApr = 6·3 − 5·6 = −12% (loss — realistic at these rates). */
-  buildPosition({
-    id: "pos-usdc-6x",
-    poolId: "usdc-aave",
-    protocol: "Aave",
-    poolVersion: "V3",
-    asset: "USDC",
-    priceUsd: 1,
-    collateralAmount: 1000,
-    leverage: 6,
-    supplyApr: 3,
-    vannaFeeApr: 6,
-    healthFactor: 1.42,
-    liquidationLtv: 86,
-    status: "risky",
-    openedAt: "3d ago",
-    elapsedYears: 3 / 365,
-  }),
-  /* Healthy profitable scenario: USDC 10% / fee 6% / 5× → netApr = 26%. */
-  buildPosition({
-    id: "pos-usdc-5x",
-    poolId: "usdc-aave-prime",
-    protocol: "Aave",
-    poolVersion: "V3",
-    asset: "USDC",
-    priceUsd: 1,
+    id: "pos-xlm-5x",
+    poolId: "xlm-blend",
+    protocol: "Blend",
+    poolVersion: "V1",
+    poolType: "single",
+    poolTokens: ["XLM"],
+    asset: "XLM",
+    priceUsd: 0.10,
     collateralAmount: 1000,
     leverage: 5,
-    supplyApr: 10,
-    vannaFeeApr: 6,
+    supplyApr: 5.2,
+    vannaFeeApr: 3.5,
     healthFactor: 1.67,
-    liquidationLtv: 86,
+    liquidationLtv: 82,
     status: "active",
-    openedAt: "12d ago",
-    elapsedYears: 12 / 365,
+    openedAt: "2d ago",
+    elapsedYears: 2 / 365,
+  }),
+  /* USDC 6× on Blend USDC pool — risky HF, break-even APR for demo.
+     netApr = 6×8.1 − 5×5.0 = 48.6 − 25 = 23.6%, but user over-leveraged → HF 1.35. */
+  buildPosition({
+    id: "pos-usdc-6x",
+    poolId: "usdc-blend",
+    protocol: "Blend",
+    poolVersion: "V1",
+    poolType: "single",
+    poolTokens: ["USDC"],
+    asset: "USDC",
+    priceUsd: 1.0,
+    collateralAmount: 500,
+    leverage: 6,
+    supplyApr: 8.1,
+    vannaFeeApr: 5.0,
+    healthFactor: 1.35,
+    liquidationLtv: 86,
+    status: "risky",
+    openedAt: "5d ago",
+    elapsedYears: 5 / 365,
+  }),
+  /* USDC 3× on Soroswap XLM/USDC LP — profitable, healthy.
+     netApr = 3×10.2 − 2×5.0 = 30.6 − 10 = 20.6%. */
+  buildPosition({
+    id: "pos-usdc-soroswap-3x",
+    poolId: "xlm-usdc-soroswap",
+    protocol: "Soroswap",
+    poolVersion: "DEX",
+    poolType: "lp",
+    poolTokens: ["XLM", "USDC"],
+    asset: "USDC",
+    priceUsd: 1.0,
+    collateralAmount: 300,
+    leverage: 3,
+    supplyApr: 10.2,
+    vannaFeeApr: 5.0,
+    healthFactor: 2.10,
+    liquidationLtv: 82,
+    status: "active",
+    openedAt: "10d ago",
+    elapsedYears: 10 / 365,
   }),
 ];
+
+/* ═══ Real position builder ══════════════════════════════════════════════
+ *
+ * Converts margin-account-info-store's borrowedBalances into LitePosition
+ * rows. Called from lite-home.tsx when the user has an active margin account.
+ */
+const POOL_INFO: Record<string, { protocol: string; poolVersion: string; poolType: "single" | "lp"; tokens: string[]; supplyApr: number; vannaFeeApr: number; liquidationLtv: number }> = {
+  XLM:  { protocol: "Blend",    poolVersion: "V1",  poolType: "single", tokens: ["XLM"],        supplyApr: 5.2,  vannaFeeApr: 3.5, liquidationLtv: 82 },
+  USDC: { protocol: "Blend",    poolVersion: "V1",  poolType: "single", tokens: ["USDC"],       supplyApr: 8.1,  vannaFeeApr: 5.0, liquidationLtv: 86 },
+  BLUSDC: { protocol: "Blend",  poolVersion: "V1",  poolType: "single", tokens: ["USDC"],       supplyApr: 8.1,  vannaFeeApr: 5.0, liquidationLtv: 86 },
+};
+
+const TOKEN_PRICES: Record<string, number> = { XLM: 0.10, USDC: 1.0, BLUSDC: 1.0 };
+
+export function buildRealPositions(
+  borrowedBalances: Record<string, { amount: string; usdValue: string }>,
+  totalCollateralValue: number,
+  healthFactor: number
+): LitePosition[] {
+  const positions: LitePosition[] = [];
+  const borrowEntries = Object.entries(borrowedBalances).filter(
+    ([, b]) => Number(b.amount) > 0
+  );
+  if (borrowEntries.length === 0) return positions;
+
+  // Spread collateral proportionally across borrow positions
+  const totalBorrowUsd = borrowEntries.reduce(
+    (s, [, b]) => s + Number(b.usdValue), 0
+  );
+
+  for (const [token, balance] of borrowEntries) {
+    const borrowAmount = Number(balance.amount) || 0;
+    const borrowUsd    = Number(balance.usdValue) || 0;
+    if (borrowAmount <= 0) continue;
+
+    // Proportional share of total collateral for this borrow leg
+    const collateralUsd = totalBorrowUsd > 0
+      ? totalCollateralValue * (borrowUsd / totalBorrowUsd)
+      : totalCollateralValue;
+
+    const info = POOL_INFO[token] ?? {
+      protocol: "Blend", poolVersion: "V1", poolType: "single" as const,
+      tokens: [token], supplyApr: 5.2, vannaFeeApr: 3.5, liquidationLtv: 82,
+    };
+
+    // Infer collateral asset: if borrowed XLM, user deposited USDC (and vice versa).
+    // If prices match, treat as same-asset.
+    const inferredCollateralAsset = token === "XLM" ? "USDC" : "XLM";
+    const collateralAsset = inferredCollateralAsset;
+    const collateralPrice = TOKEN_PRICES[collateralAsset] ?? 1.0;
+    const collateralAmount = collateralUsd / collateralPrice;
+
+    const leverage = collateralUsd > 0 ? (collateralUsd + borrowUsd) / collateralUsd : 1;
+    const netApr = calcNetApr({ supplyApr: info.supplyApr, vannaFeeApr: info.vannaFeeApr, leverage });
+    const status: LitePositionStatus =
+      healthFactor >= 1.5 ? "active" : healthFactor >= 1.1 ? "risky" : "liquidation";
+
+    positions.push({
+      id: `pos-${token.toLowerCase()}`,
+      poolId: `${token.toLowerCase()}-blend`,
+      poolLabel: token,
+      protocol: info.protocol,
+      poolVersion: info.poolVersion,
+      poolType: info.poolType,
+      poolTokens: info.tokens,
+      collateralAsset,
+      collateralAmount,
+      collateralUsd,
+      borrowAsset: token,
+      borrowAmount,
+      borrowUsd,
+      isSameAsset: false,
+      leverage,
+      supplyApr: info.supplyApr,
+      vannaFeeApr: info.vannaFeeApr,
+      netApr,
+      earningsUsd: 0,
+      healthFactor,
+      liquidationLtv: info.liquidationLtv,
+      status,
+      openedAt: "recently",
+    });
+  }
+
+  return positions;
+}

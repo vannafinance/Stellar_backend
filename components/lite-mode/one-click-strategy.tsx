@@ -5,7 +5,8 @@ import { motion, AnimatePresence, type Variants } from "framer-motion";
 import Image from "next/image";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
-import { useMarginAccountInfoStore, createMarginAccount, depositAndBorrow } from "@/store/margin-account-info-store";
+import { useMarginAccountInfoStore, createMarginAccount } from "@/store/margin-account-info-store";
+import { executeOneClickStrategy } from "@/lib/one-click-strategy";
 import { iconPaths } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { LeverageSlider } from "@/components/ui/leverage-slider";
@@ -113,6 +114,7 @@ export const OneClickStrategy = () => {
   const userAddress = useUserStore((s) => s.address);
   const tokenBalances = useUserStore((s) => s.tokenBalances);
   const hasMarginAccount = useMarginAccountInfoStore((s) => s.hasMarginAccount);
+  const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
   const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
   const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
 
@@ -273,17 +275,33 @@ export const OneClickStrategy = () => {
 
   /* ─── Execute strategy ─── */
   const handleExecute = async () => {
-    if (!userAddress || collateralNum <= 0) return;
+    if (!userAddress || !marginAccountAddress || collateralNum <= 0) return;
     setLoading(true);
 
-    const totalSteps = borrowedAmount > 0 ? 2 : 1;
     setTxModal({
       open: true, status: "pending", title: "Opening Leveraged Position",
-      message: `Step 1/${totalSteps}: Depositing ${collateralNum} ${collateralAsset}...`,
+      message: `Preparing transaction...`,
     });
 
     try {
-      const result = await depositAndBorrow(userAddress, collateralNum, leverage, collateralAsset);
+      const result = await executeOneClickStrategy({
+        userAddress,
+        marginAccountAddress,
+        collateralAsset,
+        collateralAmount: collateralNum,
+        borrowAsset,
+        borrowAmount: borrowedAmount,
+        leverage,
+        poolProtocol: selectedPool.protocol,
+        poolType: selectedPool.type,
+        poolTokens: selectedPool.tokens,
+        scenario,
+        prices,
+        onStep: (msg) => {
+          setTxModal((p) => ({ ...p, message: msg }));
+        },
+      });
+
       if (!result.success) throw new Error(result.error);
 
       setTxModal({
@@ -295,7 +313,10 @@ export const OneClickStrategy = () => {
       setCollateralAmount("");
       setLeverage(1);
     } catch (err: any) {
-      const rejected = err?.message?.includes("cancelled") || err?.message?.includes("rejected") || err?.message?.includes("denied");
+      const rejected =
+        err?.message?.includes("cancelled") ||
+        err?.message?.includes("rejected") ||
+        err?.message?.includes("denied");
       setTxModal({
         open: true, status: "error",
         title: rejected ? "Cancelled" : "Failed",
@@ -310,7 +331,8 @@ export const OneClickStrategy = () => {
     collateralNum > 0 &&
     collateralNum <= balanceNum &&
     (borrowedAmount <= 0 || (borrowUsd <= maxBorrowUsd && newHF > 1.2)) &&
-    !!userAddress;
+    !!userAddress &&
+    !!marginAccountAddress;
 
   const getButtonText = () => {
     if (!userAddress) return "Connect Wallet";

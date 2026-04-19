@@ -5,14 +5,19 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { useTheme } from "@/contexts/theme-context";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { iconPaths } from "@/lib/constants";
+import { useUserStore } from "@/store/user";
+import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import type { LitePosition } from "./lite-position-types";
 import { calcExitPreview } from "./lite-position-math";
+import { closePosition } from "@/lib/one-click-strategy";
 
 interface PositionDetailProps {
   position: LitePosition;
   onBack: () => void;
-  onExecuteExit?: (exitPct: number) => void;
+  /** Called after a successful close so the parent can refresh the list. */
+  onExitSuccess?: () => void;
 }
 
 const TokenIcon = ({ symbol, size = 20 }: { symbol: string; size?: number }) => {
@@ -53,9 +58,20 @@ const aprColor = (apr: number) => (apr >= 0 ? "#10B981" : "#FC5457");
 
 const EXIT_PRESETS = [25, 50, 75, 100] as const;
 
-export const PositionDetail = ({ position, onBack, onExecuteExit }: PositionDetailProps) => {
+export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDetailProps) => {
   const { isDark } = useTheme();
+  const userAddress = useUserStore((s) => s.address);
+  const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
+
   const [exitPct, setExitPct] = useState<number>(100);
+  const [loading, setLoading] = useState(false);
+  const [txModal, setTxModal] = useState<{
+    open: boolean;
+    status: "pending" | "success" | "error";
+    title: string;
+    message: string;
+    txHash?: string;
+  }>({ open: false, status: "pending", title: "", message: "" });
 
   const cardBg = isDark ? "bg-[#1A1A1A] border-[#2C2C2C]" : "bg-white border-[#E5E7EB]";
   const headingText = isDark ? "text-white" : "text-[#111111]";
@@ -104,7 +120,93 @@ export const PositionDetail = ({ position, onBack, onExecuteExit }: PositionDeta
   const projectedHf = exit.projectedHf;
   const projectedLiquidity = exit.remainingBorrowUsd;
 
+  /* ── Close position handler ────────────────────────────────────────────── */
+  const handleExit = async () => {
+    if (!userAddress || !marginAccountAddress) return;
+    setLoading(true);
+    setTxModal({ open: true, status: "pending", title: "Closing Position", message: "Preparing transaction..." });
+    try {
+      const result = await closePosition({
+        userAddress,
+        marginAccountAddress,
+        borrowAsset: position.borrowAsset as "XLM" | "USDC",
+        borrowAmount: position.borrowAmount,
+        collateralAsset: position.collateralAsset as "XLM" | "USDC",
+        collateralAmount: position.collateralAmount,
+        poolProtocol: position.protocol,
+        poolType: position.poolType,
+        poolTokens: position.poolTokens,
+        isSameAsset: position.isSameAsset,
+        exitPct,
+        onStep: (msg) => setTxModal((p) => ({ ...p, message: msg })),
+      });
+      if (!result.success) throw new Error(result.error);
+      setTxModal({
+        open: true, status: "success",
+        title: exitPct === 100 ? "Position Closed" : `${exitPct}% Exit Complete`,
+        message: `Successfully withdrew from ${position.protocol} and repaid Vanna loan. Your collateral is now freed.`,
+        txHash: result.hash,
+      });
+      await refreshBorrowedBalances(marginAccountAddress);
+      onExitSuccess?.();
+    } catch (err: any) {
+      const cancelled = err?.message?.includes("cancelled") || err?.message?.includes("rejected");
+      setTxModal({
+        open: true, status: "error",
+        title: cancelled ? "Cancelled" : "Failed",
+        message: cancelled ? "Transaction cancelled by user." : err?.message || "Close position failed.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
+    <>
+      {/* ── Tx Modal ── */}
+      <Modal open={txModal.open} onClose={() => !loading && setTxModal((p) => ({ ...p, open: false }))}>
+        <div className={`w-[340px] sm:w-[400px] rounded-[20px] p-6 flex flex-col gap-5 ${isDark ? "bg-[#1A1A1A] border border-[#2C2C2C]" : "bg-white border border-[#E5E7EB]"}`}>
+          <div className="flex items-center justify-center pt-2">
+            {txModal.status === "pending" && (
+              <div className="w-14 h-14 rounded-full border-4 border-[#703AE6]/30 border-t-[#703AE6] animate-spin" />
+            )}
+            {txModal.status === "success" && (
+              <div className="w-14 h-14 rounded-full bg-[#10B981]/15 flex items-center justify-center">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+            )}
+            {txModal.status === "error" && (
+              <div className="w-14 h-14 rounded-full bg-[#FC5457]/15 flex items-center justify-center">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FC5457" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </div>
+            )}
+          </div>
+          <div className="text-center">
+            <h3 className={`text-[16px] font-bold mb-1.5 ${isDark ? "text-white" : "text-[#111111]"}`}>{txModal.title}</h3>
+            <p className={`text-[13px] leading-[20px] ${isDark ? "text-[#919191]" : "text-[#6B7280]"}`}>{txModal.message}</p>
+            {txModal.txHash && (
+              <p className={`text-[11px] mt-2 font-mono ${isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>
+                {txModal.txHash.slice(0, 8)}...{txModal.txHash.slice(-8)}
+              </p>
+            )}
+          </div>
+          {txModal.status !== "pending" && (
+            <button
+              type="button"
+              onClick={() => setTxModal((p) => ({ ...p, open: false }))}
+              className="w-full text-white text-[14px] font-semibold py-3 rounded-[12px] hover:opacity-90 transition-opacity"
+              style={{ background: "linear-gradient(135deg, #703AE6 0%, #FF007A 100%)" }}
+            >
+              {txModal.status === "success" ? "Done" : "Close"}
+            </button>
+          )}
+        </div>
+      </Modal>
+
     <div className="w-full flex flex-col lg:flex-row gap-5">
       {/* ═══════ LEFT: Position management ═══════ */}
       <motion.div
@@ -495,10 +597,11 @@ export const PositionDetail = ({ position, onBack, onExecuteExit }: PositionDeta
         {/* CTA */}
         <div className={`w-full rounded-xl border p-5 ${cardBg}`}>
           <Button
-            text={exitPct === 100 ? "Close Position" : `Exit ${exitPct}% of Position`}
+            text={loading ? "Processing..." : exitPct === 100 ? "Close Position" : `Exit ${exitPct}% of Position`}
             size="large"
             type="gradient"
-            onClick={() => onExecuteExit?.(exitPct)}
+            disabled={loading || !userAddress || !marginAccountAddress}
+            onClick={handleExit}
           />
           <p className={`text-[11px] text-center mt-2 ${subMuted}`}>
             Vanna handles the repay + withdraw in a single transaction.
@@ -629,5 +732,6 @@ export const PositionDetail = ({ position, onBack, onExecuteExit }: PositionDeta
         </div>
       </motion.aside>
     </div>
+    </>
   );
 };
