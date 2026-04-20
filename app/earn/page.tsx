@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Chart } from "@/components/earn/chart";
+import { CollapsibleChart } from "@/components/ui/collapsible-chart";
 import { Table } from "@/components/earn/table";
 import { Carousel } from "@/components/ui/carousel";
 import { tableHeadings } from "@/lib/constants/earn";
@@ -312,14 +312,34 @@ export default function Earn() {
         <Carousel items={earnCarouselItems} autoplayInterval={5000} />
       </section>
 
-      {/* Charts — below carousel, side by side */}
+      {/* Stats with expandable charts — below carousel, side by side */}
       {userAddress && (
-        <section className="w-full pb-4 flex flex-col lg:flex-row gap-3" aria-label="User Dashboard">
+        <section className="w-full pb-4 flex flex-col lg:flex-row gap-3" aria-label="Protocol Dashboard">
           <article className="flex-1 min-w-0">
-            <Chart containerWidth="w-full" containerHeight="h-[320px]" type="overall-deposit" liveData={liveDepositData} height={220} />
+            <CollapsibleChart
+              label="Overall Deposit"
+              statValue={`$${(liveDepositData.length > 0
+                ? liveDepositData[liveDepositData.length - 1].amount
+                : 0
+              ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              chartProps={{
+                type: "overall-deposit",
+                customData: liveDepositData,
+              }}
+            />
           </article>
           <article className="flex-1 min-w-0">
-            <Chart containerWidth="w-full" containerHeight="h-[320px]" type="net-apy" liveData={liveNetApyData} height={220} />
+            <CollapsibleChart
+              label="Net APY"
+              statValue={`$${(liveNetApyData.length > 0
+                ? liveNetApyData[liveNetApyData.length - 1].amount
+                : 0
+              ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              chartProps={{
+                type: "net-apy",
+                customData: liveNetApyData,
+              }}
+            />
           </article>
         </section>
       )}

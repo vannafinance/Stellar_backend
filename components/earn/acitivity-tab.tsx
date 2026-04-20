@@ -130,7 +130,7 @@ export const ActivityTab = () => {
               clickable: "address",
             },
             {
-              icon: "/icons/xlm.svg",
+              icon: "/coins/xlmbg.png",
               title: `${totalXLM.toLocaleString()} XLM`,
               description: `$${(totalXLM * 0.1).toLocaleString()}`,
             },

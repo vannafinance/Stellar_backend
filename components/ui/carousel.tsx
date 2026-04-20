@@ -57,12 +57,12 @@ export const Carousel = (props: Carousel) => {
         className="absolute inset-0 w-full h-full opacity-18 object-cover"
       />
       <div
-        className="relative z-10 w-full h-fit flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0"
+        className="relative z-10 w-full h-fit flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5"
         role="region"
         aria-label="Carousel"
         aria-live="polite"
       >
-        <div className="w-full sm:w-fit h-fit flex items-center gap-4 sm:gap-[24px]">
+        <div className="w-full sm:w-auto shrink-0 h-fit flex items-center gap-4 sm:gap-[24px]">
           <div className="w-10 h-10 sm:w-13 sm:h-13 p-1.5 sm:p-2 bg-[#F4F4F4] rounded-full flex flex-col justify-center items-center shrink-0">
             <EducationIcon />
           </div>
@@ -70,7 +70,7 @@ export const Carousel = (props: Carousel) => {
           <AnimatePresence mode="wait">
             <motion.div
               key={currentIndex}
-              className="text-white font-bold text-[17px] sm:text-[21px] w-full sm:w-[204px]"
+              className="text-white font-bold text-[17px] sm:text-[18px] lg:text-[21px] w-full sm:w-[180px] lg:w-[204px]"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
@@ -81,12 +81,12 @@ export const Carousel = (props: Carousel) => {
           </AnimatePresence>
         </div>
 
-        <div className="hidden sm:block h-13 border rotate-[-90]" />
+        <div className="hidden sm:block w-px shrink-0 h-13 bg-white/40" />
 
         <AnimatePresence mode="wait">
           <motion.div
             key={currentIndex}
-            className="text-[12px] sm:text-[14px] text-white/90 sm:text-white font-medium sm:font-semibold w-full sm:w-[728px] pb-2 sm:pb-0"
+            className="text-[12px] sm:text-[12px] lg:text-[14px] text-white/90 sm:text-white font-medium sm:font-semibold w-full sm:flex-1 sm:min-w-0 pb-2 sm:pb-0"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}

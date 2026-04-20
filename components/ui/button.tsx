@@ -36,7 +36,7 @@ export const Button = (props: Button) => {
           : props.size == "large"
           ? "rounded-xl text-[13px] py-2.5 px-3 sm:text-[13px] sm:py-2.5 sm:px-4"
           : props.type === "navbar"
-          ? "text-[13px] py-[10px] px-[20px]"
+          ? "text-[12px] py-2 px-3.5"
           : "text-[12px] p-[8px]"
       } disabled:cursor-not-allowed transition cursor-pointer rounded-[8px] font-semibold ${
         props.type == "solid"

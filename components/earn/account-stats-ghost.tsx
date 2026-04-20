@@ -14,41 +14,58 @@ interface AccountStatsGhostProps {
   gridRows?: string; // e.g., "grid-rows-1", "grid-rows-2", etc.
 }
 
-export const AccountStatsGhost = ({ items, type = "standard", gridCols = "grid-cols-3", gridRows = "grid-rows-1" }: AccountStatsGhostProps) => {
+export const AccountStatsGhost = ({ items, type = "standard", gridCols, gridRows }: AccountStatsGhostProps) => {
   const { isDark } = useTheme();
-  
-  const containerClass = type === "background" || type === "background-light"
-    ? `w-full h-full grid ${gridCols} ${gridRows} gap-[20px] place-items-center px-[10px] py-[20px] rounded-[24px] border-[1px] ${isDark ? "bg-[#222222]" : type === "background-light" ? "bg-[#FFFFFF]" : "bg-[#F7F7F7]"}`
-    : "w-full h-full flex justify-between";
-  
+
+  // Determine if we should use grid layout
+  const useGrid = type === "background" || type === "background-light" || (gridCols && gridRows);
+
+  // Default grid classes if not provided
+  const defaultGridCols = gridCols || "grid-cols-3";
+  const defaultGridRows = gridRows || "grid-rows-1";
+
+  // Build container class
+  let containerClass = "w-full h-fit rounded-xl p-3 border transition-colors";
+  containerClass += isDark
+    ? " bg-[#1A1A1A] border-[#2A2A2A] hover:border-[#333333]"
+    : " bg-white border-[#E8E8E8] hover:border-[#E2E2E2]";
+
+  if (useGrid) {
+    containerClass += ` grid ${defaultGridCols} ${defaultGridRows} gap-x-3 gap-y-5`;
+  } else {
+    containerClass += " grid grid-cols-2 sm:flex sm:items-stretch sm:justify-between gap-x-3 gap-y-4";
+  }
+
   return (
     <section className={containerClass} aria-label="Statistics Overview">
-      {items.map((items) => {
-        const articleClass = type === "background"
-          ? "w-full h-fit flex flex-col gap-[12px] px-[20px]"
-          : "w-[240px] h-fit flex flex-col gap-[12px]";
-        
+      {items.map((item, index) => {
+        const articleClass = useGrid
+          ? "w-full h-fit flex flex-col gap-1.5"
+          : "flex-1 min-w-0 flex flex-col gap-1.5 justify-center";
+
+        const borderClass = "";
+
         return (
           <article
-            key={items.id}
-            className={articleClass}
+            key={item.id}
+            className={`${articleClass} ${borderClass} ${useGrid ? "" : "px-2 sm:px-4"}`}
           >
-            <h3 className={`text-[12px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#5C5B5B]"
+            <h3 className={`text-[11px] sm:text-[12px] font-medium sm:whitespace-nowrap ${
+              isDark ? "text-[#A7A7A7]" : "text-[#777777]"
             }`}>
-              {items.name}
+              {item.name}
             </h3>
-            <div className="w-full h-fit flex flex-col gap-[4px]">
-              <p className={`text-[28px] font-bold ${
-                isDark ? "text-white" : ""
+            <div className="w-full h-fit flex flex-col gap-0.5">
+              <p className={`text-[18px] sm:text-[20px] font-semibold leading-tight ${
+                isDark ? "text-white" : "text-[#111111]"
               }`}>
-                {items.amount}
+                {item.amount}
               </p>
-              {items.amountInToken && (
+              {item.amountInToken && (
                 <p className={`text-[12px] font-medium ${
-                  isDark ? "text-white" : ""
+                  isDark ? "text-[#777777]" : "text-[#A7A7A7]"
                 }`}>
-                  {items.amountInToken}
+                  {item.amountInToken}
                 </p>
               )}
             </div>
