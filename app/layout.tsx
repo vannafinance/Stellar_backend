@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { navbarItems } from "@/lib/constants";
 import { ThemeProvider } from "@/contexts/theme-context";
+import { ScaleWrapper } from "@/components/ui/scale-wrapper";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -29,8 +30,10 @@ export default function RootLayout({
         style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
       >
         <ThemeProvider>
-        <Navbar items={navbarItems}/>
-        {children}
+          <ScaleWrapper>
+            <Navbar items={navbarItems}/>
+            {children}
+          </ScaleWrapper>
         </ThemeProvider>
       </body>
     </html>

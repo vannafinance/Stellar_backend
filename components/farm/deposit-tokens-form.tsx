@@ -114,14 +114,14 @@ export const DepositTokensForm = ({ assets }: { assets: string[] }) => {
     );
 
     const desktopHeader = (
-        <div className="hidden lg:flex items-center justify-between">
+        <div className="hidden xl:flex items-center justify-between">
             <p className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Deposit Tokens</p>
             {toggleRow}
         </div>
     );
 
     const mobileHeader = (
-        <div className="flex lg:hidden flex-col items-center gap-2">
+        <div className="flex xl:hidden flex-col items-center gap-2">
             <p className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Deposit Tokens</p>
             {isOpen && toggleRow}
         </div>
@@ -132,13 +132,13 @@ export const DepositTokensForm = ({ assets }: { assets: string[] }) => {
     return (
         <>
             {/* Desktop: normal inline form */}
-            <div className={`hidden lg:flex w-full rounded-2xl border p-4 flex-col gap-4 ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
+            <div className={`hidden xl:flex w-full rounded-2xl border p-4 flex-col gap-4 ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
                 {desktopHeader}
                 <FormContent {...formProps} />
             </div>
 
-            {/* Mobile: bottom sheet */}
-            <div className="lg:hidden">
+            {/* Mobile/Tablet: bottom sheet */}
+            <div className="xl:hidden">
                 <AnimatePresence>
                     {isOpen && (
                         <motion.div

@@ -18,7 +18,7 @@ export const Form = () => {
   return (
     <>
       {/* Desktop: normal inline form */}
-      <div className={`hidden lg:flex w-full rounded-2xl border py-4 px-4 sm:px-5 h-fit flex-col gap-4 ${
+      <div className={`hidden xl:flex w-full rounded-2xl border py-4 px-4 sm:px-5 h-fit flex-col gap-4 ${
         isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"
       }`}>
         <AnimatedTabs
@@ -43,8 +43,8 @@ export const Form = () => {
         </AnimatePresence>
       </div>
 
-      {/* Mobile: bottom sheet */}
-      <div className="lg:hidden">
+      {/* Mobile/Tablet: bottom sheet */}
+      <div className="xl:hidden">
         {/* Backdrop */}
         <AnimatePresence>
           {isOpen && (
@@ -78,7 +78,7 @@ export const Form = () => {
               <AnimatedTabs
                 type="border"
                 containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-[#F7F7F7] border-[#E5E7EB]"}`}
-                tabClassName="!flex-1 !px-2 text-[13px]"
+                tabClassName="!flex-1 !px-2 text-[11px] sm:text-[13px]"
                 tabs={tabs}
                 activeTab={activeTab}
                 onTabChange={(tab) => {

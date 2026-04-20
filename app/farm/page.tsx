@@ -87,9 +87,12 @@ export default function FarmPage() {
     const aqRows = aquariusPools.map(({ pool, stats, isLoading }) => {
       const [tokenA, tokenB] = pool.tokens;
       const loading = isLoading;
-      const tvl = stats
-        ? `${parseFloat(stats.reserveA).toFixed(2)} ${tokenA} + ${parseFloat(stats.reserveB).toFixed(2)} ${tokenB}`
+      const tvlTitle = stats
+        ? `${parseFloat(stats.reserveA).toFixed(2)} ${tokenA}`
         : loading ? '...' : '—';
+      const tvlDescription = stats
+        ? `+ ${parseFloat(stats.reserveB).toFixed(2)} ${tokenB}`
+        : undefined;
       const fee = stats ? stats.feeFraction : loading ? '...' : '—';
       const shares = stats ? `${parseFloat(stats.totalShares).toFixed(2)} LP` : loading ? '...' : '—';
       return {
@@ -97,7 +100,7 @@ export default function FarmPage() {
         cell: [
           { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius', pool.feeFraction / 100 + '%', 'Testnet'] },
           { title: 'Aquarius' },
-          { title: tvl },
+          { title: tvlTitle, description: tvlDescription },
           { title: shares },
           { title: fee },
           { title: '—' },
@@ -111,16 +114,19 @@ export default function FarmPage() {
     const ssRows = soroswapPools.map(({ pool, stats, isLoading }) => {
       const [tokenA, tokenB] = pool.tokens;
       const loading = isLoading;
-      const tvl = stats
-        ? `${parseFloat(stats.reserveXLM).toFixed(2)} ${tokenA} + ${parseFloat(stats.reserveUSDC).toFixed(2)} ${tokenB}`
+      const tvlTitle = stats
+        ? `${parseFloat(stats.reserveXLM).toFixed(2)} ${tokenA}`
         : loading ? '...' : '—';
+      const tvlDescription = stats
+        ? `+ ${parseFloat(stats.reserveUSDC).toFixed(2)} ${tokenB}`
+        : undefined;
       const shares = stats ? `${parseFloat(stats.totalShares).toFixed(2)} LP` : loading ? '...' : '—';
       return {
         id: pool.id,
         cell: [
           { chain: tokenA, titles: [tokenA, tokenB], tags: ['Soroswap', pool.feeFraction / 100 + '%', 'Testnet'] },
           { title: 'Soroswap' },
-          { title: tvl },
+          { title: tvlTitle, description: tvlDescription },
           { title: shares },
           { title: loading ? '...' : stats ? `${pool.feeFraction / 100}%` : '—' },
           { title: '—' },

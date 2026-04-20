@@ -188,8 +188,8 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
         <AccountStatsGhost items={accountStatsItems} />
       </section>
 
-      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-24 lg:pb-16 w-full h-fit" aria-label="Vault Details and Actions">
-        <div className="flex flex-col lg:flex-row gap-5 lg:gap-4 w-full h-fit">
+      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-24 xl:pb-16 w-full h-fit" aria-label="Vault Details and Actions">
+        <div className="flex flex-col xl:flex-row gap-5 xl:gap-4 w-full h-fit">
           <article className="flex-1 min-w-0 h-full flex flex-col gap-3">
             <nav className="w-full overflow-x-auto no-scrollbar" aria-label="Vault Information Tabs">
               <AnimatedTabs
@@ -208,7 +208,7 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
             {activeTab === "margin-managers" && <MarginManagersTab />}
             {activeTab === "collateral-limits" && <CollateralLimitsTab />}
           </article>
-          <aside className="w-full lg:w-[420px] shrink-0 flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start" aria-label="Transaction Form">
+          <aside className="w-full xl:w-[420px] shrink-0 flex flex-col gap-3 xl:sticky xl:top-4 xl:self-start" aria-label="Transaction Form">
             <Form />
 
             {/* How it works */}

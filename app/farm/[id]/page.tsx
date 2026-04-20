@@ -459,7 +459,7 @@ export default function FarmDetailPage() {
     return iconPaths[assetName] || iconPaths[farmData.chain.toUpperCase()] || '/icons/eth-icon.png';
   }, [farmData]);
 
-  const isMultiAsset = rowData?.tabType === 'multi' && farmData.titles && farmData.titles.length > 1;
+  const isMultiAsset = false;
 
   // Range selector state for multi-asset add liquidity
   const [usdcRangeMin, setUsdcRangeMin] = useState(0.0001);
@@ -560,8 +560,8 @@ export default function FarmDetailPage() {
       )}
 
       {/* Main content */}
-      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-24 lg:pb-16 w-full">
-        <div className="flex flex-col lg:flex-row gap-4 w-full">
+      <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-24 xl:pb-16 w-full">
+        <div className="flex flex-col xl:flex-row gap-4 w-full">
 
           {/* Article — left/main content */}
           <article className="flex-1 min-w-0 flex flex-col gap-3">
@@ -659,7 +659,7 @@ export default function FarmDetailPage() {
           </article>
 
           {/* Aside — right sticky panel */}
-          <aside className="w-full lg:w-[420px] shrink-0 flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start">
+          <aside className="w-full xl:w-[420px] shrink-0 flex flex-col gap-3 xl:sticky xl:top-4 xl:self-start">
             {!isMultiAsset && <Form />}
 
             {isMultiAsset && !showAddLiquidity && (

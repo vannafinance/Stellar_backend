@@ -19,7 +19,7 @@ export const Form = () => {
     <>
       {/* Desktop: normal inline form */}
       <section
-        className={`hidden lg:flex w-full h-fit rounded-2xl border py-4 px-4 sm:px-5 flex-col gap-4 ${
+        className={`hidden xl:flex w-full h-fit rounded-2xl border py-4 px-4 sm:px-5 flex-col gap-4 ${
           isDark ? "bg-[#222222] border-[#333333]" : "bg-[#F7F7F7] border-[#E5E7EB]"
         }`}
         aria-label="Liquidity Management"
@@ -31,15 +31,15 @@ export const Form = () => {
             onTabChange={setActiveTab}
             type="border"
             containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
-            tabClassName="!flex-1 !px-3 text-[13px]"
+            tabClassName="!flex-1 !px-2 text-[11px] sm:text-[13px]"
           />
         </nav>
         {activeTab === "supply-liquidity" && <SupplyLiquidityTab />}
         {activeTab === "withdraw-liquidity" && <WithdrawLiquidity />}
       </section>
 
-      {/* Mobile: bottom sheet */}
-      <div className="lg:hidden">
+      {/* Mobile/Tablet: bottom sheet */}
+      <div className="xl:hidden">
         {/* Backdrop */}
         <AnimatePresence>
           {isOpen && (
@@ -80,7 +80,7 @@ export const Form = () => {
                 }}
                 type="border"
                 containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-[#F7F7F7] border-[#E5E7EB]"}`}
-                tabClassName="!flex-1 !px-3 text-[13px]"
+                tabClassName="!flex-1 !px-2 text-[11px] sm:text-[13px]"
               />
             </nav>
           </div>
