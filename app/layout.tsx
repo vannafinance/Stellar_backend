@@ -30,10 +30,10 @@ export default function RootLayout({
         style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
       >
         <ThemeProvider>
-          <ScaleWrapper>
+          {/* <ScaleWrapper> */}
             <Navbar items={navbarItems}/>
             {children}
-          </ScaleWrapper>
+          {/* </ScaleWrapper> */}
         </ThemeProvider>
       </body>
     </html>
