@@ -14,10 +14,16 @@ import { Collateral } from "./collateral-box";
 import { BorrowBox } from "./borrow-box";
 import { Dialogue } from "@/components/ui/dialogue";
 import { InfoCard } from "./info-card";
-import { Dropdown } from "../ui/dropdown";
 import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
 import { MBSelectionGrid } from "./mb-selection-grid";
-import { useMarginAccountInfoStore, depositAndBorrow, setupContractConfiguration, refreshBorrowedBalances } from "@/store/margin-account-info-store";
+import {
+  useMarginAccountInfoStore,
+  depositAndBorrow,
+  setupContractConfiguration,
+  refreshBorrowedBalances,
+  createMarginAccount,
+  checkUserMarginAccount,
+} from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWallet } from "@/hooks/use-wallet";
@@ -49,7 +55,7 @@ export const LeverageAssetsTab = () => {
   // Component state
   const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
   const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
-  const setHasMarginAccount = useMarginAccountInfoStore((state) => state.set);
+  const isCreatingAccount = useMarginAccountInfoStore((state) => state.isCreatingAccount);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [mode, setMode] = useState<Modes>("Deposit");
   const [borrowItems, setBorrowItems] = useState<BorrowInfo[]>([]);
@@ -443,6 +449,27 @@ export const LeverageAssetsTab = () => {
     }
   };
 
+  const handleSignAgreement = async () => {
+    if (!userAddress || isCreatingAccount) {
+      return;
+    }
+
+    try {
+      const created = await createMarginAccount(userAddress);
+
+      if (created) {
+        await checkUserMarginAccount(userAddress);
+        setActiveDialogue("none");
+        alert("Margin account created successfully.");
+      } else {
+        alert("Failed to create margin account. Please try again.");
+      }
+    } catch (error) {
+      console.error("Failed to create margin account:", error);
+      alert("Failed to create margin account. Please try again.");
+    }
+  };
+
   // MB selection handlers with Set - memoized to prevent unnecessary re-renders
   const handleMBToggle = useCallback((itemId: string, isSelected: boolean) => {
     setSelectedMBIds((prev) => {
@@ -464,14 +491,14 @@ export const LeverageAssetsTab = () => {
   return (
     <>
       <motion.section
-        className="w-full flex flex-col gap-[24px] pt-6"
+        className="w-full min-w-0 flex flex-col gap-2 pt-0"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, delay: 0.1 }}
       >
         {/* Mode toggle: Deposit / Borrow */}
         <motion.header
-          className={`w-full flex justify-end text-[14px] font-medium gap-2 items-center ${
+          className={`w-full flex justify-end text-[13px] font-medium gap-2 items-center ${
             isDark ? "text-white" : ""
           }`}
           initial={{ opacity: 0, x: 20 }}
@@ -485,7 +512,7 @@ export const LeverageAssetsTab = () => {
 
         {/* Deposit section */}
         <motion.section
-          className="w-full flex flex-col gap-[8px]"
+          className="w-full min-w-0 flex flex-col gap-1.5"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -504,9 +531,7 @@ export const LeverageAssetsTab = () => {
             {/* Render MB UI if MB is selected, otherwise render collaterals */}
             {isMBMode ? (
               <motion.article
-                className={`flex flex-col gap-[24px] p-[20px] rounded-[16px] border-[1px] ${
-                  isDark ? "bg-[#111111]" : "bg-white"
-                }`}
+                className={`flex flex-col gap-[24px] ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E2E2E2]"} p-[20px] rounded-[16px] border-[1px]`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
@@ -516,19 +541,31 @@ export const LeverageAssetsTab = () => {
                   <h3 className={`text-[20px] font-medium py-[10px] ${isDark ? "text-white" : ""}`}>
                     {mbTotalUsd} USD
                   </h3>
-                  <div className={`py-[4px] pr-[4px] pl-[8px] rounded-[8px] ${
-                    isDark ? "bg-[#222222] " : "bg-[#F2EBFE]"
+                  <div className={`flex items-center rounded-lg p-0.5 ${
+                    isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"
                   }`}>
-                    <Dropdown
-                      classname="text-[16px] font-medium gap-[8px]"
-                      items={[...BALANCE_TYPE_OPTIONS]}
-                      selectedOption={selectedBalanceType}
-                      setSelectedOption={(value) => {
-                        const id = collateralList[0]?.id || generateCollateralId();
-                        handleBalanceTypeChange(id, value as string);
-                      }}
-                      dropdownClassname="text-[14px] gap-[10px] "
-                    />
+                    {BALANCE_TYPE_OPTIONS.map((option) => (
+                      <motion.button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          const id = collateralList[0]?.id || generateCollateralId();
+                          handleBalanceTypeChange(id, option);
+                        }}
+                        whileTap={{ scale: 0.95 }}
+                        transition={{ duration: 0.1 }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
+                          selectedBalanceType === option
+                            ? "bg-[#703AE6] text-white shadow-sm"
+                            : isDark
+                            ? "text-[#777777] hover:text-[#AAAAAA]"
+                            : "text-[#888888] hover:text-[#555555]"
+                        }`}
+                        aria-pressed={selectedBalanceType === option}
+                      >
+                        {option}
+                      </motion.button>
+                    ))}
                   </div>
                 </header>
                 <MBSelectionGrid
@@ -656,7 +693,7 @@ export const LeverageAssetsTab = () => {
 
         {/* Borrow section */}
         <motion.section
-          className="w-full flex flex-col gap-[8px]"
+          className="w-full min-w-0 flex flex-col gap-1"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -681,7 +718,8 @@ export const LeverageAssetsTab = () => {
         </motion.section>
 
         {/* Details panel - shows calculations and info */}
-        <motion.aside
+        <motion.div
+          className="mt-3"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -700,7 +738,7 @@ export const LeverageAssetsTab = () => {
             showExpandable={true}
             expandableSections={[
               {
-                title: "More Details",
+                title: "Transaction Details",
                 
                 items: [
                   {
@@ -737,7 +775,7 @@ export const LeverageAssetsTab = () => {
               },
             ]}
           />
-        </motion.aside>
+        </motion.div>
 
         {/* Create Margin Account button */}
         <motion.section
@@ -821,8 +859,10 @@ export const LeverageAssetsTab = () => {
             >
               <Dialogue
                 description="Before you proceed, please review and accept the terms of borrowing on VANNA. This agreement ensures you understand the risks, responsibilities, and conditions associated with using the platform."
-                buttonOnClick={() => {setActiveDialogue("none"); setHasMarginAccount({hasMarginAccount:true}); } }
-                buttonText="Sign Agreement"
+                buttonOnClick={() => {
+                  void handleSignAgreement();
+                }}
+                buttonText={isCreatingAccount ? "Creating Account..." : "Sign Agreement"}
                 content={[
                   {
                     line: "Collateral Requirement",

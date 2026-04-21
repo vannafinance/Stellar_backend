@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import OrderBook from "@/components/spot/spot-orderbook/OrderBook";
 import OrderPlacementForm from "@/components/spot/spot-orderbook/OrderPlacementForm";
 import PositionTables from "@/components/spot/spot-orderbook/PositionTables";
@@ -10,7 +11,11 @@ import TradingPairInfo from "@/components/ui/TradingPairInfo";
 import TradingPairSearch from "@/components/spot/spot-orderbook/TradingPairSearch";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
-import { SpotSwapView } from "@/components/spot/spot-nonorderbook";
+
+const SpotSwapView = dynamic(
+  () => import("@/components/spot/spot-nonorderbook").then((mod) => mod.SpotSwapView),
+  { ssr: false }
+);
 
 const PROTCOL_OPTIONS = ["Aster", "Avantis"];
 

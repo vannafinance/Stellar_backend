@@ -13,7 +13,6 @@ import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
 import { AccountStats } from "@/components/margin/account-stats";
-import { CreateMarginAccount } from "@/components/margin/create-margin-account";
 import { useMarginAccountInfoStore, checkUserMarginAccount, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
@@ -229,32 +228,18 @@ export default function Home() {
         </motion.header>
 
         {/* Two-column layout */}
-        <div className="flex flex-col lg:grid lg:grid-cols-2 items-start gap-6" ref={leverageCollateralRef}>
-          {/* Left: Leverage collateral form or Create Account */}
+        <div className="flex flex-col lg:grid lg:items-start gap-6 min-w-0 w-full" style={{ gridTemplateColumns: "3fr 2fr" }} ref={leverageCollateralRef}>
+          {/* Left: Leverage collateral form */}
           <div className="w-full">
-            {hasMarginAccount ? (
-              <LeverageCollateral
-                key={`leverage-${marginAccountAddress}`}
-                switchToRepayTab={switchToRepayTab}
-                onTabSwitched={() => setSwitchToRepayTab(false)}
-              />
-            ) : (
-              <motion.div
-                key={`create-${userAddress}`}
-                className="w-full"
-                initial={{ opacity: 0, x: -20 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-              >
-                <CreateMarginAccount />
-              </motion.div>
-            )}
+            <LeverageCollateral
+              switchToRepayTab={switchToRepayTab}
+              onTabSwitched={() => setSwitchToRepayTab(false)}
+            />
           </div>
 
           {/* Right: Margin account info card - sticky */}
           <motion.aside
-            className="flex flex-col gap-3 h-fit sticky top-4 self-start"
+            className="flex flex-col gap-3 h-fit w-full min-w-0 lg:sticky lg:top-4 lg:self-start"
             initial={{ opacity: 0, x: 20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}

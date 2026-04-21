@@ -19,7 +19,7 @@ export const SpotSwapView = ({
 
   return (
     <div
-      className={`w-full min-h-[calc(100vh-80px)] flex flex-col items-center px-4 py-8 md:py-12 ${
+      className={`w-full min-h-[calc(100vh-80px)] flex flex-col items-center px-3 sm:px-4 py-6 sm:py-8 md:py-12 ${
         isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"
       }`}
     >

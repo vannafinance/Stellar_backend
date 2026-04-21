@@ -1,17 +1,18 @@
 'use client';
 
 import { useState, useEffect, useMemo } from "react";
-import { Dropdown } from "../ui/dropdown";
-import { DropdownOptions } from "@/lib/constants";
-import { STELLAR_POOLS } from "@/lib/constants/earn";
+import Image from "next/image";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
+import { iconPaths } from "@/lib/constants";
+import { InfoCard } from "../margin/info-card";
 import { Button } from "../ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
+import { useUserStore } from "@/store/user";
 import { useSupplyLiquidity, usePoolData } from "@/hooks/use-earn";
 import { AssetType } from "@/lib/stellar-utils";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
+import { STELLAR_POOLS } from "@/lib/constants/earn";
 
 const toInternalAsset = (value: string) => {
   if (value === 'BLUSDC' || value === 'USDC') return 'USDC';
@@ -30,233 +31,203 @@ const toDisplayAsset = (value: string) => {
 export const SupplyLiquidityTab = () => {
   const { isDark } = useTheme();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
-  const [selectedOption, setSelectedOption] = useState<string>(toDisplayAsset(selectedAsset));
-  const [value, setValue] = useState<string>("");
-  const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
-  const [tokenBalances, setTokenBalances] = useState({ XLM: '0', USDC: '0', BLEND_USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' });
-  
+  const selectedOption = toDisplayAsset(selectedAsset);
+  const normalizedAsset = toInternalAsset(selectedOption);
+
+  const [amount, setAmount] = useState<string>("");
+  const [selectedPercentage, setSelectedPercentage] = useState<number>(0);
+
   const userAddress = useUserStore((state) => state.address);
   const balance = useUserStore((state) => state.balance);
   const storeTokenBalances = useUserStore((state) => state.tokenBalances);
-  const depositedBalances = useUserStore((state) => state.depositedBalances);
 
   const { supply, isLoading, message, clearMessage } = useSupplyLiquidity();
   const { pools } = usePoolData();
 
-  // Sync with selected pool store
-  useEffect(() => {
-    setSelectedOption(toDisplayAsset(selectedAsset));
-  }, [selectedAsset]);
-
-  // Use balances from the user store (populated on wallet connect by refreshBalances)
-  useEffect(() => {
-    setTokenBalances(storeTokenBalances);
-  }, [storeTokenBalances]);
-
-  // Get pool stats for selected asset
-  const normalizedAsset = toInternalAsset(selectedOption);
   const selectedPool = pools[normalizedAsset as keyof typeof pools];
   const selectedPoolConfig = STELLAR_POOLS[normalizedAsset as keyof typeof STELLAR_POOLS];
 
-  // Calculate available balance based on selected asset
+  // Calculate available balance
   const availableBalance = useMemo(() => {
     if (normalizedAsset === 'XLM') {
-      // For XLM, use native balance minus some reserve for fees
       const xlmBalance = parseFloat(balance) || 0;
-      return Math.max(0, xlmBalance - 1).toFixed(7); // Keep 1 XLM for fees
+      return Math.max(0, xlmBalance - 1);
     } else if (normalizedAsset === 'USDC') {
-      return tokenBalances.BLEND_USDC || tokenBalances.USDC || '0';
+      return parseFloat(storeTokenBalances.BLEND_USDC || storeTokenBalances.USDC || '0');
     } else if (normalizedAsset === 'AQUARIUS_USDC') {
-      return tokenBalances.AQUARIUS_USDC || '0';
+      return parseFloat(storeTokenBalances.AQUARIUS_USDC || '0');
     } else if (normalizedAsset === 'SOROSWAP_USDC') {
-      return tokenBalances.SOROSWAP_USDC || '0';
+      return parseFloat(storeTokenBalances.SOROSWAP_USDC || '0');
     }
-    return '0';
-  }, [normalizedAsset, balance, tokenBalances]);
+    return 0;
+  }, [normalizedAsset, balance, storeTokenBalances]);
 
-  // Handle percentage button click
   const handlePercentageClick = (percent: number) => {
     setSelectedPercentage(percent);
-    const maxAmount = parseFloat(availableBalance) || 0;
-    const calculatedAmount = (maxAmount * percent / 100).toFixed(7);
-    setValue(calculatedAmount);
+    if (availableBalance > 0) {
+      const calculatedAmount = (availableBalance * percent) / 100;
+      setAmount(calculatedAmount.toFixed(7).replace(/\.?0+$/, ""));
+    }
   };
 
-  // Handle supply action
+  useEffect(() => {
+    setAmount("");
+    setSelectedPercentage(0);
+  }, [selectedAsset]);
+
   const handleSupply = async () => {
-    const numAmount = parseFloat(value);
+    const numAmount = parseFloat(amount);
     if (numAmount > 0 && userAddress) {
       const result = await supply(numAmount, normalizedAsset as AssetType);
       if (result.success) {
-        setValue("");
-        setSelectedPercentage(null);
+        setAmount("");
+        setSelectedPercentage(0);
       }
     }
   };
 
-  // Calculate estimated vTokens to receive
-  const estimatedVTokens = useMemo(() => {
-    const amount = parseFloat(value) || 0;
-    if (amount <= 0) return '0';
-    
-    const exchangeRate = parseFloat(selectedPool?.exchangeRate || '1');
-    if (exchangeRate <= 0) return amount.toFixed(7);
-    
-    return (amount / exchangeRate).toFixed(7);
-  }, [value, selectedPool]);
+  // Calculate preview data for InfoCard
+  const exchangeRate = parseFloat(selectedPool?.exchangeRate || '1');
+  const supplyAPY = parseFloat(selectedPool?.supplyAPY || '0');
+  const amountNum = parseFloat(amount) || 0;
+  const sharesPreview = exchangeRate > 0 ? amountNum / exchangeRate : 0;
+  const monthlyEarnings = (amountNum * supplyAPY) / 100 / 12;
+  const yearlyEarnings = (amountNum * supplyAPY) / 100;
 
-  // Get button text
-  const getButtonText = () => {
-    if (!userAddress) return "Connect Wallet";
-    if (isLoading) return "Processing...";
-    if (!value || parseFloat(value) <= 0) return "Enter Amount";
-    if (parseFloat(value) > parseFloat(availableBalance)) return "Insufficient Balance";
-    return `Supply ${value} ${selectedOption}`;
+  const infoData = {
+    youGetVToken: sharesPreview,
+    tokenPerVToken: exchangeRate,
+    currentAPY: supplyAPY,
+    baseAPY: supplyAPY * 0.6,
+    bonusAPY: supplyAPY * 0.1,
+    rewardsAPY: supplyAPY * 0.3,
+    projectedMonthlyFrom: monthlyEarnings,
+    projectedMonthlyTo: monthlyEarnings * 1.1,
+    projectedYearlyFrom: yearlyEarnings,
+    projectedYearlyTo: yearlyEarnings * 1.1,
   };
 
-  const isButtonDisabled = 
-    !userAddress || 
-    isLoading || 
-    !value || 
-    parseFloat(value) <= 0 || 
-    parseFloat(value) > parseFloat(availableBalance);
+  const infoPropsData = {
+    data: infoData,
+    expandableSections: [
+      {
+        title: "More Details",
+        headingBold: false,
+        defaultExpanded: false,
+        items: [
+          { id: "baseAPY", name: "Base APY (%)" },
+          { id: "bonusAPY", name: "Bonus APY (%)" },
+          { id: "rewardsAPY", name: "Rewards APY (%)" },
+          { id: "youGetVToken", name: `You Get (v${selectedOption})` },
+          { id: "tokenPerVToken", name: `${selectedOption} per v${selectedOption}` },
+          { id: "currentAPY", name: "Current APY (%)" },
+          { id: "projectedMonthlyFrom", name: "Projected Monthly Earnings (From)" },
+          { id: "projectedMonthlyTo", name: "Projected Monthly Earnings (To)" },
+          { id: "projectedYearlyFrom", name: "Projected Yearly Earnings (From)" },
+          { id: "projectedYearlyTo", name: "Projected Yearly Earnings (To)" },
+        ],
+      },
+    ],
+    showExpandable: true,
+  };
+
+  const getButtonText = () => {
+    if (!userAddress) return "Connect Wallet";
+    if (isLoading) return "Supplying...";
+    if (!amount || parseFloat(amount) <= 0) return "Enter Amount";
+    if (parseFloat(amount) > availableBalance) return "Insufficient Balance";
+    return "Supply Liquidity";
+  };
+
+  const isButtonDisabled =
+    !userAddress || isLoading || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableBalance;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Asset Selection & Amount Input */}
-      <div className={`flex flex-col gap-4 w-full h-fit border rounded-[16px] p-4 ${
-        isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-gray-200"
+    <>
+      {/* Input card */}
+      <div className={`w-full rounded-2xl border flex flex-col ${
+        isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
       }`}>
-        {/* Asset Selector */}
-        <div className="flex justify-between items-center">
-          <label className={`text-sm font-medium ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-            Select Asset
-          </label>
-          <Dropdown
-            items={DropdownOptions}
-            setSelectedOption={(option) => {
-              setSelectedOption(option);
-              useSelectedPoolStore.getState().set({ selectedAsset: toInternalAsset(option) as AssetType });
-            }}
-            selectedOption={selectedOption}
-            classname="w-fit gap-[4px] items-center"
-            dropdownClassname="w-full"
-          />
-        </div>
-
-        {/* Amount Input */}
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <input
-              type="number"
-              value={value}
-              onChange={(e) => {
-                setValue(e.target.value);
-                setSelectedPercentage(null);
-              }}
-              placeholder="0.00"
-              step="0.0000001"
-              min="0"
-              className={`w-full text-2xl font-bold outline-none bg-transparent ${
-                isDark ? "text-white placeholder-gray-600" : "text-gray-900 placeholder-gray-400"
-              }`}
+        <div className="flex items-center justify-between px-4 pt-4 pb-2 gap-3">
+          {/* Token pill */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full shrink-0 ${
+            isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"
+          }`}>
+            <Image
+              src={iconPaths[selectedOption] || iconPaths[normalizedAsset] || "/icons/stellar.svg"}
+              alt={selectedOption}
+              width={20}
+              height={20}
+              className="rounded-full w-5 h-5 flex-none"
             />
-            <span className={`text-sm font-medium ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+            <span className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
               {selectedOption}
             </span>
           </div>
-          
-          <div className="flex justify-between items-center">
-            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-              ≈ ${(parseFloat(value) * (selectedOption === 'XLM' ? 0.1 : 1) || 0).toFixed(2)} USD
-            </span>
-            <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-              Available: {availableBalance} {selectedOption}
-            </span>
+          {/* Amount input */}
+          <div className="flex-1 min-w-0">
+            <label htmlFor="supply-amount" className="sr-only">Supply Amount</label>
+            <input
+              id="supply-amount"
+              onChange={(e) => { setAmount(e.target.value); setSelectedPercentage(0); }}
+              value={amount}
+              type="number"
+              step="any"
+              min="0"
+              placeholder="0"
+              disabled={isLoading}
+              className={`w-full text-right text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-20 ${
+                isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"
+              } ${isLoading ? "opacity-50" : ""}`}
+            />
           </div>
         </div>
 
-        {/* Percentage Buttons */}
-        <div className="flex gap-2">
-          {DEPOSIT_PERCENTAGES.map((percent) => (
-            <button
-              key={percent}
-              type="button"
-              onClick={() => handlePercentageClick(percent)}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-                selectedPercentage === percent
-                  ? `${PERCENTAGE_COLORS[percent]} text-white`
-                  : isDark
-                  ? "bg-[#222222] text-gray-300 hover:bg-[#333333]"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              {percent}%
-            </button>
-          ))}
+        {/* Balance / preview row + % pills */}
+        <div className="flex items-center justify-between px-4 pb-3">
+          <div className="flex items-center gap-1">
+            {DEPOSIT_PERCENTAGES.map((pct) => (
+              <motion.button
+                key={pct}
+                type="button"
+                disabled={isLoading || availableBalance <= 0}
+                onClick={() => handlePercentageClick(pct)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.93 }}
+                transition={{ duration: 0.1 }}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold cursor-pointer border transition-all ${
+                  selectedPercentage === pct
+                    ? `${PERCENTAGE_COLORS[pct]} text-white border-transparent`
+                    : isDark
+                      ? "bg-[#2A2A2A] text-[#A7A7A7] border-[#333333] hover:text-white"
+                      : "bg-[#F0F0F0] text-[#888888] hover:text-[#555555] border-[#E2E2E2]"
+                } ${isLoading || availableBalance <= 0 ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                {pct}%
+              </motion.button>
+            ))}
+          </div>
+          <span className={`text-[11px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+            Balance: {userAddress ? `${availableBalance.toFixed(4)} ${selectedOption}` : `-- ${selectedOption}`}
+          </span>
         </div>
       </div>
 
-      {/* Pool Stats Card */}
-      <div className={`rounded-[16px] p-4 ${
-        isDark ? "bg-[#111111] border border-[#333333]" : "bg-gray-50 border border-gray-200"
-      }`}>
-        <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
-          Pool Statistics
-        </h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col">
-            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Supply APY</span>
-            <span className={`text-lg font-bold text-green-500`}>
-              {selectedPool?.supplyAPY || '0'}%
-            </span>
-          </div>
-          <div className="flex flex-col">
-            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Total Supply</span>
-            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {parseFloat(selectedPool?.totalSupply || '0').toLocaleString()} {selectedOption}
-            </span>
-          </div>
-          <div className="flex flex-col">
-            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Utilization</span>
-            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {selectedPool?.utilizationRate || '0'}%
-            </span>
-          </div>
-          <div className="flex flex-col">
-            <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Available</span>
-            <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {parseFloat(selectedPool?.availableLiquidity || '0').toLocaleString()} {selectedOption}
-            </span>
-          </div>
-        </div>
-      </div>
+      <section className="flex flex-col gap-[8px]" aria-label="Supply Details">
+        <InfoCard
+          data={infoPropsData.data}
+          expandableSections={infoPropsData.expandableSections}
+          showExpandable={infoPropsData.showExpandable}
+        />
+      </section>
 
-      {/* You Will Receive Card */}
-      {value && parseFloat(value) > 0 && (
-        <div className={`rounded-[16px] p-4 border-2 border-dashed ${
-          isDark ? "bg-[#0D1117] border-[#703AE6]/30" : "bg-purple-50 border-purple-200"
-        }`}>
-          <div className="flex justify-between items-center">
-            <div className="flex flex-col">
-              <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                You will receive
-              </span>
-              <span className={`text-xl font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                {estimatedVTokens} v{selectedOption}
-              </span>
-            </div>
-            <div className={`p-2 rounded-full ${isDark ? "bg-[#703AE6]/20" : "bg-purple-100"}`}>
-              <svg className="w-6 h-6 text-[#703AE6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </div>
-          </div>
-          <p className={`text-xs mt-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-            v{selectedOption} tokens represent your share in the lending pool and accrue interest over time.
-          </p>
-        </div>
-      )}
+      <Button
+        text={getButtonText()}
+        size="large"
+        type="gradient"
+        disabled={isButtonDisabled}
+        onClick={handleSupply}
+      />
 
       {/* Message Display */}
       <AnimatePresence>
@@ -265,51 +236,23 @@ export const SupplyLiquidityTab = () => {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className={`p-4 rounded-xl flex items-start gap-3 ${
-              message.type === 'success' 
-                ? 'bg-green-500/10 border border-green-500/20 text-green-500' 
-                : message.type === 'error' 
-                ? 'bg-red-500/10 border border-red-500/20 text-red-500' 
+            className={`p-3 rounded-xl text-sm ${
+              message.type === 'success'
+                ? 'bg-green-500/10 border border-green-500/20 text-green-500'
+                : message.type === 'error'
+                ? 'bg-red-500/10 border border-red-500/20 text-red-500'
                 : 'bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]'
             }`}
           >
-            {message.type === 'success' && (
-              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-            {message.type === 'error' && (
-              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            )}
-            {message.type === 'info' && (
-              <svg className="w-5 h-5 flex-shrink-0 mt-0.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            )}
-            <span className="text-sm">{message.text}</span>
+            {message.text}
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Supply Button */}
-      <button
-        onClick={handleSupply}
-        disabled={isButtonDisabled}
-        className={`w-full py-4 rounded-xl font-semibold text-white transition-all ${
-          isButtonDisabled
-            ? "bg-gray-500 cursor-not-allowed opacity-50"
-            : "bg-gradient-to-r from-[#703AE6] to-[#FF007A] hover:opacity-90 cursor-pointer"
-        }`}
-      >
-        {getButtonText()}
-      </button>
 
       {/* Contract Info */}
       <div className={`text-xs text-center ${isDark ? "text-gray-600" : "text-gray-400"}`}>
         Contract: {selectedPoolConfig?.lendingProtocol.slice(0, 8)}...{selectedPoolConfig?.lendingProtocol.slice(-8)}
       </div>
-    </div>
+    </>
   );
 };

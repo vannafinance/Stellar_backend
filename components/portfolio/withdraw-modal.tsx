@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button } from "@/components/ui/button";
 import { useWithdraw } from "@/hooks/use-wallet";
 import { ASSET_TYPES, AssetType } from "@/lib/stellar-utils";
 import { useUserStore } from "@/store/user";
@@ -12,6 +11,25 @@ interface WithdrawModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const ASSET_CONFIG: Record<string, { label: string; sub: string; bg: string }> = {
+  XLM:           { label: "XLM",  sub: "Stellar Lumens",  bg: "#703AE6" },
+  USDC:          { label: "USDC", sub: "USD Coin",        bg: "#2775CA" },
+  AQUARIUS_USDC: { label: "AQU",  sub: "Aquarius USDC",   bg: "#00B2FF" },
+  SOROSWAP_USDC: { label: "SRS",  sub: "Soroswap USDC",   bg: "#9333EA" },
+};
+
+const AssetIcon = ({ asset, size = 36 }: { asset: string; size?: number }) => {
+  const cfg = ASSET_CONFIG[asset] ?? { bg: "#703AE6", label: asset[0] };
+  return (
+    <div
+      className="rounded-full flex items-center justify-center font-bold shrink-0"
+      style={{ width: size, height: size, background: cfg.bg, color: "#fff", fontSize: size * 0.36 }}
+    >
+      {cfg.label.slice(0, 2)}
+    </div>
+  );
+};
 
 export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose }) => {
   const [amount, setAmount] = useState("");
@@ -40,18 +58,11 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
     onClose();
   };
 
-  const availableBalance = depositedBalances[selectedAsset] || '0';
+  const availableBalance = depositedBalances[selectedAsset] || "0";
 
   const setPercentage = (percent: number) => {
     const currentBalance = parseFloat(availableBalance) || 0;
     setAmount((currentBalance * percent).toFixed(7));
-  };
-
-  const assetIcons: Record<string, string> = {
-    XLM: "✦",
-    USDC: "$",
-    AQUARIUS_USDC: "$",
-    SOROSWAP_USDC: "$",
   };
 
   const withdrawAssets: AssetType[] = [
@@ -61,112 +72,139 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
     ASSET_TYPES.SOROSWAP_USDC,
   ];
 
+  const numAmount = parseFloat(amount);
+  const numAvailable = parseFloat(availableBalance) || 0;
+  const isValid = !!amount && numAmount > 0 && numAmount <= numAvailable;
+  const cfg = ASSET_CONFIG[selectedAsset] ?? ASSET_CONFIG.XLM;
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
-          {/* Backdrop */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={handleClose}
+        >
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
-            onClick={handleClose}
+            initial={{ scale: 0.95, opacity: 0, y: 16 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 16 }}
+            transition={{ type: "spring", damping: 28, stiffness: 320 }}
+            className={`w-full max-w-[440px] rounded-2xl shadow-2xl overflow-hidden ${
+              isDark ? "bg-[#171717] border border-[#2A2A2A]" : "bg-white border border-[#E5E7EB]"
+            }`}
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal */}
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className={`${
-                isDark ? "bg-[#1A1A1A] border-[#333333]" : "bg-white border-gray-200"
-              } border rounded-[20px] p-6 w-full max-w-[420px] mx-4 shadow-2xl`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="flex justify-between items-center mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FF007A] to-[#703AE6] flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className={`text-xl font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                      Withdraw Assets
-                    </h2>
-                    <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                      Remove funds from your portfolio
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleClose}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                    isDark ? "hover:bg-[#333333] text-gray-400" : "hover:bg-gray-100 text-gray-500"
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            {/* Header */}
+            <div className={`px-6 py-4 flex items-center justify-between border-b ${isDark ? "border-[#2A2A2A]" : "border-[#F0F0F0]"}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-linear-to-br from-[#703AE6] to-[#9B6BFF] flex items-center justify-center shadow-md">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 19V5M5 12l7-7 7 7" />
                   </svg>
-                </button>
+                </div>
+                <div>
+                  <h2 className={`text-[16px] font-bold leading-tight ${isDark ? "text-white" : "text-[#0f172a]"}`}>
+                    Withdraw Assets
+                  </h2>
+                  <p className={`text-[12px] ${isDark ? "text-[#777]" : "text-[#6b7280]"}`}>
+                    Remove funds from your portfolio
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={handleClose}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  isDark ? "hover:bg-[#2A2A2A] text-[#777]" : "hover:bg-[#F5F5F5] text-[#9ca3af]"
+                }`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-              {/* Asset Selection */}
-              <div className="mb-5">
-                <label className={`block text-sm font-medium mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+            {/* Body */}
+            <div className="px-6 py-5 flex flex-col gap-5">
+
+              {/* Asset selector */}
+              <div className="flex flex-col gap-2">
+                <label className={`text-[13px] font-semibold ${isDark ? "text-[#A0A0A0]" : "text-[#374151]"}`}>
                   Select Asset
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {withdrawAssets.map((asset) => (
-                    <button
-                      key={asset}
-                      onClick={() => setSelectedAsset(asset)}
-                      className={`py-3 px-4 rounded-xl border-2 transition-all font-medium text-sm flex flex-col items-center gap-1 ${
-                        selectedAsset === asset
-                          ? "border-[#FF007A] bg-[#FF007A]/10 text-[#FF007A]"
-                          : isDark
-                          ? "border-[#333333] bg-[#222222] text-gray-300 hover:border-[#444444]"
-                          : "border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300"
-                      }`}
-                    >
-                      <span className="text-lg">{assetIcons[asset]}</span>
-                      <span>{asset}</span>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-4 gap-2">
+                  {withdrawAssets.map((asset) => {
+                    const c = ASSET_CONFIG[asset] ?? ASSET_CONFIG.XLM;
+                    const active = selectedAsset === asset;
+                    return (
+                      <button
+                        key={asset}
+                        type="button"
+                        onClick={() => setSelectedAsset(asset)}
+                        className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition-all cursor-pointer ${
+                          active
+                            ? isDark
+                              ? "border-[#703AE6] bg-[#703AE6]/10"
+                              : "border-[#703AE6] bg-[#703AE6]/8"
+                            : isDark
+                            ? "border-[#2A2A2A] bg-[#1F1F1F] hover:border-[#444]"
+                            : "border-[#E5E7EB] bg-[#FAFAFA] hover:border-[#D1D5DB]"
+                        }`}
+                      >
+                        <AssetIcon asset={asset} size={32} />
+                        <span className={`text-[11px] font-semibold leading-none ${
+                          active ? "text-[#703AE6]" : isDark ? "text-[#A0A0A0]" : "text-[#374151]"
+                        }`}>
+                          {c.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Selected asset info row */}
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isDark ? "bg-[#1F1F1F]" : "bg-[#F9F9F9]"}`}>
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cfg.bg }} />
+                  <span className={`text-[12px] font-medium ${isDark ? "text-[#A0A0A0]" : "text-[#6b7280]"}`}>
+                    {cfg.sub}
+                  </span>
+                  <span className={`ml-auto text-[11px] font-semibold ${isDark ? "text-[#777]" : "text-[#9ca3af]"}`}>
+                    {selectedAsset}
+                  </span>
                 </div>
               </div>
 
-              {/* Available Balance Card */}
-              <div className={`mb-5 p-4 rounded-xl ${
-                isDark ? "bg-[#222222] border border-[#333333]" : "bg-gray-50 border border-gray-100"
+              {/* Available balance card */}
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
+                isDark ? "bg-[#1F1F1F] border-[#2A2A2A]" : "bg-[#FAFAFA] border-[#E5E7EB]"
               }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      isDark ? "bg-[#333333]" : "bg-gray-200"
-                    }`}>
-                      <span className="text-sm">{assetIcons[selectedAsset]}</span>
-                    </div>
-                    <div>
-                      <p className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>Available to withdraw</p>
-                      <p className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                        {availableBalance} <span className="text-sm font-normal">{selectedAsset}</span>
-                      </p>
-                    </div>
-                  </div>
+                <AssetIcon asset={selectedAsset} size={36} />
+                <div className="flex flex-col gap-0.5">
+                  <span className={`text-[11px] font-medium ${isDark ? "text-[#777]" : "text-[#9ca3af]"}`}>
+                    Available to withdraw
+                  </span>
+                  <span className={`text-[16px] font-bold ${isDark ? "text-white" : "text-[#0f172a]"}`}>
+                    {availableBalance}{" "}
+                    <span className={`text-[13px] font-medium ${isDark ? "text-[#A0A0A0]" : "text-[#6b7280]"}`}>
+                      {cfg.label}
+                    </span>
+                  </span>
                 </div>
               </div>
 
-              {/* Amount Input */}
-              <div className="mb-5">
-                <label className={`block text-sm font-medium mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+              {/* Amount input */}
+              <div className="flex flex-col gap-2">
+                <label className={`text-[13px] font-semibold ${isDark ? "text-[#A0A0A0]" : "text-[#374151]"}`}>
                   Amount
                 </label>
-                <div className={`relative rounded-xl border-2 transition-colors ${
-                  isDark ? "border-[#333333] bg-[#222222]" : "border-gray-200 bg-gray-50"
-                } focus-within:border-[#FF007A]`}>
+                <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-colors ${
+                  isDark
+                    ? "bg-[#1F1F1F] border-[#2A2A2A] focus-within:border-[#703AE6]"
+                    : "bg-[#FAFAFA] border-[#E5E7EB] focus-within:border-[#703AE6]"
+                }`}>
                   <input
                     type="number"
                     value={amount}
@@ -175,91 +213,116 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
                     step="0.0000001"
                     min="0"
                     max={availableBalance}
-                    className={`w-full p-4 pr-16 bg-transparent text-lg font-semibold outline-none ${
-                      isDark ? "text-white placeholder-gray-500" : "text-gray-900 placeholder-gray-400"
+                    className={`flex-1 bg-transparent text-[20px] font-bold outline-none min-w-0 ${
+                      isDark ? "text-white placeholder-[#444]" : "text-[#0f172a] placeholder-[#D1D5DB]"
                     }`}
                   />
-                  <div className={`absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 ${
-                    isDark ? "text-gray-400" : "text-gray-500"
-                  }`}>
-                    <span className="text-sm font-medium">{selectedAsset}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <AssetIcon asset={selectedAsset} size={24} />
+                    <span className={`text-[13px] font-semibold ${isDark ? "text-[#A0A0A0]" : "text-[#6b7280]"}`}>
+                      {cfg.label}
+                    </span>
                   </div>
                 </div>
-                
-                {/* Quick Amount Buttons */}
-                <div className="flex gap-2 mt-3">
-                  {[0.25, 0.5, 0.75, 1].map((percent) => (
+
+                {/* Exceeds balance warning */}
+                {amount && numAmount > numAvailable && numAvailable > 0 && (
+                  <p className="text-[12px] font-medium text-red-500">
+                    Exceeds available balance
+                  </p>
+                )}
+
+                {/* Quick amount buttons */}
+                <div className="grid grid-cols-4 gap-2">
+                  {[{ label: "25%", pct: 0.25 }, { label: "50%", pct: 0.5 }, { label: "75%", pct: 0.75 }, { label: "MAX", pct: 1 }].map(({ label, pct }) => (
                     <button
-                      key={percent}
-                      onClick={() => setPercentage(percent)}
-                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-colors ${
+                      key={label}
+                      type="button"
+                      onClick={() => setPercentage(pct)}
+                      className={`py-1.5 rounded-lg text-[12px] font-semibold transition-colors cursor-pointer ${
                         isDark
-                          ? "bg-[#333333] text-gray-300 hover:bg-[#444444] hover:text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                          ? "bg-[#2A2A2A] text-[#A0A0A0] hover:bg-[#703AE6]/20 hover:text-[#703AE6]"
+                          : "bg-[#F0F0F0] text-[#6b7280] hover:bg-[#703AE6]/10 hover:text-[#703AE6]"
                       }`}
                     >
-                      {percent === 1 ? "MAX" : `${percent * 100}%`}
+                      {label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Message Display */}
+              {/* Status message */}
               <AnimatePresence>
                 {message.text && (
                   <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className={`mb-5 p-4 rounded-xl flex items-center gap-3 ${
-                      message.type === 'success' 
-                        ? 'bg-green-500/10 border border-green-500/20 text-green-500' 
-                        : message.type === 'error' 
-                        ? 'bg-red-500/10 border border-red-500/20 text-red-500' 
-                        : 'bg-[#FF007A]/10 border border-[#FF007A]/20 text-[#FF007A]'
-                    }`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
                   >
-                    {message.type === 'success' && (
-                      <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                    {message.type === 'error' && (
-                      <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    )}
-                    {message.type === 'info' && (
-                      <svg className="w-5 h-5 flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    )}
-                    <span className="text-sm font-medium">{message.text}</span>
+                    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] font-medium ${
+                      message.type === "success"
+                        ? "bg-green-500/10 border border-green-500/20 text-green-600"
+                        : message.type === "error"
+                        ? "bg-red-500/10 border border-red-500/20 text-red-500"
+                        : "bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]"
+                    }`}>
+                      {message.type === "success" && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="shrink-0">
+                          <path d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                      {message.type === "error" && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="shrink-0">
+                          <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                      )}
+                      {message.type === "info" && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 animate-spin">
+                          <circle cx="12" cy="12" r="10" strokeOpacity="0.25" strokeWidth="4" />
+                          <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      )}
+                      {message.text}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <Button
-                  text="Cancel"
-                  size="medium"
-                  type="ghost"
-                  disabled={isLoading}
-                  onClick={handleClose}
-                />
-                <Button
-                  text={isLoading ? "Processing..." : "Withdraw"}
-                  size="medium"
-                  type="solid"
-                  disabled={isLoading || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > parseFloat(availableBalance)}
-                  onClick={handleWithdraw}
-                />
-              </div>
-            </motion.div>
+            {/* Footer */}
+            <div className="px-6 pb-5 flex gap-3">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={isLoading}
+                className={`flex-1 h-11 rounded-xl text-[14px] font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isDark
+                    ? "bg-[#2A2A2A] text-[#A0A0A0] hover:bg-[#333] hover:text-white"
+                    : "bg-[#F5F5F5] text-[#6b7280] hover:bg-[#EBEBEB] hover:text-[#374151]"
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleWithdraw}
+                disabled={isLoading || !isValid}
+                className="flex-1 h-11 rounded-xl text-[14px] font-semibold text-white transition-all cursor-pointer bg-[#703AE6] hover:bg-[#6030CC] disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-[#703AE6]/20"
+              >
+                {isLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin">
+                      <circle cx="12" cy="12" r="10" strokeOpacity="0.25" strokeWidth="4" />
+                      <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Processing...
+                  </span>
+                ) : "Withdraw"}
+              </button>
+            </div>
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   );
