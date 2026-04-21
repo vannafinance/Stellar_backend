@@ -19,7 +19,7 @@ export const LeverageSlider = ({
   step = 0.1,
   value,
   onChange,
-  markers = [0,  2, 4, 6, 8, 10],
+  markers = [0, 2, 4, 6, 8, 10],
 }: LeverageSliderProps) => {
   const { isDark } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
@@ -27,21 +27,13 @@ export const LeverageSlider = ({
 
   const percentage = ((value - min) / (max - min)) * 100;
 
-  // Generate all dividers from min to max (all integers)
-  const allDividers = Array.from({ length: max - min + 1 }, (_, i) => min + i);
-
   const handleMove = (clientX: number) => {
     if (!sliderRef.current) return;
-
     const rect = sliderRef.current.getBoundingClientRect();
     const offsetX = clientX - rect.left;
-    const newPercentage = Math.max(
-      0,
-      Math.min(100, (offsetX / rect.width) * 100)
-    );
+    const newPercentage = Math.max(0, Math.min(100, (offsetX / rect.width) * 100));
     const newValue = (newPercentage / 100) * (max - min) + min;
     const steppedValue = Math.round(newValue / step) * step;
-
     onChange(Math.max(min, Math.min(max, steppedValue)));
   };
 
@@ -51,14 +43,10 @@ export const LeverageSlider = ({
   };
 
   const handleMouseMove = (e: MouseEvent) => {
-    if (isDragging) {
-      handleMove(e.clientX);
-    }
+    if (isDragging) handleMove(e.clientX);
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  const handleMouseUp = () => setIsDragging(false);
 
   useEffect(() => {
     if (isDragging) {
@@ -73,16 +61,13 @@ export const LeverageSlider = ({
 
   return (
     <motion.div
-      className="w-full py-4"
+      className="w-full pb-2.5 pl-1.5 pr-4"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
     >
       {/* Slider Track Container */}
-      <div className="relative pt-2 z-0" ref={sliderRef}>
-        {/* Tooltip */}
-        
-
+      <div className="relative pt-2 flex flex-col gap-4" ref={sliderRef}>
         {/* Track Background */}
         <motion.div
           className={`relative h-1 rounded-full cursor-pointer overflow-visible ${
@@ -103,28 +88,39 @@ export const LeverageSlider = ({
             }}
           />
 
-          {/* Dividers on track - all integers from min to max */}
-          {allDividers.map((divider, index) => {
-            const dividerPercentage = ((divider - min) / (max - min)) * 100;
-            const isPassed = percentage >= dividerPercentage;
+          {/* Circular marker dots at marker positions */}
+          {markers.map((marker, index) => {
+            const markerPercentage = ((marker - min) / (max - min)) * 100;
+            const isPassed = percentage >= markerPercentage;
+
+            // Interpolate gradient color at this position
+            const gradientStart = 10;
+            const gradientEnd = 80;
+            const normalizedPosition =
+              (markerPercentage * (gradientEnd - gradientStart)) / 100 + gradientStart;
+            const gradientPosition =
+              (normalizedPosition - gradientStart) / (gradientEnd - gradientStart);
+
+            const startColor = { r: 252, g: 84, b: 87 };  // #fc5457
+            const endColor   = { r: 112, g: 58, b: 230 };  // #703ae6
+
+            const r = Math.round(startColor.r + (endColor.r - startColor.r) * gradientPosition);
+            const g = Math.round(startColor.g + (endColor.g - startColor.g) * gradientPosition);
+            const b = Math.round(startColor.b + (endColor.b - startColor.b) * gradientPosition);
+            const gradientColor = `rgb(${r}, ${g}, ${b})`;
+
             return (
               <motion.div
-                key={divider}
+                key={marker}
                 className="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 rounded-full"
                 style={{
-                  left: `${dividerPercentage}%`,
-                  width: isPassed ? "3px" : "2px",
-                  height: isPassed ? "12px" : "8px",
-                  backgroundColor: isPassed
-                    ? "rgba(255, 255, 255, 0.95)"
-                    : isDark ? "#333333" : "rgba(196, 181, 253, 0.4)",
-                  border: isPassed
-                    ? "none"
-                    : isDark ? "none" : "1px solid rgba(196, 181, 253, 0.6)",
-                  boxShadow: isPassed
-                    ? "0 0 4px rgba(255, 255, 255, 0.5)"
-                    : "0 1px 2px rgba(0, 0, 0, 0.1)",
-                  transition: "all 0.2s ease",
+                  left: `${markerPercentage}%`,
+                  width: "15px",
+                  height: "15px",
+                  backgroundColor: isPassed ? gradientColor : isDark ? "#555555" : "#E5E7EB",
+                  border: isPassed ? "none" : isDark ? "2px solid #666666" : "2px solid #D1D5DB",
+                  boxShadow: isPassed ? `0 0 8px ${gradientColor}80` : "none",
+                  transition: "all 0.3s ease",
                 }}
                 initial={{ opacity: 0, scale: 0 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -133,7 +129,7 @@ export const LeverageSlider = ({
             );
           })}
 
-          {/* Slider Thumb with Lightning Icon */}
+          {/* Slider Thumb — purple lightning bolt */}
           <div
             className="absolute cursor-grab active:cursor-grabbing z-10"
             style={{
@@ -148,10 +144,7 @@ export const LeverageSlider = ({
           >
             <motion.div
               initial={{ scale: 0, rotate: -180 }}
-              animate={{
-                scale: 1,
-                rotate: 0,
-              }}
+              animate={{ scale: 1, rotate: 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 35 }}
               whileTap={{ scale: 0.95 }}
               style={{
@@ -161,8 +154,8 @@ export const LeverageSlider = ({
               }}
             >
               <svg
-                width="36"
-                height="36"
+                width="26"
+                height="26"
                 viewBox="0 0 36 36"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
@@ -186,30 +179,26 @@ export const LeverageSlider = ({
         </motion.div>
 
         {/* Marker Labels */}
-        <div className="relative mt-6">
+        <div className="relative pointer-events-none">
           {markers.map((marker, index) => {
             const markerPercentage = ((marker - min) / (max - min)) * 100;
             const isActive = Math.abs(value - marker) < 0.5;
             const isFirst = index === 0;
             const isLast = index === markers.length - 1;
-            
+
             return (
               <motion.div
                 key={marker}
-                className={`absolute text-xs font-medium ${
+                className={`absolute text-[11px] leading-[15px] font-medium ${
                   isFirst ? "left-0" : isLast ? "right-0" : "transform -translate-x-1/2"
                 }`}
-                style={
-                  isFirst || isLast
-                    ? {}
-                    : { left: `${markerPercentage}%` }
-                }
+                style={isFirst || isLast ? {} : { left: `${markerPercentage}%` }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{
                   opacity: 1,
                   y: 0,
                   scale: isActive ? 1.2 : 1,
-                  color: isActive ? "#703AE6" : isDark ? "#FFFFFF" : "#6B7280",
+                  color: isActive ? "#703AE6" : isDark ? "#FFFFFF" : "#111111",
                   fontWeight: isActive ? 600 : 500,
                 }}
                 transition={{ delay: 0.3 + index * 0.05, duration: 0.3 }}

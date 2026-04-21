@@ -685,16 +685,6 @@ export const RangeSelector = ({
       label: "x/2",
       handler: handleHalfRange,
     },
-    {
-      id: "x/1.2",
-      label: "x/1.2",
-      handler: handleX12Range,
-    },
-    {
-      id: "x/1.01",
-      label: "x/1.01",
-      handler: handleX101Range,
-    },
   ];
 
   // Strategy options data
@@ -705,19 +695,9 @@ export const RangeSelector = ({
       handler: handleStable,
     },
     {
-      id: "single-sided-left",
-      label: "Single Sided(Left)",
-      handler: handleSingleSidedLeft,
-    },
-    {
       id: "wide",
       label: "Wide",
       handler: handleWide,
-    },
-    {
-      id: "single-sided-right",
-      label: "Single Sided(Right)",
-      handler: handleSingleSidedRight,
     },
   ];
 
@@ -744,7 +724,7 @@ export const RangeSelector = ({
   if (isLoading) {
     return (
       <div className="w-full flex flex-col gap-[16px]" role="status" aria-label="Loading chart">
-        <div className={`w-full rounded-[20px] p-[20px] flex flex-col gap-[16px] animate-pulse ${isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"}`}>
+        <div className={`w-full rounded-[20px] p-3 sm:p-[20px] flex flex-col gap-[16px] animate-pulse ${isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"}`}>
           <div className="w-full h-fit flex items-center gap-[8px]">
             <div className={`h-[32px] w-[80px] rounded-[8px] ${isDark ? "bg-[#1A1A1A]" : "bg-gray-200"}`} />
             <div className={`h-[32px] w-[80px] rounded-[8px] ${isDark ? "bg-[#1A1A1A]" : "bg-gray-200"}`} />
@@ -761,7 +741,7 @@ export const RangeSelector = ({
   if (!hasValidData) {
     return (
       <div className="w-full flex flex-col gap-[16px]" role="alert">
-        <div className={`w-full rounded-[20px] p-[20px] flex flex-col gap-[16px] items-center justify-center ${isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"}`} style={{ height: `${height}px` }}>
+        <div className={`w-full rounded-[20px] p-3 sm:p-[20px] flex flex-col gap-[16px] items-center justify-center ${isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"}`} style={{ height: `${height}px` }}>
           <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="24" cy="24" r="22" stroke={isDark ? "#595959" : "#BFBFBF"} strokeWidth="2" />
             <path d="M24 14V26M24 34H24.02" stroke={isDark ? "#595959" : "#BFBFBF"} strokeWidth="3" strokeLinecap="round" />
@@ -777,9 +757,9 @@ export const RangeSelector = ({
   return (
     <div className="w-full flex flex-col gap-[16px]">
       {/* Chart section with background */}
-      <div className={`w-full rounded-[20px] p-[20px] flex flex-col gap-[16px] ${isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"}`}>
+      <div className={`w-full rounded-[20px] p-3 sm:p-[20px] flex flex-col gap-[16px] ${isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"}`}>
         {/* Token selection buttons */}
-        <div className="w-full h-fit flex items-center gap-[8px]">
+        <div className="w-full h-fit flex flex-wrap items-center gap-[8px]">
         {(t1ChartData || t2ChartData) && (
           <>
             {t1ChartData && (
@@ -1092,14 +1072,14 @@ export const RangeSelector = ({
       {showControls && (
         <div className="w-full h-fit flex flex-col gap-[12px]">
           {/* Options Grid - 4 items per row */}
-          <div className="w-full h-fit grid grid-cols-4 gap-[8px]">
+          <div className="w-full h-fit grid grid-cols-2 sm:grid-cols-4 gap-[6px] sm:gap-[8px]">
             {/* Range Options */}
             {rangeOptions.map((option) => (
               <button
                 key={option.id}
                 type="button"
                 onClick={option.handler}
-                className={`w-full px-[12px] py-[6px] rounded-[8px] text-[12px] font-medium transition-colors ${
+                className={`w-full h-[32px] flex items-center justify-center px-2 sm:px-[12px] rounded-[8px] text-[11px] sm:text-[12px] font-medium transition-colors ${
                   selectedRangeOption === option.id
                     ? "bg-[#703AE6] text-white"
                     : isDark
@@ -1117,7 +1097,7 @@ export const RangeSelector = ({
                 key={option.id}
                 type="button"
                 onClick={option.handler}
-                className={`w-full px-[12px] py-[6px] rounded-[8px] text-[12px] font-medium transition-colors ${
+                className={`w-full h-[32px] flex items-center justify-center px-2 sm:px-[12px] rounded-[8px] text-[11px] sm:text-[12px] font-medium transition-colors ${
                   selectedStrategy === option.id
                     ? "bg-[#703AE6] text-white"
                     : isDark
@@ -1131,10 +1111,10 @@ export const RangeSelector = ({
           </div>
 
           {/* Metrics Display */}
-          <div className="w-full h-fit flex flex-col gap-[12px] mt-[8px]">
+          <div className={`w-full rounded-xl overflow-hidden ${isDark ? "bg-[#111111]" : "bg-white"}`}>
             {metricsData.map((metric) => (
-              <div key={metric.id} className="w-full h-fit flex items-center justify-between">
-                <div className="flex items-center gap-[4px]">
+              <div key={metric.id} className="w-full flex items-center justify-between px-3 sm:px-4 py-2.5">
+                <div className="flex items-center gap-1 shrink-0">
                   <span className={`text-[12px] font-medium ${
                     isDark ? "text-[#919191]" : "text-[#5C5B5B]"
                   }`}>
@@ -1142,7 +1122,7 @@ export const RangeSelector = ({
                   </span>
                   <InfoIcon stroke={isDark ? "#FFFFFF" : "#5C5B5B"} />
                 </div>
-                <span className={`text-[16px] font-semibold ${
+                <span className={`text-[13px] sm:text-[14px] font-semibold text-right ${
                   isDark ? "text-white" : "text-[#181822]"
                 }`}>
                   {metric.value}

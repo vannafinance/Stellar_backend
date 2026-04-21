@@ -55,8 +55,8 @@ export const LeverageCollateral = ({
 
   return (
     <motion.section
-      className={`flex flex-col justify-between rounded-[26px] border-[1px] py-[36px] px-[16px] min-w-[691px] h-full ${
-        isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
+      className={`flex flex-col justify-between rounded-2xl border py-3 sm:py-4 px-3 sm:px-5 w-full min-w-0 h-fit ${
+        isDark ? "bg-[#222222] border-[#333333]" : "bg-[#F7F7F7] border-[#E5E7EB]"
       }`}
       initial={{ opacity: 0, scale: 0.95 }}
       whileInView={{ opacity: 1, scale: 1 }}
@@ -68,11 +68,13 @@ export const LeverageCollateral = ({
           tabs={tabs}
           activeTab={activeTab}
           onTabChange={handleTabChange}
-          type="gradient"
+          type="border"
+          containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
+          tabClassName="!h-9 sm:!h-11 !text-[11px] sm:!text-[13px] !flex-1 !px-2 sm:!px-5"
         />
       </nav>
       {/* Tab content */}
-      <section className="mt-6">{renderContent()}</section>
+      <section className="mt-3 sm:mt-4 min-w-0 w-full">{renderContent()}</section>
     </motion.section>
   );
 };

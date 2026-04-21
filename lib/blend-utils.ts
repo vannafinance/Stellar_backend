@@ -23,7 +23,7 @@ export const BLEND_POOL_ASSETS: BlendPoolAsset[] = [
   {
     symbol: 'XLM',
     trackingSymbol: 'BLEND_XLM',
-    iconPath: '/icons/stellar.svg',
+    iconPath: '/coins/xlmbg.png',
     decimals: 7,
   },
   {

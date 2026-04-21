@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useFarmStore } from "@/store/farm-store";
@@ -13,6 +13,7 @@ import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
 import { PERCENTAGE_COLORS } from "@/lib/constants/margin";
+import { motion, AnimatePresence } from "framer-motion";
 import { useBlendStore } from "@/store/blend-store";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
@@ -55,6 +56,17 @@ export const RemoveLiquidity = () => {
 
   const [selectedToken, setSelectedToken] = useState<TokenSymbol>(getInitialToken);
   const [value, setValue] = useState<string>("");
+  const [tokenDropdownOpen, setTokenDropdownOpen] = useState(false);
+  const tokenDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!tokenDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (tokenDropdownRef.current && !tokenDropdownRef.current.contains(e.target as Node)) setTokenDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [tokenDropdownOpen]);
   const [selectedPercentage, setSelectedPercentage] = useState<number>(0);
   const [blendBalance, setBlendBalance] = useState<string>("0");
   const [loadingBalance, setLoadingBalance] = useState<boolean>(false);
@@ -357,192 +369,104 @@ export const RemoveLiquidity = () => {
     );
   }
 
-  return (
-    <div className="w-full h-fit flex flex-col gap-[16px]">
-      {/* Token selector tabs */}
-      <div className={`w-full h-fit flex rounded-[12px] p-[4px] gap-[4px] ${
-        isDark ? "bg-[#1A1A1A]" : "bg-[#F0F0F0]"
-      }`}>
-        {SUPPORTED_TOKENS.map((token) => (
-          <button
-            key={token}
-            type="button"
-            onClick={() => handleTokenSelect(token)}
-            className={`flex-1 flex items-center justify-center gap-[6px] py-[8px] rounded-[8px] text-[13px] font-semibold transition-all ${
-              selectedToken === token
-                ? "bg-[#703AE6] text-white"
-                : isDark
-                ? "text-[#919191] hover:text-white"
-                : "text-[#76737B] hover:text-[#111111]"
-            }`}
-          >
-            <Image
-              src={iconPaths[token] ?? "/icons/stellar.svg"}
-              alt={token}
-              width={16}
-              height={16}
-            />
-            {token}
-          </button>
-        ))}
-      </div>
+  const token = selectedToken;
+  const totalLiquidity = parseFloat(blendBalance);
 
-      {/* Blend balance display */}
-      <div className={`w-full h-fit rounded-[12px] p-[14px] flex justify-between items-center ${
-        isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
-      }`}>
-        <span className={`text-[12px] font-medium ${
-          isDark ? "text-[#919191]" : "text-[#76737B]"
-        }`}>
-          Your Blend Supply Balance
-        </span>
-        <div className="flex items-center gap-[6px]">
-          <Image src={iconPath} alt={selectedToken} width={16} height={16} />
-          <span className={`text-[13px] font-semibold ${
-            isDark ? "text-white" : "text-[#111111]"
-          }`}>
-            {loadingBalance
-              ? "Loading..."
-              : `${parseFloat(blendBalance).toFixed(4)} ${selectedToken}`}
+  const getButtonText = () => {
+    if (!userAddress) return "Connect Wallet";
+    if (txStatus === "loading") return "Processing...";
+    if (parseFloat(value) <= 0 || !value) return "Enter Amount";
+    if (parseFloat(value) > parseFloat(blendBalance)) return "Insufficient Balance";
+    return "Remove Liquidity";
+  };
+
+  return (
+    <div className="w-full h-fit flex flex-col gap-3">
+      {/* Input card */}
+      <div className={`w-full rounded-xl border flex flex-col ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-white border-[#E8E8E8]"}`}>
+        <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+          <input
+            type="text"
+            placeholder="0"
+            className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:text-[#555555] ${isDark ? "text-white" : "text-[#111111]"}`}
+            value={value}
+            onChange={(e) => { setValue(e.target.value); setSelectedPercentage(0); }}
+            disabled={txStatus === "loading"}
+          />
+          {/* Token dropdown pill */}
+          <div className="relative shrink-0" ref={tokenDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setTokenDropdownOpen(!tokenDropdownOpen)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all ${isDark ? "bg-[#1A1A1A] border border-[#2A2A2A] hover:bg-[#222]" : "bg-[#F7F7F7] border border-[#E8E8E8] hover:bg-[#F0F0F0]"}`}
+            >
+              <Image src={iconPath} alt={token} width={20} height={20} className="rounded-full w-5 h-5 flex-none" />
+              <span className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>{token}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-3.5 h-3.5 transition-transform duration-200 ${isDark ? "text-[#AAA]" : "text-[#555]"} ${tokenDropdownOpen ? "rotate-180" : ""}`}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            <AnimatePresence>
+              {tokenDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }}
+                  className={`absolute right-0 top-full mt-1 z-50 rounded-xl border shadow-lg overflow-hidden min-w-[120px] ${isDark ? "bg-[#222222] border-[#333333]" : "bg-white border-[#E8E8E8]"}`}
+                >
+                  {SUPPORTED_TOKENS.map((t) => (
+                    <button key={t} type="button"
+                      onClick={() => { handleTokenSelect(t); setTokenDropdownOpen(false); }}
+                      className={`flex items-center gap-2 w-full px-4 py-2.5 text-[13px] font-medium transition-colors ${selectedToken === t ? "text-[#703AE6]" : isDark ? "text-white hover:bg-[#333]" : "text-[#111] hover:bg-[#F5F5F5]"}`}
+                    >
+                      <Image src={iconPaths[t] ?? "/coins/xlmbg.png"} alt={t} width={16} height={16} className="rounded-full" />
+                      {t}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-3 pb-3">
+          <div className="flex items-center gap-1">
+            {PERCENTAGE_OPTIONS.map((pct) => (
+              <motion.button
+                key={pct}
+                type="button"
+                disabled={txStatus === "loading"}
+                onClick={() => handlePercentageSelect(pct)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.93 }}
+                transition={{ duration: 0.1 }}
+                className={`px-2 py-1 rounded-lg text-[10px] font-semibold cursor-pointer border transition-all ${
+                  selectedPercentage === pct
+                    ? `${PERCENTAGE_COLORS[pct] || "bg-[#703AE6]"} text-white border-transparent`
+                    : isDark
+                      ? "bg-[#2A2A2A] text-[#A7A7A7] border-[#333333] hover:text-white"
+                      : "bg-[#F0F0F0] text-[#888888] hover:text-[#555555] border-[#E2E2E2]"
+                } ${txStatus === "loading" ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                {pct}%
+              </motion.button>
+            ))}
+          </div>
+          <span className={`text-[11px] font-medium shrink-0 ${isDark ? "text-[#555555]" : "text-[#AAAAAA]"}`}>
+            Available: {loadingBalance ? "..." : totalLiquidity.toLocaleString()} {token}
           </span>
         </div>
       </div>
 
-      {/* Amount input with percentage selectors */}
-      <div className={`w-full h-fit flex rounded-[16px] gap-[8px] p-[20px] ${
-        isDark ? "bg-[#111111]" : "bg-[#FFFFFF]"
-      }`}>
-        <div className="w-full h-fit flex flex-col gap-[16px]">
-          <div className="flex flex-col gap-[6px]">
-            <input
-              type="number"
-              placeholder="0.00"
-              className={`w-full h-fit text-[20px] font-semibold placeholder:text-[#CCCCCC] outline-none border-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-                isDark ? "text-white" : "text-[#111111]"
-              }`}
-              value={value}
-              onChange={(e) => {
-                setValue(e.target.value);
-                setSelectedPercentage(0);
-              }}
-              min="0"
-            />
-            <div className={`text-[11px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              {isOverBalance ? (
-                <span className="text-red-500">Exceeds balance</span>
-              ) : (
-                "$0.00"
-              )}
-            </div>
-          </div>
-
-          {/* Percentage buttons */}
-          <div className="flex gap-[6px]">
-            {PERCENTAGE_OPTIONS.map((pct) => {
-              const selectedColor = PERCENTAGE_COLORS[pct] || "bg-[#703AE6]";
-              return (
-                <button
-                  key={pct}
-                  type="button"
-                  onClick={() => handlePercentageSelect(pct)}
-                  className={`flex-1 flex justify-center items-center cursor-pointer text-[12px] font-semibold h-[32px] rounded-[8px] transition-all ${
-                    selectedPercentage === pct
-                      ? `${selectedColor} text-white`
-                      : isDark
-                      ? "bg-[#222222] text-white"
-                      : "bg-[#F4F4F4] text-[#111111]"
-                  }`}
-                  aria-pressed={selectedPercentage === pct}
-                  aria-label={`Select ${pct}%`}
-                >
-                  {pct}%
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Info box */}
-      {isInputValid && (
-        <div className={`w-full h-fit rounded-[12px] p-[16px] flex flex-col gap-[10px] ${
-          isDark ? "bg-[#1A1A1A]" : "bg-[#F7F7F7]"
-        }`}>
-          <div className="flex justify-between items-center">
-            <span className={`text-[12px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              You will receive
-            </span>
-            <span className={`text-[12px] font-semibold ${
-              isDark ? "text-white" : "text-[#111111]"
-            }`}>
-              {parseFloat(value).toFixed(4)} {selectedToken}
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className={`text-[12px] font-medium ${
-              isDark ? "text-[#919191]" : "text-[#76737B]"
-            }`}>
-              Protocol
-            </span>
-            <span className="text-[12px] font-semibold text-[#703AE6]">
-              Blend
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Blend pool not configured warning */}
-      {blendConfigured === false && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-orange-500/30 ${
-          isDark ? "bg-orange-500/10" : "bg-orange-50"
-        }`}>
-          <p className="text-[12px] font-medium text-orange-600">
-            Blend pool is not yet configured in the Registry. Please ask the admin to call <code>set_blend_pool_address</code>.
-          </p>
-        </div>
-      )}
-
       {/* Margin account warning */}
       {userAddress && !marginAccountAddress && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-yellow-500/30 ${
-          isDark ? "bg-yellow-500/10" : "bg-yellow-50"
-        }`}>
-          <p className="text-[12px] font-medium text-yellow-600">
-            A margin account is required to withdraw from Blend. Please create one in the Margin section.
-          </p>
-        </div>
-      )}
-
-      {/* Transaction status */}
-      {txStatus === "success" && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-green-500/30 ${
-          isDark ? "bg-green-500/10" : "bg-green-50"
-        }`}>
-          <p className="text-[12px] font-medium text-green-600">
-            Withdrawal successful!{" "}
-            {txHash && (
-              <span className="break-all text-[11px] opacity-70">{txHash}</span>
-            )}
-          </p>
-        </div>
-      )}
-      {txStatus === "error" && (
-        <div className={`w-full h-fit rounded-[12px] p-[12px] border border-red-500/30 ${
-          isDark ? "bg-red-500/10" : "bg-red-50"
-        }`}>
-          <p className="text-[12px] font-medium text-red-600">{txError}</p>
+        <div className={`w-full rounded-xl p-3 border text-[12px] font-medium ${isDark ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500" : "bg-yellow-50 border-yellow-200 text-yellow-700"}`}>
+          A margin account is required to withdraw from Blend. Please create one in the Margin section.
         </div>
       )}
 
       <Button
         disabled={isSubmitDisabled}
-        type="gradient"
+        type="solid"
         size="large"
-        text={buttonText()}
+        text={getButtonText()}
         onClick={handleWithdraw}
       />
     </div>

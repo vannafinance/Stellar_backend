@@ -7,6 +7,7 @@ import { useTheme } from "@/contexts/theme-context";
 export interface TabItem {
   id: string;
   label: string;
+  shortLabel?: string;
 }
 
 type TabType = "gradient" | "solid" | "underline" | "ghost" | "ghost-compact" | "segment" | "border";
@@ -86,8 +87,8 @@ export const AnimatedTabs = ({
   // Render underline type
   if (type === "underline") {
     return (
-      <div className={` h-fit  ${containerClassName}`}>
-        <div className="w-full  flex" onMouseLeave={() => setHoveredTab(null)}>
+      <div className={`h-fit overflow-x-auto scrollbar-hide ${containerClassName}`}>
+        <div className="flex min-w-max" onMouseLeave={() => setHoveredTab(null)}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             const isHovered = hoveredTab === tab.id;
@@ -97,7 +98,7 @@ export const AnimatedTabs = ({
                 key={tab.id}
                 onClick={() => onTabChange(tab.id)}
                 onMouseEnter={() => setHoveredTab(tab.id)}
-                className={`whitespace-nowrap  px-[20px] font-semibold flex items-center justify-center cursor-pointer relative ${tabClassName}`}
+                className={`whitespace-nowrap px-3 py-2.5 text-[13px] font-semibold flex items-center justify-center cursor-pointer relative ${tabClassName}`}
                 animate={{
                   color: getTextColor(isActive, isHovered),
                   borderBottomWidth: isActive ? "2px" : "0px",
@@ -189,7 +190,7 @@ export const AnimatedTabs = ({
             <motion.div
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`h-10 px-3 flex items-center justify-center text-center text-[13px] font-semibold rounded-[8px] whitespace-nowrap cursor-pointer transition-colors ${
+              className={`h-12 px-4 flex items-center justify-center text-center text-[14px] font-semibold rounded-lg whitespace-nowrap cursor-pointer transition-colors ${
                 isActive
                   ? isDark ? "text-[#F0F0F0]" : "text-[#1F1F1F]"
                   : "text-[#9CA3AF]"
@@ -205,7 +206,12 @@ export const AnimatedTabs = ({
               whileTap={{ scale: 0.95 }}
               transition={{ duration: 0.15 }}
             >
-              {tab.label}
+              {tab.shortLabel ? (
+                <>
+                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </>
+              ) : tab.label}
             </motion.div>
           );
         })}
@@ -214,19 +220,23 @@ export const AnimatedTabs = ({
   }
 
   // Render gradient/solid/ghost types
-  const containerPadding = (type === "solid" || type === "ghost") ? "p-[4px] w-fit h-fit" : "p-[6px]";
-  const containerWidth = (type === "solid" || type === "ghost") ? "w-full" : "w-full";
-  const tabWidth = customTabWidth 
-    ? customTabWidth 
-    : (type === "solid" ) ? "w-[160px]" : type === "ghost" ? "w-[180px]" : "";
-  const tabPadding = (type === "solid" || type === "ghost") ? "py-[12px] px-[8px]" : "";
-  const tabHeight = (type === "solid") ? "h-fit" :  (type === "ghost") ? "h-[38px]" : "h-[64px]";
-  const useFlex1 = (type !== "solid" && type !== "ghost");
+  const containerPadding = type === "solid" || type === "ghost" ? "p-[4px] w-fit h-fit" : "p-1";
+  const containerWidth = type === "solid" || type === "ghost" ? "w-full" : "w-full";
+  const tabWidth = customTabWidth
+    ? customTabWidth
+    : type === "solid"
+      ? "w-[160px]"
+      : type === "ghost"
+        ? "w-[180px]"
+        : "";
+  const tabPadding = type === "solid" || type === "ghost" ? "py-[12px] px-[8px]" : "";
+  const tabHeight = type === "solid" ? "h-fit" : type === "ghost" ? "h-[38px]" : "h-9";
+  const useFlex1 = type !== "solid" && type !== "ghost";
 
   return (
     <div className={containerClassName}>
       <div
-        className={`border-[1px] ${containerWidth} flex gap-[16px] ${containerPadding} rounded-[12px] h-fit relative overflow-hidden ${
+        className={`border ${containerWidth} flex gap-4 ${containerPadding} rounded-xl h-fit relative overflow-hidden ${
           isDark ? "bg-[#111111]" : "bg-white"
         }`}
         onMouseLeave={() => setHoveredTab(null)}
@@ -234,12 +244,12 @@ export const AnimatedTabs = ({
         {/* Gradient indicator */}
         {type === "gradient" && (
           <motion.div
-            className={`absolute top-[6px] left-[6px] h-[64px] rounded-[12px] bg-gradient p-[2px] ${indicatorClassName}`}
+            className={`absolute top-1 left-1 h-9 rounded-xl bg-gradient p-0.5 ${indicatorClassName}`}
             style={{ width: indicatorWidth }}
             animate={{ x: `${currentIndex * 100}%` }}
             transition={SPRING_CONFIG}
           >
-            <div className={`rounded-[12px] h-full w-full ${isDark ? "bg-[#111111]" : "bg-white"}`} />
+            <div className={`rounded-xl h-full w-full ${isDark ? "bg-[#111111]" : "bg-white"}`} />
           </motion.div>
         )}
 
@@ -253,7 +263,7 @@ export const AnimatedTabs = ({
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
               onMouseEnter={() => setHoveredTab(tab.id)}
-              className={`${tabWidth} ${tabPadding} hover:cursor-pointer text-[16px] font-semibold flex flex-col justify-center text-center ${tabHeight} rounded-[10px] ${useFlex1 ? "flex-1" : ""} relative z-10 ${tabClassName}`}
+              className={`${tabWidth} ${tabPadding} hover:cursor-pointer text-[13px] font-semibold flex flex-col justify-center text-center ${tabHeight} rounded-[10px] ${useFlex1 ? "flex-1" : ""} relative z-10 ${tabClassName}`}
               animate={{
                 color: getTextColor(isActive, isHovered),
                 background: getBackground(isActive, isHovered),

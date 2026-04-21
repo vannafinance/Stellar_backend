@@ -169,7 +169,7 @@ export const RepayLoanTab = () => {
 
   return (
     <motion.section
-      className="w-full flex flex-col gap-[24px] pt-8"
+      className="w-full flex flex-col gap-6 pt-8"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4, delay: 0.1 }}
@@ -182,168 +182,142 @@ export const RepayLoanTab = () => {
       >
         {/* Repay stats cards */}
         <motion.section
-          className="flex justify-between gap-[12px]"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.2 }}
         >
-          {/* Map through repay stats */}
-          {Object.entries(repayStats).map(([key, value], index) => {
-            return (
-              <motion.article
-                key={key}
-                className={`w-full flex flex-col justify-between h-[120px] rounded-[8px] border-[1px] p-[16px] ${
-                  isDark ? "bg-[#111111]" : "bg-white"
+          {Object.entries(repayStats).map(([key, value], index) => (
+            <motion.article
+              key={key}
+              className={`w-full flex flex-col gap-2 rounded-2xl border p-3 sm:p-4 ${
+                isDark
+                  ? "bg-[#1A1A1A] border-[#2A2A2A]"
+                  : "bg-white border-[#EEEEEE]"
+              }`}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.1 + index * 0.1 }}
+            >
+              <span
+                className={`text-[12px] font-medium ${
+                  isDark ? "text-[#777777]" : "text-[#A7A7A7]"
                 }`}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 + index * 0.1 }}
               >
-                <motion.div
-                  className={`text-[14px] font-medium max-w-[158.33px] ${
-                    isDark ? "text-[#919191]" : "text-[#9F9F9F]"
-                  }`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{
-                    duration: 0.3,
-                    delay: 0.2 + index * 0.1,
-                    ease: "easeOut",
-                  }}
-                >
-                  {key === "netOutstandingAmountToPay"
-                    ? "Net Outstanding Amount to Repay"
-                    : key === "availableBalance"
+                {key === "netOutstandingAmountToPay"
+                  ? "Net Outstanding Amount to Repay"
+                  : key === "availableBalance"
                     ? "Available Balance"
                     : "Frozen Balance"}
-                </motion.div>
-                <motion.div
-                  className={`text-[24px] font-bold ${
-                    isDark ? "text-white" : "text-[#181822]"
-                  }`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{
-                    duration: 0.3,
-                    delay: 0.25 + index * 0.1,
-                    ease: "easeOut",
-                  }}
-                >
-                  {value}
-                </motion.div>
-              </motion.article>
-            );
-          })}
+              </span>
+              <span
+                className={`text-[22px] font-bold leading-tight ${
+                  isDark ? "text-white" : "text-[#111111]"
+                }`}
+              >
+                {value}
+              </span>
+            </motion.article>
+          ))}
         </motion.section>
 
         {/* Repay form */}
         <motion.article
-          className={`w-full border-[1px] rounded-[16px] p-[20px] ${
-            isDark ? "bg-[#111111]" : "bg-white"
+          className={`w-full rounded-2xl border p-3 sm:p-4 flex flex-col gap-2 ${
+            isDark
+              ? "bg-[#1A1A1A] border-[#2A2A2A]"
+              : "bg-white border-[#EEEEEE]"
           }`}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.3 }}
         >
-          {/* Currency dropdown and percentage buttons */}
-          <motion.header
-            className="flex justify-between items-center"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.35 }}
-          >
-            {/* Currency selector */}
-            <motion.div
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: 0.4 }}
-              className="p-[10px]"
+          {/* Row 1: "Repay" label + % chips */}
+          <div className="flex items-center justify-between">
+            <span
+              className={`text-sm font-medium ${
+                isDark ? "text-[#A7A7A7]" : "text-[#777777]"
+              }`}
             >
-              <Dropdown
-              classname="text-[16px] font-medium gap-[8px]"
-                items={DropdownOptions}
-                selectedOption={selectedRepayCurrency}
-                setSelectedOption={setSelectedRepayCurrency}
-                dropdownClassname="text-[14px] font-medium gap-[8px]"
-              />
-            </motion.div>
-
-            {/* Percentage buttons */}
+              Repay
+            </span>
             <motion.div
-              className="flex gap-[8px]"
+              className="flex items-center gap-1 sm:gap-1.5"
               role="group"
               aria-label="Repay percentage"
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: 0.4, ease: "easeOut" }}
+              transition={{ duration: 0.3, delay: 0.4 }}
             >
-              {DEPOSIT_PERCENTAGES.map((item: number, idx: number) => {
-                return (
-                  <motion.button
-                    type="button"
-                    key={item}
-                    onClick={() => handlePercentageClick(item)}
-                    className={`h-[44px] w-[95px] text-center text-[14px] text-medium cursor-pointer ${
-                      selectedRepayPercentage === item
-                        ? `${PERCENTAGE_COLORS[item]} text-white`
-                        : isDark
-                        ? "bg-[#222222] text-white"
-                        : "bg-[#F4F4F4]"
-                    } p-[10px] rounded-[12px]`}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ duration: 0.1 }}
-                    aria-label={`Repay ${item} percent`}
-                    aria-pressed={selectedRepayPercentage === item}
-                  >
-                    {item}%
-                  </motion.button>
-                );
-              })}
+              {DEPOSIT_PERCENTAGES.map((item: number) => (
+                <motion.button
+                  type="button"
+                  key={item}
+                  onClick={() => handlePercentageClick(item)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer border transition-all ${
+                    selectedRepayPercentage === item
+                      ? `${PERCENTAGE_COLORS[item]} text-white border-transparent`
+                      : isDark
+                        ? "bg-[#2A2A2A] text-[#A7A7A7] border-[#333333] hover:text-white"
+                        : "bg-[#F0F0F0] text-[#888888] hover:text-[#555555] border-[#E2E2E2]"
+                  }`}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.93 }}
+                  transition={{ duration: 0.1 }}
+                  aria-label={`Repay ${item} percent`}
+                  aria-pressed={selectedRepayPercentage === item}
+                >
+                  {item}%
+                </motion.button>
+              ))}
             </motion.div>
-          </motion.header>
+          </div>
 
-          {/* Amount input section */}
-          <motion.section
-            className="px-[10px] flex flex-col gap-[8px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3, delay: 0.5 }}
-          >
-            {/* Repay amount input */}
-            <motion.div
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: 0.55, ease: "easeOut" }}
-            >
+          {/* Row 2: token dropdown + amount input */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="shrink-0">
+              <Dropdown
+                classname={`gap-2 px-3 py-2 rounded-full text-[14px] font-semibold transition-colors ${
+                  isDark
+                    ? "bg-[#333333] hover:bg-[#3D3D3D] text-white"
+                    : "bg-[#EEEEEE] hover:bg-[#E2E2E2]"
+                }`}
+                items={DropdownOptions}
+                selectedOption={selectedRepayCurrency}
+                setSelectedOption={setSelectedRepayCurrency}
+                dropdownClassname="text-[13px] gap-2"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
               <label htmlFor="repay-amount-input" className="sr-only">
                 Repay amount
               </label>
               <input
                 id="repay-amount-input"
                 onChange={handleInputChange}
-                className={`w-fit text-[20px] focus:border-[0px] focus:outline-none font-medium transition-transform duration-200 focus:scale-[1.01] placeholder:text-[#C7C7C7] ${
-                  isDark ? "placeholder:text-[#A7A7A7]  text-white bg-[#111111]" : "bg-white"
+                className={`w-full text-right text-[22px] sm:text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-30 ${
+                  isDark
+                    ? "text-white placeholder:text-[#555555]"
+                    : "text-[#111111] placeholder:text-[#CCCCCC]"
                 }`}
                 type="text"
-                placeholder="0.0"
+                placeholder="0"
                 value={repayAmount}
               />
-            </motion.div>
+            </div>
+          </div>
 
-            {/* USD value display */}
-            <motion.p
-              className={`text-[12px] font-medium ${
-                isDark ? "text-[#919191]" : "text-[#76737B]"
+          {/* Row 3: USD value */}
+          <div className="flex justify-end">
+            <span
+              className={`text-sm font-medium ${
+                isDark ? "text-[#777777]" : "text-[#A7A7A7]"
               }`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.65, ease: "easeOut" }}
               aria-live="polite"
             >
-              {repayAmountInUsd} USD
-            </motion.p>
-          </motion.section>
+              ≈ {repayAmountInUsd} USD
+            </span>
+          </div>
         </motion.article>
 
         {/* Action buttons */}

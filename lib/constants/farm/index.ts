@@ -371,7 +371,7 @@ export const singleAssetTableHeadings = [
 // The pool address is CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF (TestnetV2).
 // The asset to deposit/withdraw is specified via the `tokens_out` field in ExternalProtocolCall.
 export const BLEND_POOL_ASSETS_CONFIG = [
-  { symbol: "XLM", iconPath: "/icons/stellar.svg" },
+  { symbol: "XLM", iconPath: "/coins/xlmbg.png" },
   { symbol: "USDC", iconPath: "/icons/usdc-icon.svg" },
 ];
 
@@ -454,11 +454,23 @@ export const FARM_STATS_ITEMS = [
     name: "Your Earnings",
     icon: "/icons/bnb-icon.png",
   },
+  {
+    id: "netFarmApy",
+    name: "Net Farm APY",
+    icon: "/icons/bnb-icon.png",
+  },
+  {
+    id: "pendingRewards",
+    name: "Pending Rewards",
+    icon: "/icons/bnb-icon.png",
+  },
 ];
 
 export const FARM_STATS_VALUES: Record<string, string | number | null> = {
   depositTVL: "$2000",
   earnings: "$1000",
+  netFarmApy: "—",
+  pendingRewards: "—",
 };
 
 
@@ -536,4 +548,19 @@ export const LEVERAGE_HEALTH_STATS_ITEMS = [
     name: "Avg Liquidation Time",
     amount: "N/A",
   },
+];
+
+export const farmStatsData = [
+  { heading: "Total Value Locked", value: "$342.8M", uptrend: "+12.4%" },
+  { heading: "24H Trading Volume", value: "$8.2M", uptrend: "+5.8%" },
+  { heading: "Pool APR", value: "24.31%", uptrend: "+2.1%" },
+  { heading: "Leveraged APR", value: "58.7%", uptrend: "+4.6%" },
+];
+
+export const farmLiquidationStatsData = [
+  { heading: "Position Health Factor", value: "1.82" },
+  { heading: "Liquidation Price", value: "$1,842.50", downtrend: "-8.2%" },
+  { heading: "Current Leverage", value: "2.4x" },
+  { heading: "Max Available Leverage", value: "10x" },
+  { heading: "Estimated Daily Yield", value: "$34.12", uptrend: "+2.3%" },
 ];

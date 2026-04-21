@@ -21,7 +21,7 @@ interface ExpandableSection {
 
 interface InfoProps {
   data: {
-    [key: string]: number | null | undefined;
+    [key: string]: number | string | null | undefined;
   };
   items?: InfoItem[];
   expandableSections?: ExpandableSection[];
@@ -31,10 +31,15 @@ interface InfoProps {
 // Format value using the format helper - defined outside component
 const formatFieldValue = (
   id: string,
-  value: number | null | undefined
+  value: number | string | null | undefined,
 ): string => {
+  // If value is already a string, return it directly
+  if (typeof value === "string") {
+    return value;
+  }
+
   const formatType = FIELD_FORMAT_MAP[id] as FormatType | undefined;
-  
+
   if (!formatType) {
     // Fallback to default number formatting
     return formatValue(value, { type: "number" });
@@ -56,6 +61,7 @@ export const InfoCard = ({
   showExpandable = false,
 }: InfoProps) => {
   const { isDark } = useTheme();
+
   // Track expanded state for each section
   const [expandedStates, setExpandedStates] = useState<Record<string, boolean>>(
     expandableSections.reduce(
@@ -63,19 +69,27 @@ export const InfoCard = ({
         ...acc,
         [section.title]: section.defaultExpanded ?? false,
       }),
-      {}
-    )
+      {},
+    ),
   );
 
   const toggleExpanded = (title: string) => {
     setExpandedStates((prev) => ({ ...prev, [title]: !prev[title] }));
   };
 
-  // Render a single info item
+  const cardClass = `flex flex-col w-full border rounded-xl overflow-hidden ${
+    isDark ? "bg-[#222222] border-[#333333]" : "bg-[#F7F7F7] border-[#E5E7EB]"
+  }`;
+  const rowClass = `flex justify-between items-center px-4 py-2.5 ${
+    isDark ? "text-white border-[#333333]" : "border-[#F0F0F0]"
+  }`;
+  const dividerClass = `border-t ${isDark ? "border-[#333333]" : "border-[#F0F0F0]"}`;
+
+  // Render a single info item row
   const renderItem = (item: InfoItem, idx: number, useAnimate = false) => (
     <motion.div
       key={item.id}
-      className={`flex justify-between ${isDark ? "text-white" : ""}`}
+      className={rowClass}
       initial={{ opacity: 0, x: -10 }}
       {...(useAnimate
         ? {
@@ -88,8 +102,16 @@ export const InfoCard = ({
             transition: { duration: 0.3, delay: idx * 0.05 },
           })}
     >
-      <div className="text-[14px] font-medium">{item.name}</div>
-      <div className="text-[14px] font-medium">
+      <div
+        className={`text-[13px] font-medium ${isDark ? "" : "text-[#6B7280]"}`}
+      >
+        {item.name}
+      </div>
+      <div
+        className={`text-sm font-semibold shrink-0 ${
+          isDark ? "text-white" : "text-[#111111]"
+        }`}
+      >
         {formatFieldValue(item.id, data[item.id])}
       </div>
     </motion.div>
@@ -97,12 +119,10 @@ export const InfoCard = ({
 
   return (
     <>
-      {/* Main info items */}
+      {/* Main info items card */}
       {items && items.length > 0 && (
         <motion.article
-          className={`flex flex-col gap-[24px] w-full h-full p-[24px] border-[1px] rounded-[16px] ${
-            isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
-          }`}
+          className={cardClass}
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -112,14 +132,12 @@ export const InfoCard = ({
         </motion.article>
       )}
 
-      {/* Expandable sections */}
+      {/* Expandable section cards */}
       {showExpandable &&
         expandableSections.map((section, sectionIdx) => (
           <motion.article
             key={section.title}
-            className={`flex flex-col gap-[24px] w-full h-full p-[24px] border-[1px] rounded-[16px] ${
-              isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"
-            }`}
+            className={cardClass}
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -129,28 +147,26 @@ export const InfoCard = ({
               ease: "easeOut",
             }}
           >
-            {/* Section header with toggle */}
+            {/* Section toggle header */}
             <motion.button
               type="button"
-              onClick={() => {
-                toggleExpanded(section.title);
-              }}
-              className={`items-center cursor-pointer flex justify-between text-[16px] ${section.headingBold ? "font-bold" : "font-medium"} w-full ${
-                isDark ? "text-white" : ""
+              onClick={() => toggleExpanded(section.title)}
+              className={`flex justify-between items-center px-4 py-3 text-[13px] ${
+                section.headingBold ? "font-bold" : "font-medium"
+              } cursor-pointer w-full ${
+                isDark ? "text-white" : "text-[#111111]"
               }`}
-              whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               aria-expanded={expandedStates[section.title]}
               aria-controls={`section-${section.title}`}
               aria-label={`${
                 expandedStates[section.title] ? "Collapse" : "Expand"
-              } ${section.title} section`}
+              } ${section.title}`}
             >
               {section.title}
-              {/* Expand/collapse arrow */}
               <motion.svg
-                width="13"
-                height="8"
+                width="12"
+                height="7"
                 viewBox="0 0 13 8"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
@@ -160,17 +176,17 @@ export const InfoCard = ({
               >
                 <path
                   d="M11.91 8.38201e-05L12.97 1.06108L7.193 6.84008C7.10043 6.93324 6.99036 7.00717 6.8691 7.05761C6.74785 7.10806 6.61783 7.13403 6.4865 7.13403C6.35517 7.13403 6.22514 7.10806 6.10389 7.05761C5.98264 7.00717 5.87257 6.93324 5.78 6.84008L0 1.06108L1.06 0.00108375L6.485 5.42508L11.91 8.38201e-05Z"
-                  fill={isDark ? "#FFFFFF" : "black"}
+                  fill={isDark ? "#FFFFFF" : "#6B7280"}
                 />
               </motion.svg>
             </motion.button>
 
-            {/* Expandable content */}
+            {/* Expandable rows */}
             <AnimatePresence>
               {expandedStates[section.title] && (
                 <motion.section
                   id={`section-${section.title}`}
-                  className="flex flex-col gap-[24px]"
+                  className={`flex flex-col ${dividerClass}`}
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
@@ -178,7 +194,9 @@ export const InfoCard = ({
                   role="region"
                   aria-labelledby={`section-header-${section.title}`}
                 >
-                  {section.items?.map((item, idx) => renderItem(item, idx, true))}
+                  {section.items?.map((item, idx) =>
+                    renderItem(item, idx, true),
+                  )}
                 </motion.section>
               )}
             </AnimatePresence>
