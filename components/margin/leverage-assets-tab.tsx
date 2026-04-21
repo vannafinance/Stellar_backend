@@ -16,7 +16,14 @@ import { Dialogue } from "@/components/ui/dialogue";
 import { InfoCard } from "./info-card";
 import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
 import { MBSelectionGrid } from "./mb-selection-grid";
-import { useMarginAccountInfoStore, depositAndBorrow, setupContractConfiguration, refreshBorrowedBalances } from "@/store/margin-account-info-store";
+import {
+  useMarginAccountInfoStore,
+  depositAndBorrow,
+  setupContractConfiguration,
+  refreshBorrowedBalances,
+  createMarginAccount,
+  checkUserMarginAccount,
+} from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWallet } from "@/hooks/use-wallet";
@@ -48,7 +55,7 @@ export const LeverageAssetsTab = () => {
   // Component state
   const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
   const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
-  const setHasMarginAccount = useMarginAccountInfoStore((state) => state.set);
+  const isCreatingAccount = useMarginAccountInfoStore((state) => state.isCreatingAccount);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [mode, setMode] = useState<Modes>("Deposit");
   const [borrowItems, setBorrowItems] = useState<BorrowInfo[]>([]);
@@ -442,6 +449,27 @@ export const LeverageAssetsTab = () => {
     }
   };
 
+  const handleSignAgreement = async () => {
+    if (!userAddress || isCreatingAccount) {
+      return;
+    }
+
+    try {
+      const created = await createMarginAccount(userAddress);
+
+      if (created) {
+        await checkUserMarginAccount(userAddress);
+        setActiveDialogue("none");
+        alert("Margin account created successfully.");
+      } else {
+        alert("Failed to create margin account. Please try again.");
+      }
+    } catch (error) {
+      console.error("Failed to create margin account:", error);
+      alert("Failed to create margin account. Please try again.");
+    }
+  };
+
   // MB selection handlers with Set - memoized to prevent unnecessary re-renders
   const handleMBToggle = useCallback((itemId: string, isSelected: boolean) => {
     setSelectedMBIds((prev) => {
@@ -831,8 +859,10 @@ export const LeverageAssetsTab = () => {
             >
               <Dialogue
                 description="Before you proceed, please review and accept the terms of borrowing on VANNA. This agreement ensures you understand the risks, responsibilities, and conditions associated with using the platform."
-                buttonOnClick={() => {setActiveDialogue("none"); setHasMarginAccount({hasMarginAccount:true}); } }
-                buttonText="Sign Agreement"
+                buttonOnClick={() => {
+                  void handleSignAgreement();
+                }}
+                buttonText={isCreatingAccount ? "Creating Account..." : "Sign Agreement"}
                 content={[
                   {
                     line: "Collateral Requirement",
