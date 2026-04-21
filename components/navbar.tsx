@@ -9,6 +9,7 @@ import { tradeItems } from "@/lib/constants";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useWallet } from "@/hooks/use-wallet";
+import { useAppModeStore } from "@/store/app-mode-store";
 
 interface Navbar {
   items: {
@@ -41,6 +42,8 @@ export const Navbar = (props: Navbar) => {
   const { isDark, toggleTheme } = useTheme();
   useUserStore();
   const { address, connectWallet, disconnectWallet, isLoading } = useWallet();
+  const appMode = useAppModeStore((s) => s.mode);
+  const setAppMode = useAppModeStore((s) => s.set);
 
   const groupedItems = {
     primary: props.items.filter((item) => item.group === "primary"),
@@ -75,6 +78,15 @@ export const Navbar = (props: Navbar) => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Keep Lite mode on supported pages only.
+  useEffect(() => {
+    if (appMode !== "lite") return;
+    const proOnlyRoutes = ["/portfolio", "/trade", "/farm", "/earn", "/analytics"];
+    if (proOnlyRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
+      router.replace("/");
+    }
+  }, [appMode, pathname, router]);
+
   const handleNavItemClickWithLink = (item: { title: string; link: string }) => {
     if (item.title === "Trade") return;
     router.push(item.link);
@@ -99,6 +111,7 @@ export const Navbar = (props: Navbar) => {
   const handleWalletMouseEnter = () => { if (walletCloseTimeoutRef.current) { clearTimeout(walletCloseTimeoutRef.current); walletCloseTimeoutRef.current = null; } };
   const handleWalletMouseLeave = () => { walletCloseTimeoutRef.current = setTimeout(() => { setIsWalletDropdownOpen(false); }, 150); };
   const handleDisconnect = () => { disconnectWallet(); setIsWalletDropdownOpen(false); };
+  const handleModeToggle = () => { setAppMode({ mode: appMode === "pro" ? "lite" : "pro" }); };
 
   const handleNavKeyDown = (item: { title: string; link: string }) => (event: React.KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handleNavItemClickWithLink(item); }
@@ -247,6 +260,37 @@ export const Navbar = (props: Navbar) => {
         <div className="flex-1 flex items-center justify-end">
           {/* Right section — desktop */}
           <motion.div className="hidden lg:flex items-center gap-3" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}>
+            <div
+              role="switch"
+              aria-checked={appMode === "lite"}
+              aria-label="Toggle between Pro and Lite mode"
+              tabIndex={0}
+              onClick={handleModeToggle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleModeToggle();
+                }
+              }}
+              className="relative flex items-center rounded-[10px] border h-[40px] w-[100px] cursor-pointer select-none p-[3px] shrink-0"
+              style={{ background: isDark ? "#1A1A1A" : "#F4F4F4", borderColor: isDark ? "#2C2C2C" : "#E5E7EB" }}
+            >
+              <motion.div
+                className="absolute top-[3px] bottom-[3px] rounded-[7px]"
+                style={{ background: "linear-gradient(135deg, #703AE6 0%, #FF007A 100%)" }}
+                animate={{
+                  left: appMode === "pro" ? "3px" : "50%",
+                  right: appMode === "pro" ? "50%" : "3px",
+                }}
+                transition={{ type: "spring", stiffness: 500, damping: 35 }}
+              />
+              <span className={`relative z-10 flex-1 text-center text-[12px] font-bold transition-colors ${appMode === "pro" ? "text-white" : isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>
+                Pro
+              </span>
+              <span className={`relative z-10 flex-1 text-center text-[12px] font-bold transition-colors ${appMode === "lite" ? "text-white" : isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>
+                Lite
+              </span>
+            </div>
             {address && (
               <div className="hidden min-[550px]:block">
                 <Button size="small" type="navbar" disabled={false} onClick={() => router.push("/portfolio")} text="DEPOSIT" ariaLabel="Go to portfolio to deposit" />
@@ -476,6 +520,34 @@ export const Navbar = (props: Navbar) => {
                   </>
                 )}
               </nav>
+
+              <div className={`mx-2 mt-1 mb-2 border-t pt-2 ${isDark ? "border-[#2A2A2A]" : "border-[#E8E8E8]"}`}>
+                <button
+                  type="button"
+                  onClick={handleModeToggle}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isDark ? "hover:bg-[#222222]" : "hover:bg-[#F5F5F5]"}`}
+                  aria-label="Toggle between Pro and Lite mode"
+                >
+                  <span className={`text-[13px] font-semibold ${isDark ? "text-[#E0E0E0]" : "text-[#333333]"}`}>Mode</span>
+                  <div
+                    role="switch"
+                    aria-checked={appMode === "lite"}
+                    className={`relative flex items-center rounded-[8px] border h-[34px] w-[88px] p-[3px] ${isDark ? "bg-[#1A1A1A] border-[#2C2C2C]" : "bg-[#F4F4F4] border-[#E5E7EB]"}`}
+                  >
+                    <motion.div
+                      className="absolute top-[3px] bottom-[3px] rounded-[6px]"
+                      style={{ background: "linear-gradient(135deg, #703AE6 0%, #FF007A 100%)" }}
+                      animate={{
+                        left: appMode === "pro" ? "3px" : "50%",
+                        right: appMode === "pro" ? "50%" : "3px",
+                      }}
+                      transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                    />
+                    <span className={`relative z-10 flex-1 text-center text-[11px] font-bold ${appMode === "pro" ? "text-white" : isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>Pro</span>
+                    <span className={`relative z-10 flex-1 text-center text-[11px] font-bold ${appMode === "lite" ? "text-white" : isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>Lite</span>
+                  </div>
+                </button>
+              </div>
             </motion.div>
           </>
         )}
