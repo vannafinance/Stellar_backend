@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import toast from "react-hot-toast";
 import { Dropdown } from "../ui/dropdown";
 import { DropdownOptions } from "@/lib/constants";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
-import { motion, AnimatePresence } from "framer-motion";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useSupplyLiquidity, usePoolData, useUserPositions } from "@/hooks/use-earn";
@@ -21,9 +21,19 @@ export const SupplyLiquidityTab = () => {
   const balance = useUserStore((state) => state.balance);
   const tokenBalances = useUserStore((state) => state.tokenBalances);
   
-  const { supply, isLoading, message, clearMessage } = useSupplyLiquidity();
+  const { supply, isLoading, message } = useSupplyLiquidity();
   const { pools } = usePoolData();
   const { refresh: refreshPositions } = useUserPositions();
+
+  // Surface supply result as a bottom-left toast (replaces inline banner).
+  const lastToastedRef = useRef<string>("");
+  useEffect(() => {
+    if (!message.text || message.text === lastToastedRef.current) return;
+    lastToastedRef.current = message.text;
+    if (message.type === "success") toast.success(message.text);
+    else if (message.type === "error") toast.error(message.text);
+    else toast(message.text);
+  }, [message.text, message.type]);
 
   // Fetch all token balances when user connects
   const refreshTokenBalances = useCallback(async () => {
@@ -261,41 +271,6 @@ export const SupplyLiquidityTab = () => {
           </p>
         </div>
       )}
-
-      {/* Message Display */}
-      <AnimatePresence>
-        {message.text && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className={`p-4 rounded-xl flex items-start gap-3 ${
-              message.type === 'success' 
-                ? 'bg-green-500/10 border border-green-500/20 text-green-500' 
-                : message.type === 'error' 
-                ? 'bg-red-500/10 border border-red-500/20 text-red-500' 
-                : 'bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]'
-            }`}
-          >
-            {message.type === 'success' && (
-              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-            {message.type === 'error' && (
-              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            )}
-            {message.type === 'info' && (
-              <svg className="w-5 h-5 flex-shrink-0 mt-0.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            )}
-            <span className="text-sm">{message.text}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Supply Button */}
       <button

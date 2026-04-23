@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, memo } from "react";
 import { Dropdown } from "../ui/dropdown";
 import { SvgChart } from "../ui/svg-chart";
 import { depositData, netApyData } from "@/lib/constants/earn";
@@ -95,9 +95,9 @@ const filterDataByDays = (
   });
 };
 
-export const Chart = ({ type, currencyTab, height, containerWidth, containerHeight, heading, downtrend, uptrend, customData, supplyAPY, borrowAPY, hideTitle }: ChartProps) => {
+export const Chart = memo(function Chart({ type, currencyTab, height, containerWidth, containerHeight, heading, downtrend, uptrend, customData, supplyAPY, borrowAPY, hideTitle }: ChartProps) {
   const { isDark } = useTheme();
-  const [selectedFilter, setSelectedFilter] = useState(filterOptions[0]);
+  const [selectedFilter, setSelectedFilter] = useState("All Time");
   const [selectedCurrency, setSelectedCurrency] = useState<string>("usd");
   const [selectedDays, setSelectedDays] = useState<string>(dayOptions[3]);
   const [selectedDepositApy, setSelectedDepositApy] = useState<string>(
@@ -204,7 +204,8 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
     };
   }, [containerHeight, height]);
 
-  // Format Y-axis label
+  // Format Y-axis label — adaptive precision so small USD / token values
+  // (e.g. $0.02 deposits on testnet) don't all collapse to "0".
   const formatYAxisLabel = (value: number): string => {
     if (type === "deposit-apy") {
       return `${value.toFixed(2)}%`;
@@ -212,11 +213,17 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
     if (type === "net-apy") {
       return `${value.toFixed(2)}`;
     }
-    // For deposit amounts, show with commas
-    if (value >= 1000) {
-      return `${(value / 1000).toFixed(1)}k`;
-    }
-    return `${value.toFixed(0)}`;
+    const abs = Math.abs(value);
+    if (abs === 0) return "0";
+    if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+    if (abs >= 1000) return `${(value / 1000).toFixed(1)}k`;
+    if (abs >= 100) return value.toFixed(0);
+    if (abs >= 10) return value.toFixed(1);
+    if (abs >= 1) return value.toFixed(2);
+    if (abs >= 0.1) return value.toFixed(3);
+    if (abs >= 0.01) return value.toFixed(4);
+    // Sub-cent: keep 2 significant digits to avoid long strings.
+    return value.toPrecision(2);
   };
 
   // Chart colors based on theme
@@ -666,4 +673,4 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
       </figure>
     </article>
   );
-};
+});

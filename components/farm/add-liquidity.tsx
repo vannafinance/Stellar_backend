@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useFarmStore } from "@/store/farm-store";
@@ -19,11 +19,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useBlendPoolStats } from "@/hooks/use-farm";
 import { useBlendStore } from "@/store/blend-store";
+import toast from "react-hot-toast";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
 
-export const AddLiquidity = () => {
+export const AddLiquidity = memo(function AddLiquidity() {
   const { isDark } = useTheme();
   const userAddress = useUserStore((state) => state.address);
   const selectedRow = useFarmStore((state) => state.selectedRow);
@@ -282,7 +283,7 @@ export const AddLiquidity = () => {
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
-      // Optimistic UI update to reflect balances instantly; canonical values are re-fetched below.
+      toast.success(`Liquidity added! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       const nextXlm = Math.max(0, parseFloat(marginXlmBalance || "0") - amtA);
       const nextUsdc = Math.max(0, parseFloat(marginUsdcBalance || "0") - amtB);
       setMarginXlmBalance(nextXlm.toFixed(7));
@@ -306,6 +307,7 @@ export const AddLiquidity = () => {
       setTxStatus("error");
       const message = result.error ?? "Add liquidity failed";
       setTxError(message);
+      toast.error(message);
     }
   };
 
@@ -329,8 +331,8 @@ export const AddLiquidity = () => {
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
+      toast.success(`Deposit successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       setValue("");
-      // Refresh borrowed balances after deposit
       refreshBorrowedBalances(marginAccountAddress);
       // Refresh Blend positions (positions table + events) after a short delay
       // to allow the RPC node to reflect the confirmed transaction state
@@ -342,7 +344,9 @@ export const AddLiquidity = () => {
       }, 3000);
     } else {
       setTxStatus("error");
-      setTxError(result.error ?? "Deposit failed");
+      const errorMsg = result.error ?? "Deposit failed";
+      setTxError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 
@@ -489,13 +493,6 @@ export const AddLiquidity = () => {
           disabled={isSubmitDisabled}
           onClick={handleAddLiquidity}
         />
-
-        {txStatus === "error" && txError && (
-          <div className="text-red-500 text-[12px]">{txError}</div>
-        )}
-        {txStatus === "success" && txHash && (
-          <div className="text-green-500 text-[12px]">Transaction submitted: {txHash}</div>
-        )}
       </div>
     );
   }
@@ -627,4 +624,4 @@ export const AddLiquidity = () => {
       />
     </div>
   );
-};
+});

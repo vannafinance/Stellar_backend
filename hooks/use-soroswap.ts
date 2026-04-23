@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   SoroswapService,
   SoroswapPoolStats,
@@ -9,7 +9,9 @@ import {
 } from '@/lib/soroswap-utils';
 import { useBlendStore } from '@/store/blend-store';
 
-// ---------- All Soroswap pools stats ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// All Soroswap pools stats
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface SoroswapPoolWithStats {
   pool: SoroswapPoolConfig;
@@ -18,110 +20,99 @@ export interface SoroswapPoolWithStats {
 }
 
 export const useAllSoroswapPoolStats = (): SoroswapPoolWithStats[] => {
-  const [allStats, setAllStats] = useState<Record<string, SoroswapPoolStats | null>>({});
-  const [loadingKeys, setLoadingKeys] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    const init: Record<string, boolean> = {};
-    SOROSWAP_POOLS.forEach((p) => { init[p.id] = true; });
-    setLoadingKeys(init);
-
-    Promise.allSettled(
-      SOROSWAP_POOLS.map((p) =>
-        SoroswapService.getPoolStats().then((s) => ({ id: p.id, stats: s }))
-      )
-    ).then((results) => {
-      const statsMap: Record<string, SoroswapPoolStats | null> = {};
+  const query = useQuery({
+    queryKey: ['soroswap', 'allPoolStats'],
+    queryFn: async () => {
+      const results = await Promise.allSettled(
+        SOROSWAP_POOLS.map((p) =>
+          SoroswapService.getPoolStats().then((s) => ({ id: p.id, stats: s })),
+        ),
+      );
+      const map: Record<string, SoroswapPoolStats | null> = {};
       results.forEach((r) => {
-        if (r.status === 'fulfilled') statsMap[r.value.id] = r.value.stats;
+        if (r.status === 'fulfilled') map[r.value.id] = r.value.stats;
       });
-      setAllStats(statsMap);
-      setLoadingKeys({});
-    });
+      return map;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
 
-    const interval = setInterval(() => {
-      SOROSWAP_POOLS.forEach((p) => {
-        SoroswapService.getPoolStats().then((s) => {
-          setAllStats((prev) => ({ ...prev, [p.id]: s }));
-        }).catch(() => {});
-      });
-    }, 60_000);
-    return () => clearInterval(interval);
-  }, []);
+  const statsMap = query.data ?? {};
+  const loading = query.isLoading;
 
   return SOROSWAP_POOLS.map((p) => ({
     pool: p,
-    stats: allStats[p.id] ?? null,
-    isLoading: loadingKeys[p.id] ?? false,
+    stats: statsMap[p.id] ?? null,
+    isLoading: loading,
   }));
 };
 
-// ---------- Soroswap pool stats (single pool) ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Soroswap pool stats (single)
+// ─────────────────────────────────────────────────────────────────────────────
 
-export const useSoroswapPoolStats = () => {
-  const [stats, setStats] = useState<SoroswapPoolStats | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+export const useSoroswapPoolStats = (enabled = true) => {
+  const query = useQuery({
+    queryKey: ['soroswap', 'poolStats'],
+    enabled,
+    queryFn: async (): Promise<SoroswapPoolStats | null> => {
+      return SoroswapService.getPoolStats();
+    },
+    refetchInterval: enabled ? 60_000 : false,
+    staleTime: 30_000,
+  });
 
-  const fetch = useCallback(async () => {
-    setIsLoading(true);
-    SoroswapService.getPoolStats()
-      .then(setStats)
-      .catch(() => setStats(null))
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  useEffect(() => {
-    fetch();
-    const interval = setInterval(fetch, 60_000);
-    return () => clearInterval(interval);
-  }, [fetch]);
-
-  return { stats, isLoading, refresh: fetch };
+  return {
+    stats: query.data ?? null,
+    isLoading: query.isLoading || query.isFetching,
+    refresh: () => query.refetch(),
+  };
 };
 
-// ---------- Soroswap LP position ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Soroswap LP position
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const useSoroswapLpPosition = (marginAccountAddress: string | null) => {
   const refreshKey = useBlendStore((s) => s.refreshKey);
-  const [lpBalance, setLpBalance] = useState('0');
-  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (!marginAccountAddress) {
-      setLpBalance('0');
-      return;
-    }
-    setIsLoading(true);
-    SoroswapService.getLpBalance(marginAccountAddress)
-      .then(setLpBalance)
-      .catch(() => setLpBalance('0'))
-      .finally(() => setIsLoading(false));
-  }, [marginAccountAddress, refreshKey]);
+  const query = useQuery({
+    queryKey: ['soroswap', 'lpPosition', marginAccountAddress, refreshKey],
+    enabled: Boolean(marginAccountAddress),
+    queryFn: async () => {
+      if (!marginAccountAddress) return '0';
+      return SoroswapService.getLpBalance(marginAccountAddress);
+    },
+  });
 
-  return { lpBalance, isLoading };
+  return {
+    lpBalance: query.data ?? '0',
+    isLoading: query.isLoading || query.isFetching,
+  };
 };
 
-// ---------- Soroswap token balance in margin account ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Soroswap token balance in margin account
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const useSoroswapTokenBalance = (
   marginAccountAddress: string | null,
-  tokenSymbol: 'XLM' | 'USDC' | null
+  tokenSymbol: 'XLM' | 'USDC' | null,
 ) => {
   const refreshKey = useBlendStore((s) => s.refreshKey);
-  const [balance, setBalance] = useState('0');
-  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (!marginAccountAddress || !tokenSymbol) {
-      setBalance('0');
-      return;
-    }
-    setIsLoading(true);
-    SoroswapService.getMarginAccountTokenBalance(marginAccountAddress, tokenSymbol)
-      .then(setBalance)
-      .catch(() => setBalance('0'))
-      .finally(() => setIsLoading(false));
-  }, [marginAccountAddress, tokenSymbol, refreshKey]);
+  const query = useQuery({
+    queryKey: ['soroswap', 'tokenBalance', marginAccountAddress, tokenSymbol, refreshKey],
+    enabled: Boolean(marginAccountAddress && tokenSymbol),
+    queryFn: async () => {
+      if (!marginAccountAddress || !tokenSymbol) return '0';
+      return SoroswapService.getMarginAccountTokenBalance(marginAccountAddress, tokenSymbol);
+    },
+  });
 
-  return { balance, isLoading };
+  return {
+    balance: query.data ?? '0',
+    isLoading: query.isLoading || query.isFetching,
+  };
 };

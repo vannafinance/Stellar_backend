@@ -9,6 +9,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
 import { WalletService } from "@/lib/stellar-utils";
+import toast from "react-hot-toast";
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
@@ -104,13 +105,12 @@ export const TransferCollateral = () => {
 
   const handleTransferClick = async () => {
     if (!marginAccount || !valueInput || Number(valueInput) <= 0) {
-      alert("Please enter a valid amount");
+      toast.error("Please enter a valid amount");
       return;
     }
 
     setIsLoading(true);
     try {
-      // Convert amount to WAD format (18 decimals)
       const amountWad = (BigInt(Math.floor(Number(valueInput) * 1000000)) * BigInt(1000000000000)).toString();
       
       const result = await MarginAccountService.depositCollateralTokens(
@@ -120,18 +120,17 @@ export const TransferCollateral = () => {
       );
 
       if (result.success) {
-        alert(`✅ Transfer successful! Transaction hash: ${result.hash}`);
-        // Refresh balances
+        toast.success(`Transfer successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
         await refreshMarginAccountBalance(marginAccount);
         const balance = await WalletService.getBalance(userAddress);
         setWalletBalance(parseFloat(balance) || 0);
         setValueInput("");
         setValueInUsd(0);
       } else {
-        alert(`❌ Transfer failed: ${result.error}`);
+        toast.error(`Transfer failed: ${result.error}`);
       }
     } catch (error: any) {
-      alert(`❌ Error: ${error.message}`);
+      toast.error(`Error: ${error.message}`);
     } finally {
       setIsLoading(false);
     }

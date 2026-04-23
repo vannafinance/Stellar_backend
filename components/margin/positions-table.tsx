@@ -6,6 +6,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useMarginAccountInfoStore, type BorrowedBalance } from "@/store/margin-account-info-store";
 import { TABLE_ROW_HEADINGS, COIN_ICONS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+import { useShallow } from "zustand/shallow";
 
 interface PositionstableProps {
   onRepayClick?: () => void;
@@ -32,11 +33,21 @@ export const Positionstable = ({
   onOpenPositionClick,
 }: PositionstableProps) => {
   const { isDark } = useTheme();
-  const collateralBalances = useMarginAccountInfoStore((state) => state.collateralBalances);
-  const borrowedBalances = useMarginAccountInfoStore((state) => state.borrowedBalances);
-  const totalCollateralValue = useMarginAccountInfoStore((state) => state.totalCollateralValue);
-  const totalBorrowedValue = useMarginAccountInfoStore((state) => state.totalBorrowedValue);
-  const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
+  const {
+    collateralBalances,
+    borrowedBalances,
+    totalCollateralValue,
+    totalBorrowedValue,
+    hasMarginAccount,
+  } = useMarginAccountInfoStore(
+    useShallow((state) => ({
+      collateralBalances: state.collateralBalances,
+      borrowedBalances: state.borrowedBalances,
+      totalCollateralValue: state.totalCollateralValue,
+      totalBorrowedValue: state.totalBorrowedValue,
+      hasMarginAccount: state.hasMarginAccount,
+    })),
+  );
 
   const positions = useMemo<Position[]>(() => {
     const collateralEntries = (Object.entries(collateralBalances) as [string, BorrowedBalance][]).filter(

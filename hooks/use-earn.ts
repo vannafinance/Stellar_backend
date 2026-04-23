@@ -1,20 +1,38 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { WalletService, ContractService, AssetType, ASSET_TYPES } from '@/lib/stellar-utils';
 import { useUserStore } from '@/store/user';
-import { useEarnPoolStore, addTransaction, PoolStats, UserPoolPosition } from '@/store/earn-pool-store';
+import { useEarnPoolStore, addTransaction } from '@/store/earn-pool-store';
 
-// Hook for managing pool data
+// ─────────────────────────────────────────────────────────────────────────────
+// Pool data
+//
+// Moved to react-query so multiple consumers share a single fetch, the cache
+// survives page navigation (gcTime 5 min), and stale-while-revalidate kicks in.
+// We still write into `useEarnPoolStore` so components that read the pools
+// from the store directly keep working unchanged (dual-write pattern).
+// ─────────────────────────────────────────────────────────────────────────────
+const calculateSupplyAPY = (utilizationRate: string) => {
+  const utilization = parseFloat(utilizationRate) / 100;
+  return (2.0 + utilization * 10).toFixed(2);
+};
+
+const calculateBorrowAPY = (utilizationRate: string) => {
+  const utilization = parseFloat(utilizationRate) / 100;
+  return (4.0 + utilization * 15).toFixed(2);
+};
+
 export const usePoolData = () => {
-  const { pools, isLoadingPools, lastUpdated } = useEarnPoolStore();
-  const [error, setError] = useState<string | null>(null);
+  const storePools = useEarnPoolStore((s) => s.pools);
+  const lastUpdated = useEarnPoolStore((s) => s.lastUpdated);
 
-  const fetchPoolData = useCallback(async () => {
-    useEarnPoolStore.getState().set({ isLoadingPools: true });
-    setError(null);
+  const query = useQuery({
+    queryKey: ['earn', 'pools'],
+    queryFn: async () => {
+      useEarnPoolStore.getState().set({ isLoadingPools: true });
 
-    try {
       const [xlmStats, usdcStats, aquiresUsdcStats, soroswapUsdcStats] = await Promise.all([
         ContractService.getPoolStats(ASSET_TYPES.XLM),
         ContractService.getPoolStats(ASSET_TYPES.USDC),
@@ -22,130 +40,106 @@ export const usePoolData = () => {
         ContractService.getPoolStats(ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
-      // Calculate APYs (simplified - in production, use rate model contract)
-      const calculateSupplyAPY = (utilizationRate: string) => {
-        const utilization = parseFloat(utilizationRate) / 100;
-        // Base rate + utilization premium
-        const baseRate = 2.0;
-        const utilizationPremium = utilization * 10;
-        return (baseRate + utilizationPremium).toFixed(2);
-      };
-
-      const calculateBorrowAPY = (utilizationRate: string) => {
-        const utilization = parseFloat(utilizationRate) / 100;
-        const baseRate = 4.0;
-        const utilizationPremium = utilization * 15;
-        return (baseRate + utilizationPremium).toFixed(2);
+      const mapped = {
+        XLM: {
+          ...xlmStats,
+          supplyAPY: calculateSupplyAPY(xlmStats.utilizationRate),
+          borrowAPY: calculateBorrowAPY(xlmStats.utilizationRate),
+          exchangeRate: xlmStats.vTokenSupply !== '0'
+            ? (parseFloat(xlmStats.totalSupply) / parseFloat(xlmStats.vTokenSupply)).toFixed(7)
+            : '1',
+        },
+        USDC: {
+          ...usdcStats,
+          supplyAPY: calculateSupplyAPY(usdcStats.utilizationRate),
+          borrowAPY: calculateBorrowAPY(usdcStats.utilizationRate),
+          exchangeRate: usdcStats.vTokenSupply !== '0'
+            ? (parseFloat(usdcStats.totalSupply) / parseFloat(usdcStats.vTokenSupply)).toFixed(7)
+            : '1',
+        },
+        AQUARIUS_USDC: {
+          ...aquiresUsdcStats,
+          supplyAPY: calculateSupplyAPY(aquiresUsdcStats.utilizationRate),
+          borrowAPY: calculateBorrowAPY(aquiresUsdcStats.utilizationRate),
+          exchangeRate: aquiresUsdcStats.vTokenSupply !== '0'
+            ? (parseFloat(aquiresUsdcStats.totalSupply) / parseFloat(aquiresUsdcStats.vTokenSupply)).toFixed(7)
+            : '1',
+        },
+        SOROSWAP_USDC: {
+          ...soroswapUsdcStats,
+          supplyAPY: calculateSupplyAPY(soroswapUsdcStats.utilizationRate),
+          borrowAPY: calculateBorrowAPY(soroswapUsdcStats.utilizationRate),
+          exchangeRate: soroswapUsdcStats.vTokenSupply !== '0'
+            ? (parseFloat(soroswapUsdcStats.totalSupply) / parseFloat(soroswapUsdcStats.vTokenSupply)).toFixed(7)
+            : '1',
+        },
       };
 
       useEarnPoolStore.getState().set({
-        pools: {
-          XLM: {
-            ...xlmStats,
-            supplyAPY: calculateSupplyAPY(xlmStats.utilizationRate),
-            borrowAPY: calculateBorrowAPY(xlmStats.utilizationRate),
-            exchangeRate: xlmStats.vTokenSupply !== '0'
-              ? (parseFloat(xlmStats.totalSupply) / parseFloat(xlmStats.vTokenSupply)).toFixed(7)
-              : '1',
-          },
-          USDC: {
-            ...usdcStats,
-            supplyAPY: calculateSupplyAPY(usdcStats.utilizationRate),
-            borrowAPY: calculateBorrowAPY(usdcStats.utilizationRate),
-            exchangeRate: usdcStats.vTokenSupply !== '0'
-              ? (parseFloat(usdcStats.totalSupply) / parseFloat(usdcStats.vTokenSupply)).toFixed(7)
-              : '1',
-          },
-          AQUARIUS_USDC: {
-            ...aquiresUsdcStats,
-            supplyAPY: calculateSupplyAPY(aquiresUsdcStats.utilizationRate),
-            borrowAPY: calculateBorrowAPY(aquiresUsdcStats.utilizationRate),
-            exchangeRate: aquiresUsdcStats.vTokenSupply !== '0'
-              ? (parseFloat(aquiresUsdcStats.totalSupply) / parseFloat(aquiresUsdcStats.vTokenSupply)).toFixed(7)
-              : '1',
-          },
-          SOROSWAP_USDC: {
-            ...soroswapUsdcStats,
-            supplyAPY: calculateSupplyAPY(soroswapUsdcStats.utilizationRate),
-            borrowAPY: calculateBorrowAPY(soroswapUsdcStats.utilizationRate),
-            exchangeRate: soroswapUsdcStats.vTokenSupply !== '0'
-              ? (parseFloat(soroswapUsdcStats.totalSupply) / parseFloat(soroswapUsdcStats.vTokenSupply)).toFixed(7)
-              : '1',
-          },
-        },
+        pools: mapped,
         lastUpdated: Date.now(),
         isLoadingPools: false,
       });
-    } catch (err: any) {
-      console.error('Error fetching pool data:', err);
-      setError(err.message || 'Failed to fetch pool data');
-      useEarnPoolStore.getState().set({ isLoadingPools: false });
-    }
-  }, []);
 
-  // Auto-refresh pool data every 30 seconds
-  useEffect(() => {
-    fetchPoolData();
-    const interval = setInterval(fetchPoolData, 30000);
-    return () => clearInterval(interval);
-  }, [fetchPoolData]);
+      return mapped;
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
 
-  // Retry automatically when the fetch fails (e.g. testnet cold-start rate limits)
-  useEffect(() => {
-    if (!error) return;
-    const timer = setTimeout(() => {
-      setError(null);
-      fetchPoolData();
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [error, fetchPoolData]);
+  // Let the store's loading flag stay false after an error — the store write
+  // in queryFn only runs on success. Reset it here so retries don't get stuck.
+  if (query.isError) {
+    useEarnPoolStore.getState().set({ isLoadingPools: false });
+  }
 
   return {
-    pools,
-    isLoading: isLoadingPools,
+    pools: query.data ?? storePools,
+    isLoading: query.isLoading || query.isFetching,
     lastUpdated,
-    error,
-    refresh: fetchPoolData,
+    error: query.error ? (query.error as Error).message : null,
+    refresh: () => query.refetch(),
   };
 };
 
-// Hook for user positions
+// ─────────────────────────────────────────────────────────────────────────────
+// User positions
+// ─────────────────────────────────────────────────────────────────────────────
+const EMPTY_POSITION = {
+  deposited: '0',
+  vTokenBalance: '0',
+  borrowed: '0',
+  borrowShares: '0',
+  earnedInterest: '0',
+  accruedDebt: '0',
+};
+
+const EMPTY_POSITIONS = {
+  XLM: { ...EMPTY_POSITION },
+  USDC: { ...EMPTY_POSITION },
+  AQUARIUS_USDC: { ...EMPTY_POSITION },
+  SOROSWAP_USDC: { ...EMPTY_POSITION },
+};
+
 export const useUserPositions = () => {
   const address = useUserStore((state) => state.address);
   const isConnected = useUserStore((state) => state.isConnected);
-  const { userPositions, isLoadingPositions } = useEarnPoolStore();
-  const [error, setError] = useState<string | null>(null);
+  const storePositions = useEarnPoolStore((s) => s.userPositions);
 
-  const fetchUserPositions = useCallback(async () => {
-    if (!address || !isConnected) {
-      console.log('Not fetching positions - address or connection missing');
-      useEarnPoolStore.getState().set({
-        userPositions: {
-          XLM: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-          USDC: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-          AQUARIUS_USDC: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-          SOROSWAP_USDC: { deposited: '0', vTokenBalance: '0', borrowed: '0', borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-        },
-      });
-      // Also update user store
-      useUserStore.getState().set({
-        depositedBalances: {
-          XLM: '0',
-          USDC: '0',
-          AQUARIUS_USDC: '0',
-          SOROSWAP_USDC: '0',
-        },
-      });
-      return;
-    }
+  const query = useQuery({
+    queryKey: ['earn', 'userPositions', address ?? null],
+    enabled: Boolean(address && isConnected),
+    queryFn: async () => {
+      if (!address) {
+        useEarnPoolStore.getState().set({ userPositions: EMPTY_POSITIONS });
+        useUserStore.getState().set({
+          depositedBalances: { XLM: '0', USDC: '0', AQUARIUS_USDC: '0', SOROSWAP_USDC: '0' },
+        });
+        return EMPTY_POSITIONS;
+      }
 
-    console.log('Fetching user positions for address:', address);
-    useEarnPoolStore.getState().set({ isLoadingPositions: true });
-    setError(null);
+      useEarnPoolStore.getState().set({ isLoadingPositions: true });
 
-    try {
-      // Fetch vToken balances (these are deposited amounts)
-      console.log('Fetching vToken balances...');
       const [xlmVBalance, usdcVBalance, aquiresUsdcVBalance, soroswapUsdcVBalance] = await Promise.all([
         ContractService.getDepositedBalance(address, ASSET_TYPES.XLM),
         ContractService.getDepositedBalance(address, ASSET_TYPES.USDC),
@@ -153,13 +147,6 @@ export const useUserPositions = () => {
         ContractService.getDepositedBalance(address, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
-      console.log('vToken balances fetched:', {
-        XLM: xlmVBalance,
-        USDC: usdcVBalance,
-      });
-
-      // Fetch borrow balances
-      console.log('Fetching borrow balances...');
       const [xlmBorrow, usdcBorrow, aquiresUsdcBorrow, soroswapUsdcBorrow] = await Promise.all([
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.XLM),
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.USDC),
@@ -167,51 +154,18 @@ export const useUserPositions = () => {
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
-      console.log('Borrow balances fetched:', {
-        XLM: xlmBorrow,
-        USDC: usdcBorrow,
-      });
+      const positions = {
+        XLM: { deposited: xlmVBalance, vTokenBalance: xlmVBalance, borrowed: xlmBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+        USDC: { deposited: usdcVBalance, vTokenBalance: usdcVBalance, borrowed: usdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+        AQUARIUS_USDC: { deposited: aquiresUsdcVBalance, vTokenBalance: aquiresUsdcVBalance, borrowed: aquiresUsdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+        SOROSWAP_USDC: { deposited: soroswapUsdcVBalance, vTokenBalance: soroswapUsdcVBalance, borrowed: soroswapUsdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+      };
 
-      // Update earn pool store
       useEarnPoolStore.getState().set({
-        userPositions: {
-          XLM: {
-            deposited: xlmVBalance,
-            vTokenBalance: xlmVBalance,
-            borrowed: xlmBorrow,
-            borrowShares: '0',
-            earnedInterest: '0',
-            accruedDebt: '0',
-          },
-          USDC: {
-            deposited: usdcVBalance,
-            vTokenBalance: usdcVBalance,
-            borrowed: usdcBorrow,
-            borrowShares: '0',
-            earnedInterest: '0',
-            accruedDebt: '0',
-          },
-          AQUARIUS_USDC: {
-            deposited: aquiresUsdcVBalance,
-            vTokenBalance: aquiresUsdcVBalance,
-            borrowed: aquiresUsdcBorrow,
-            borrowShares: '0',
-            earnedInterest: '0',
-            accruedDebt: '0',
-          },
-          SOROSWAP_USDC: {
-            deposited: soroswapUsdcVBalance,
-            vTokenBalance: soroswapUsdcVBalance,
-            borrowed: soroswapUsdcBorrow,
-            borrowShares: '0',
-            earnedInterest: '0',
-            accruedDebt: '0',
-          },
-        },
+        userPositions: positions,
         isLoadingPositions: false,
       });
 
-      // Also update user store depositedBalances for withdraw hook
       useUserStore.getState().set({
         depositedBalances: {
           XLM: xlmVBalance,
@@ -220,28 +174,28 @@ export const useUserPositions = () => {
           SOROSWAP_USDC: soroswapUsdcVBalance,
         },
       });
-      
-      console.log('User positions updated successfully');
-    } catch (err: any) {
-      console.error('Error fetching user positions:', err);
-      setError(err.message || 'Failed to fetch user positions');
-      useEarnPoolStore.getState().set({ isLoadingPositions: false });
-    }
-  }, [address, isConnected]);
 
-  useEffect(() => {
-    fetchUserPositions();
-  }, [fetchUserPositions]);
+      return positions;
+    },
+  });
+
+  if (query.isError) {
+    useEarnPoolStore.getState().set({ isLoadingPositions: false });
+  }
 
   return {
-    positions: userPositions,
-    isLoading: isLoadingPositions,
-    error,
-    refresh: fetchUserPositions,
+    positions: query.data ?? storePositions,
+    isLoading: query.isLoading || query.isFetching,
+    error: query.error ? (query.error as Error).message : null,
+    refresh: () => query.refetch(),
   };
 };
 
-// Hook for supply liquidity
+// ─────────────────────────────────────────────────────────────────────────────
+// Mutations — stay imperative. react-query's `useMutation` would be a clean
+// fit here, but the message/loading UX is already wired through setState and
+// the callers expect the existing return shape.
+// ─────────────────────────────────────────────────────────────────────────────
 export const useSupplyLiquidity = () => {
   const address = useUserStore((state) => state.address);
   const [isLoading, setIsLoading] = useState(false);
@@ -293,15 +247,13 @@ export const useSupplyLiquidity = () => {
 
       if (result.success) {
         setMessage({ type: 'success', text: `Successfully supplied ${amount} ${assetType}! You received v${assetType} tokens.` });
-        
-        // Add transaction to history
+
         if (result.hash) {
           addTransaction('supply', assetType, amount.toString(), result.hash, 'success');
         }
-        
-        // Refresh balances after successful deposit
+
         await refreshAllBalances();
-        
+
         return { success: true, hash: result.hash };
       } else {
         setMessage({ type: 'error', text: result.error || 'Supply failed' });
@@ -323,10 +275,9 @@ export const useSupplyLiquidity = () => {
   };
 };
 
-// Hook for withdraw liquidity
 export const useWithdrawLiquidity = () => {
   const address = useUserStore((state) => state.address);
-  const { userPositions } = useEarnPoolStore();
+  const userPositions = useEarnPoolStore((s) => s.userPositions);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info' | '', text: string }>({ type: '', text: '' });
 
@@ -353,7 +304,6 @@ export const useWithdrawLiquidity = () => {
         },
       });
 
-      // Also update the earn pool store
       useEarnPoolStore.getState().set({
         userPositions: {
           XLM: { ...useEarnPoolStore.getState().userPositions.XLM, vTokenBalance: xlmDeposited, deposited: xlmDeposited },
@@ -378,7 +328,6 @@ export const useWithdrawLiquidity = () => {
       return { success: false };
     }
 
-    // Get deposited balance from the earn pool store (vToken balance)
     const depositedAmount = parseFloat(userPositions[assetType]?.vTokenBalance || '0');
     if (amount > depositedAmount) {
       setMessage({ type: 'error', text: `Cannot withdraw more than deposited balance (${depositedAmount.toFixed(7)} v${assetType})` });
@@ -393,15 +342,13 @@ export const useWithdrawLiquidity = () => {
 
       if (result.success) {
         setMessage({ type: 'success', text: `Successfully withdrew ${assetType}! Transaction confirmed.` });
-        
-        // Add transaction to history
+
         if (result.hash) {
           addTransaction('withdraw', assetType, amount.toString(), result.hash, 'success');
         }
-        
-        // Refresh balances after successful withdrawal
+
         await refreshAllBalances();
-        
+
         return { success: true, hash: result.hash };
       } else {
         setMessage({ type: 'error', text: result.error || 'Withdrawal failed' });
@@ -436,23 +383,20 @@ export const useEarnPage = () => {
   const userPositionsData = useUserPositions();
   const { recentTransactions } = useEarnPoolStore();
 
-  // Calculate total deposited value across all pools
   const totalDeposited = Object.values(userPositionsData.positions).reduce(
     (sum, pos) => sum + (parseFloat(pos.deposited) || 0),
     0
   );
 
-  // Calculate total borrowed value across all pools
   const totalBorrowed = Object.values(userPositionsData.positions).reduce(
     (sum, pos) => sum + (parseFloat(pos.borrowed) || 0),
     0
   );
 
-  // Calculate weighted average APY
   const calculateWeightedAPY = () => {
     let totalValue = 0;
     let weightedAPY = 0;
-    
+
     Object.entries(poolData.pools).forEach(([asset, pool]) => {
       const deposited = parseFloat(userPositionsData.positions[asset as keyof typeof userPositionsData.positions]?.deposited || '0');
       if (deposited > 0) {
@@ -460,7 +404,7 @@ export const useEarnPage = () => {
         weightedAPY += deposited * parseFloat(pool.supplyAPY || '0');
       }
     });
-    
+
     return totalValue > 0 ? (weightedAPY / totalValue).toFixed(2) : '0';
   };
 
@@ -472,28 +416,22 @@ export const useEarnPage = () => {
   }, [poolData, userPositionsData]);
 
   return {
-    // Wallet state
     isConnected: wallet.isConnected,
     address: wallet.address,
     nativeBalance: wallet.balance,
-    
-    // Pool data
+
     pools: poolData.pools,
     isLoadingPools: poolData.isLoading,
-    
-    // User positions
+
     userPositions: userPositionsData.positions,
     isLoadingPositions: userPositionsData.isLoading,
-    
-    // Aggregated data
+
     totalDeposited,
     totalBorrowed,
     weightedAPY: calculateWeightedAPY(),
-    
-    // Transactions
+
     recentTransactions,
-    
-    // Actions
+
     refresh,
   };
 };

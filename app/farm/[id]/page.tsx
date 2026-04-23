@@ -5,7 +5,7 @@ import { useFarmStore } from "@/store/farm-store";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
 import Image from "next/image";
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, memo } from "react";
 import { iconPaths } from "@/lib/constants";
 import { AccountStatsGhost } from "@/components/earn/account-stats-ghost";
 import { Chart } from "@/components/earn/chart";
@@ -43,14 +43,49 @@ const UI_TABS = [
   { id: "analytics", label: "Analytics" },
 ];
 
-// Headings for current position table
 const positionTableHeadings = [
   { label: "Asset", id: "asset" },
-  { label: "Supplied (b-Tokens)", id: "b-tokens" },
-  { label: "Underlying Value", id: "underlying" },
-  { label: "Supply APY", id: "supply-apy" },
+  { label: "b-Tokens", id: "b-tokens" },
+  { label: "Value", id: "underlying" },
+  { label: "APY", id: "supply-apy" },
   { label: "b-Rate", id: "b-rate" },
 ];
+
+const FarmHeaderStats = memo(function FarmHeaderStats({
+  tokenSymbol,
+  isSoroswapEarly,
+  matchedSoroswapPool,
+}: {
+  tokenSymbol: 'XLM' | 'USDC' | null;
+  isSoroswapEarly: boolean;
+  matchedSoroswapPool: { tokens: string[] } | null;
+}) {
+  const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
+  const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats(isSoroswapEarly);
+
+  const reserveData = tokenSymbol ? poolStats[tokenSymbol] : null;
+  const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
+  const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
+
+  const items = useMemo(() => {
+    if (isSoroswapEarly) {
+      return [
+        { id: "reserveXLM", name: `${ssTokenA} Reserve`, amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveXLM).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenA}` : "N/A" },
+        { id: "reserveUSDC", name: `${ssTokenB} Reserve`, amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveUSDC).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenB}` : "N/A" },
+        { id: "fee", name: "Fee Rate", amount: ssStats?.feeFraction ?? (ssStatsLoading ? "..." : "N/A") },
+        { id: "totalShares", name: "Total LP Shares", amount: ssStatsLoading ? "..." : ssStats ? parseFloat(ssStats.totalShares).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "N/A" },
+      ];
+    }
+    return [
+      { id: "supplyApy", name: "Supply APY", amount: statsLoading ? "..." : reserveData ? `${reserveData.supplyAPY}%` : "N/A" },
+      { id: "borrowApy", name: "Borrow APY", amount: statsLoading ? "..." : reserveData ? `${reserveData.borrowAPY}%` : "N/A" },
+      { id: "utilization", name: "Utilization Rate", amount: statsLoading ? "..." : reserveData ? `${reserveData.utilizationRate}%` : "N/A" },
+      { id: "totalSupply", name: "Total Pool Supply", amount: statsLoading ? "..." : reserveData ? `${parseFloat(reserveData.totalSupply).toLocaleString()} ${tokenSymbol}` : "N/A" },
+    ];
+  }, [isSoroswapEarly, ssStats, ssStatsLoading, ssTokenA, ssTokenB, reserveData, statsLoading, tokenSymbol]);
+
+  return <AccountStatsGhost items={items} />;
+});
 
 export default function FarmDetailPage() {
   const params = useParams();
@@ -100,8 +135,10 @@ export default function FarmDetailPage() {
     return SOROSWAP_POOLS.find((p) => p.id === id) ?? SOROSWAP_POOLS[0];
   }, [isSoroswapEarly, id]);
 
+  const isBlendPool = !isSoroswapEarly && !isAquariusEarly;
+
   // Real data hooks — Blend (single-asset)
-  const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
+  const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats(isBlendPool);
   const { positions: userPositions, isLoading: posLoading } = useUserBlendPositions();
   const { events, isLoading: eventsLoading } = useBlendEvents(tokenSymbol ?? undefined);
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
@@ -112,40 +149,13 @@ export default function FarmDetailPage() {
   const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress);
 
   // Real data hooks — Soroswap (multi-asset)
-  const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats();
+  const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats(isSoroswapEarly);
   const { lpBalance: ssLpBalanceRaw } = useSoroswapLpPosition(marginAccountAddress);
   const mySSLpBalance = parseFloat(ssLpBalanceRaw ?? '0');
   const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
   const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
 
-  // Pool stats for this token
   const reserveData = tokenSymbol ? poolStats[tokenSymbol] : null;
-
-  // Stats strip items (real data)
-  const statsItems = useMemo(() => [
-    {
-      id: "supplyApy",
-      name: "Supply APY",
-      amount: statsLoading ? "..." : reserveData ? `${reserveData.supplyAPY}%` : "N/A",
-    },
-    {
-      id: "borrowApy",
-      name: "Borrow APY",
-      amount: statsLoading ? "..." : reserveData ? `${reserveData.borrowAPY}%` : "N/A",
-    },
-    {
-      id: "utilization",
-      name: "Utilization Rate",
-      amount: statsLoading ? "..." : reserveData ? `${reserveData.utilizationRate}%` : "N/A",
-    },
-    {
-      id: "totalSupply",
-      name: "Total Pool Supply",
-      amount: statsLoading ? "..." : reserveData
-        ? `${parseFloat(reserveData.totalSupply).toLocaleString()} ${tokenSymbol}`
-        : "N/A",
-    },
-  ], [reserveData, statsLoading, tokenSymbol]);
 
   // User position for this token
   const myPosition = tokenSymbol ? userPositions[tokenSymbol] : null;
@@ -257,14 +267,13 @@ export default function FarmDetailPage() {
     [aqEvents, myLpBalance]
   );
 
-  // Aquarius current position table
-  const aquariusPositionHeadings = [
+  const aquariusPositionHeadings = useMemo(() => [
     { label: "Pool", id: "pool" },
     { label: "LP Shares", id: "lp-shares" },
     { label: `${poolTokenA} Deposited`, id: "token-a" },
     { label: `${poolTokenB} Deposited`, id: "token-b" },
     { label: "Fee Rate", id: "fee-rate" },
-  ];
+  ], [poolTokenA, poolTokenB]);
 
   const aquariusCurrentPositionBody = useMemo(() => {
     if (myLpBalance <= 0) return { rows: [] };
@@ -325,44 +334,19 @@ export default function FarmDetailPage() {
 
   // ── Soroswap computed values ──
 
-  // Soroswap stats strip
-  const soroswapStatsItems = useMemo(() => [
-    {
-      id: "reserveXLM",
-      name: `${ssTokenA} Reserve`,
-      amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveXLM).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenA}` : "N/A",
-    },
-    {
-      id: "reserveUSDC",
-      name: `${ssTokenB} Reserve`,
-      amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveUSDC).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenB}` : "N/A",
-    },
-    {
-      id: "fee",
-      name: "Fee Rate",
-      amount: ssStats?.feeFraction ?? (ssStatsLoading ? "..." : "N/A"),
-    },
-    {
-      id: "totalShares",
-      name: "Total LP Shares",
-      amount: ssStatsLoading ? "..." : ssStats ? parseFloat(ssStats.totalShares).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "N/A",
-    },
-  ], [ssStats, ssStatsLoading, ssTokenA, ssTokenB]);
-
   // Soroswap LP chart data (no on-chain events yet — flat line from current balance)
   const ssChartData = useMemo(
     () => buildLpChartData([], mySSLpBalance),
     [mySSLpBalance]
   );
 
-  // Soroswap position table headings
-  const soroswapPositionHeadings = [
+  const soroswapPositionHeadings = useMemo(() => [
     { label: "Pool", id: "pool" },
     { label: "LP Shares", id: "lp-shares" },
     { label: `${ssTokenA} Deposited`, id: "token-a" },
     { label: `${ssTokenB} Deposited`, id: "token-b" },
     { label: "Fee Rate", id: "fee-rate" },
-  ];
+  ], [ssTokenA, ssTokenB]);
 
   // Soroswap current position
   const soroswapCurrentPositionBody = useMemo(() => {
@@ -610,10 +594,9 @@ export default function FarmDetailPage() {
         </div>
       </header>
 
-      {/* Stats bar — single asset only */}
       {!isMultiAsset && (
         <section className="px-4 sm:px-10 lg:px-30" aria-label="Pool Statistics">
-          <AccountStatsGhost items={isSoroswapEarly ? soroswapStatsItems : statsItems} />
+          <FarmHeaderStats tokenSymbol={tokenSymbol} isSoroswapEarly={isSoroswapEarly} matchedSoroswapPool={matchedSoroswapPool} />
         </section>
       )}
 

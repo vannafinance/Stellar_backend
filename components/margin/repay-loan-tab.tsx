@@ -11,6 +11,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
 import { WalletService } from "@/lib/stellar-utils";
+import toast from "react-hot-toast";
 
 export const RepayLoanTab = () => {
   const { isDark } = useTheme();
@@ -118,13 +119,12 @@ export const RepayLoanTab = () => {
   // Handler for pay now click
   const handlePayNowClick = async () => {
     if (!marginAccount || repayAmount <= 0) {
-      alert("Please enter a valid repay amount");
+      toast.error("Please enter a valid repay amount");
       return;
     }
 
     setIsLoading(true);
     try {
-      // Convert amount to WAD format (18 decimals)
       const repayAmountWad = (BigInt(Math.floor(repayAmount * 1000000)) * BigInt(1000000000000)).toString();
       
       const result = await MarginAccountService.repayLoan(
@@ -134,15 +134,14 @@ export const RepayLoanTab = () => {
       );
 
       if (result.success) {
-        alert(`✅ Loan repayment successful! Transaction hash: ${result.hash}`);
-        // Refresh balances
+        toast.success(`Loan repayment successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
         await refreshBorrowedBalances(marginAccount);
         setRepayAmount(0);
       } else {
-        alert(`❌ Loan repayment failed: ${result.error}`);
+        toast.error(`Loan repayment failed: ${result.error}`);
       }
     } catch (error: any) {
-      alert(`❌ Error: ${error.message}`);
+      toast.error(`Error: ${error.message}`);
     } finally {
       setIsLoading(false);
       setIsPayNowPopupOpen(false);

@@ -6,7 +6,7 @@ import { Details } from "@/components/earn/details-tab";
 import { YourPositions } from "@/components/earn/your-positions";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import Image from "next/image";
-import { useState, use, useMemo, useEffect } from "react";
+import { useState, use, useMemo, useEffect, memo } from "react";
 import { ActivityTab } from "@/components/earn/acitivity-tab";
 import { AnalyticsTab } from "@/components/earn/analytics-tab";
 import { MarginManagersTab } from "@/components/earn/margin-managers-tab";
@@ -15,11 +15,10 @@ import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { iconPaths } from "@/lib/constants";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
-import { setSelectedPool } from "@/store/selected-pool-store";
+import { setSelectedPool, useSelectedPoolStore } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { usePoolData } from "@/hooks/use-earn";
 
-// Approximate USD prices for testnet display (no live oracle)
 const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0 };
 
 const fmt = (n: number, decimals = 4) =>
@@ -27,13 +26,38 @@ const fmt = (n: number, decimals = 4) =>
   : n >= 1_000 ? `${(n / 1_000).toFixed(2)}K`
   : n.toFixed(decimals);
 
+const EarnHeaderStats = memo(function EarnHeaderStats({ assetTitle }: { assetTitle: string }) {
+  const { pools } = usePoolData();
+
+  const items = useMemo(() => {
+    const asset = toInternalAsset(assetTitle);
+    const displayAsset = toDisplayAsset(assetTitle);
+    const pool = pools[asset as keyof typeof pools];
+    const price = TOKEN_PRICES[asset] ?? 1;
+
+    const totalSupply = parseFloat(pool?.totalSupply || '0');
+    const availableLiquidity = parseFloat(pool?.availableLiquidity || '0');
+    const utilizationRate = parseFloat(pool?.utilizationRate || '0');
+    const supplyAPY = parseFloat(pool?.supplyAPY || '0');
+
+    return [
+      { id: "1", name: "Total Supply", amount: `$${fmt(totalSupply * price, 2)}`, amountInToken: `${fmt(totalSupply)} ${displayAsset}` },
+      { id: "2", name: "Available Liquidity", amount: `$${fmt(availableLiquidity * price, 2)}`, amountInToken: `${fmt(availableLiquidity)} ${displayAsset}` },
+      { id: "3", name: "Utilization Rate", amount: `${utilizationRate.toFixed(2)}%` },
+      { id: "4", name: "Supply APY", amount: `${supplyAPY.toFixed(2)}%` },
+    ];
+  }, [pools, assetTitle]);
+
+  return <AccountStatsGhost items={items} />;
+});
+
 const tabs = [
-  { id: "your-positions", label: "Your Positions" },
+  { id: "your-positions", label: "Your Positions", shortLabel: "Positions" },
   { id: "details", label: "Details" },
   { id: "activity", label: "Activity" },
-  { id: "collateral-limits", label: "Collateral and Limits" },
+  { id: "collateral-limits", label: "Collateral and Limits", shortLabel: "Collateral" },
   { id: "analytics", label: "Analytics" },
-  { id: "margin-managers", label: "Margin Managers" },
+  { id: "margin-managers", label: "Margin Managers", shortLabel: "Managers" },
 ];
 
 const toInternalAsset = (value: string): AssetType => {
@@ -63,10 +87,11 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
     router.push("/earn");
   };
 
-  // Set selected pool when page loads or id changes
   useEffect(() => {
     const assetType = toInternalAsset(id);
     if (assetType === 'XLM' || assetType === 'USDC' || assetType === 'AQUARIUS_USDC' || assetType === 'SOROSWAP_USDC') {
+      const current = useSelectedPoolStore.getState();
+      if (current.selectedAsset === assetType) return;
       setSelectedPool(assetType as AssetType, {
         id: toDisplayAsset(id),
         chain: assetType,
@@ -91,53 +116,11 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [selectedVault, id]);
 
-  // Get icon path for the asset
   const iconPath = useMemo(() => {
     const exact = iconPaths[vaultData.title];
     const uppercase = iconPaths[vaultData.title.toUpperCase()];
     return exact || uppercase || "/icons/stellar.svg";
   }, [vaultData.title]);
-
-  // Live pool data from on-chain contracts (auto-refreshes every 30s)
-  const { pools } = usePoolData();
-
-  // Build header stats entirely from live contract data
-  const accountStatsItems = useMemo(() => {
-    const asset = toInternalAsset(vaultData.title);
-    const displayAsset = toDisplayAsset(vaultData.title);
-    const pool = pools[asset as keyof typeof pools];
-    const price = TOKEN_PRICES[asset] ?? 1;
-
-    const totalSupply = parseFloat(pool?.totalSupply || '0');
-    const availableLiquidity = parseFloat(pool?.availableLiquidity || '0');
-    const utilizationRate = parseFloat(pool?.utilizationRate || '0');
-    const supplyAPY = parseFloat(pool?.supplyAPY || '0');
-
-    return [
-      {
-        id: "1",
-        name: "Total Supply",
-        amount: `$${fmt(totalSupply * price, 2)}`,
-        amountInToken: `${fmt(totalSupply)} ${displayAsset}`,
-      },
-      {
-        id: "2",
-        name: "Available Liquidity",
-        amount: `$${fmt(availableLiquidity * price, 2)}`,
-        amountInToken: `${fmt(availableLiquidity)} ${displayAsset}`,
-      },
-      {
-        id: "3",
-        name: "Utilization Rate",
-        amount: `${utilizationRate.toFixed(2)}%`,
-      },
-      {
-        id: "4",
-        name: "Supply APY",
-        amount: `${supplyAPY.toFixed(2)}%`,
-      },
-    ];
-  }, [pools, vaultData.title]);
 
   return (
     <main className="flex flex-col gap-5">
@@ -185,7 +168,7 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
       </header>
 
       <section className="px-4 sm:px-10 lg:px-30" aria-label="Vault Statistics">
-        <AccountStatsGhost items={accountStatsItems} />
+        <EarnHeaderStats assetTitle={vaultData.title} />
       </section>
 
       <section className="px-4 sm:px-10 lg:px-30 pt-1 pb-24 xl:pb-16 w-full h-fit" aria-label="Vault Details and Actions">
@@ -197,8 +180,9 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
                 type="border"
-                containerClassName={`w-full min-w-max sm:min-w-0 rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
-                tabClassName="!flex-1 !px-2 text-[12px] whitespace-nowrap"
+                shortLabelBelow="2xl"
+                containerClassName={`w-full rounded-xl border p-1 ${isDark ? "bg-[#111111] border-[#333333]" : "bg-white border-[#E5E7EB]"}`}
+                tabClassName="!flex-1 !h-10 !px-2 !text-[12px] whitespace-nowrap"
               />
             </nav>
             {activeTab === "your-positions" && <YourPositions />}

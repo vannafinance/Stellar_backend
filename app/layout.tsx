@@ -4,7 +4,9 @@ import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { navbarItems } from "@/lib/constants";
 import { ThemeProvider } from "@/contexts/theme-context";
+import { QueryProvider } from "@/contexts/query-provider";
 import { ScaleWrapper } from "@/components/ui/scale-wrapper";
+import { AppToaster } from "@/components/ui/app-toaster";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -30,10 +32,11 @@ export default function RootLayout({
         style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
       >
         <ThemeProvider>
-          {/* <ScaleWrapper> */}
+          <QueryProvider>
             <Navbar items={navbarItems}/>
-            {children}
-          {/* </ScaleWrapper> */}
+            <ScaleWrapper>{children}</ScaleWrapper>
+            <AppToaster />
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>
