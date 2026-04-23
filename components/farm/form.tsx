@@ -1,5 +1,5 @@
 import { AnimatedTabs } from "../ui/animated-tabs"
-import { useState } from "react"
+import { useState, memo } from "react"
 import { AddLiquidity } from "./add-liquidity"
 import { RemoveLiquidity } from "./remove-liquidity"
 import { useTheme } from "@/contexts/theme-context"
@@ -10,7 +10,7 @@ const tabs = [
   { id: "remove-liquidity", label: "Remove Liquidity" }
 ]
 
-export const Form = () => {
+export const Form = memo(function Form() {
   const [activeTab, setActiveTab] = useState<string>("add-liquidity")
   const [isOpen, setIsOpen] = useState(false)
   const { isDark } = useTheme()
@@ -108,4 +108,4 @@ export const Form = () => {
       </div>
     </>
   )
-}
+})

@@ -17,7 +17,7 @@ const PORTFOLIO_TABS = [
   { id: "trader", label: "Trader" },
 ];
 
-const TIME_FILTERS = ["3 months", "6 months", "1 year"] as const;
+const TIME_FILTERS = ["3 months", "6 months", "1 year", "All Time"] as const;
 
 const MOCK_EARNINGS_DATA: Record<string, number> = {
   "2025-08-01": 8420,
@@ -66,7 +66,7 @@ const PortfolioChartCard = ({
   data,
   isDark,
 }: PortfolioChartCardProps) => {
-  const [timeFilter, setTimeFilter] = useState<string>(TIME_FILTERS[0]);
+  const [timeFilter, setTimeFilter] = useState<string>("All Time");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isChartOpen, setIsChartOpen] = useState(false);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo } from "react";
 import { Chart } from "./chart";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
@@ -54,7 +54,7 @@ const TOKEN_PRICES: Record<string, number> = {
   XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0,
 };
 
-export const YourPositions = () => {
+export const YourPositions = memo(function YourPositions() {
   const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState<string>("current-positions");
 
@@ -63,9 +63,16 @@ export const YourPositions = () => {
   const asset = toDisplayAsset(assetKey);
 
   const { pools } = usePoolData();
-  const pool = pools[assetKey as keyof typeof pools];
-  const supplyAPY = parseFloat(pool?.supplyAPY || '0');
-  const exchangeRate = parseFloat(pool?.exchangeRate || '1');
+
+  const supplyAPY = useMemo(() => {
+    const pool = pools[assetKey as keyof typeof pools];
+    return parseFloat(pool?.supplyAPY || '0');
+  }, [pools, assetKey]);
+
+  const exchangeRate = useMemo(() => {
+    const pool = pools[assetKey as keyof typeof pools];
+    return parseFloat(pool?.exchangeRate || '1');
+  }, [pools, assetKey]);
 
   // Correct: look up deposited balance using the actual asset key
   const depositedBalances = useUserStore((state) => state.depositedBalances);
@@ -117,13 +124,12 @@ export const YourPositions = () => {
       aria-label="Your Positions Overview"
     >
       {/* Supply chart — shows user's deposit value over time */}
-      <figure className="w-full flex-1 min-h-0">
+      <figure className="w-full">
         <Chart
           type="my-supply"
           currencyTab={true}
-          height={393}
+          height={320}
           containerWidth="w-full"
-          containerHeight="h-full"
           customData={mySupplyChartData}
         />
       </figure>
@@ -192,4 +198,4 @@ export const YourPositions = () => {
       </article>
     </section>
   );
-};
+});

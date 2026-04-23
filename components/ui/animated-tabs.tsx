@@ -12,6 +12,8 @@ export interface TabItem {
 
 type TabType = "gradient" | "solid" | "underline" | "ghost" | "ghost-compact" | "segment" | "border";
 
+type ShortLabelBreakpoint = "sm" | "md" | "lg" | "xl" | "2xl";
+
 interface AnimatedTabsProps {
   tabs: TabItem[];
   activeTab: string;
@@ -21,7 +23,19 @@ interface AnimatedTabsProps {
   tabClassName?: string;
   indicatorClassName?: string;
   customTabWidth?: string; // Custom width for tabs (e.g., "w-[200px]")
+  /** Below this breakpoint, render `tab.shortLabel` (if provided) instead of `tab.label`. Defaults to "sm". Only applied by the "border" variant. */
+  shortLabelBelow?: ShortLabelBreakpoint;
 }
+
+// Literal class pairs so Tailwind's JIT picks them up. First entry shows on
+// narrow viewports, second on wide.
+const SHORT_LABEL_CLASSES: Record<ShortLabelBreakpoint, readonly [string, string]> = {
+  sm: ["sm:hidden", "hidden sm:inline"],
+  md: ["md:hidden", "hidden md:inline"],
+  lg: ["lg:hidden", "hidden lg:inline"],
+  xl: ["xl:hidden", "hidden xl:inline"],
+  "2xl": ["2xl:hidden", "hidden 2xl:inline"],
+};
 
 const HOVER_GRADIENT = "linear-gradient(135deg, rgba(112, 58, 230, 0.08) 0%, rgba(112, 58, 230, 0.04) 100%)";
 const SPRING_CONFIG = {
@@ -40,7 +54,9 @@ export const AnimatedTabs = ({
   tabClassName = "",
   indicatorClassName = "",
   customTabWidth,
+  shortLabelBelow = "sm",
 }: AnimatedTabsProps) => {
+  const [shortCls, longCls] = SHORT_LABEL_CLASSES[shortLabelBelow];
   const [hoveredTab, setHoveredTab] = useState<string | null>(null);
   const { isDark } = useTheme();
   const currentIndex = tabs.findIndex((tab) => tab.id === activeTab);
@@ -208,8 +224,8 @@ export const AnimatedTabs = ({
             >
               {tab.shortLabel ? (
                 <>
-                  <span className="sm:hidden">{tab.shortLabel}</span>
-                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className={shortCls}>{tab.shortLabel}</span>
+                  <span className={longCls}>{tab.label}</span>
                 </>
               ) : tab.label}
             </motion.div>

@@ -72,16 +72,13 @@ export const LiteHome = () => {
 
       {/* Hero Section */}
       <motion.div variants={itemVariants} className="w-full flex flex-col gap-1.5">
-        <div className="flex items-center gap-3">
-          <div className="w-[3px] h-6 sm:h-7 rounded-full bg-gradient shrink-0" />
-          <h1
-            className={`text-[18px] sm:text-[22px] lg:text-[26px] font-bold leading-tight ${headingText}`}
-          >
-            Leveraged Yield
-          </h1>
-        </div>
+        <h1
+          className={`text-[18px] sm:text-[22px] lg:text-[26px] font-bold leading-tight ${headingText}`}
+        >
+          Leveraged Yield
+        </h1>
         <p
-          className={`text-[12px] sm:text-[13px] leading-[20px] max-w-[560px] pl-4 ${
+          className={`text-[12px] sm:text-[13px] leading-[20px] max-w-[560px] ${
             isDark ? "text-[#919191]" : "text-[#76737B]"
           }`}
         >

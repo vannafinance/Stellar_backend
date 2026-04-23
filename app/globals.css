@@ -293,5 +293,18 @@ html.dark * {
     opacity: 0 !important;
   }
 
+  /* Global: strip browser-native spinner arrows from every <input type="number">.
+     Margin page uses this pattern per-input; apply it app-wide so spot, earn,
+     farm, remove/add-liquidity, etc. all match. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   BlendService,
   BlendReserveData,
@@ -17,7 +17,9 @@ import {
 import { useMarginAccountInfoStore } from '@/store/margin-account-info-store';
 import { useBlendStore } from '@/store/blend-store';
 
-// ---------- Pool stats ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Pool stats
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface FarmPoolStats {
   XLM: BlendReserveData | null;
@@ -26,42 +28,34 @@ export interface FarmPoolStats {
 
 const EMPTY_STATS: FarmPoolStats = { XLM: null, USDC: null };
 
-export const useBlendPoolStats = () => {
-  const [stats, setStats] = useState<FarmPoolStats>(EMPTY_STATS);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetch = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
+export const useBlendPoolStats = (enabled = true) => {
+  const query = useQuery({
+    queryKey: ['farm', 'blend', 'poolStats'],
+    enabled,
+    queryFn: async (): Promise<FarmPoolStats> => {
       const data = await BlendService.getAllBlendReserveStats();
-      setStats({
-        XLM: data.XLM,
-        USDC: data.USDC,
-      });
-    } catch (err: any) {
-      setError(err?.message ?? 'Failed to fetch pool stats');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+      return { XLM: data.XLM, USDC: data.USDC };
+    },
+    refetchInterval: enabled ? 60_000 : false,
+    staleTime: 30_000,
+  });
 
-  useEffect(() => {
-    fetch();
-    const interval = setInterval(fetch, 60_000); // refresh every 60s
-    return () => clearInterval(interval);
-  }, [fetch]);
-
-  return { stats, isLoading, error, refresh: fetch };
+  return {
+    stats: query.data ?? EMPTY_STATS,
+    isLoading: query.isLoading || query.isFetching,
+    error: query.error ? (query.error as Error).message : null,
+    refresh: () => query.refetch(),
+  };
 };
 
-// ---------- User Blend positions ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// User Blend positions
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface UserBlendPositions {
   XLM: BlendUserPosition;
   USDC: BlendUserPosition;
-  totalValueXLM: string; // sum of underlying values (in XLM units for display)
+  totalValueXLM: string;
 }
 
 const EMPTY_POSITION: BlendUserPosition = { bTokenBalance: '0', underlyingValue: '0', tokenSymbol: '' };
@@ -74,79 +68,61 @@ const EMPTY_USER: UserBlendPositions = {
 export const useUserBlendPositions = () => {
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
   const refreshKey = useBlendStore((s) => s.refreshKey);
-  const [positions, setPositions] = useState<UserBlendPositions>(EMPTY_USER);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async () => {
-    if (!marginAccountAddress) {
-      setPositions(EMPTY_USER);
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
+  const query = useQuery({
+    // refreshKey is included so mutations can bump the store → invalidate.
+    queryKey: ['farm', 'blend', 'userPositions', marginAccountAddress, refreshKey],
+    enabled: Boolean(marginAccountAddress),
+    queryFn: async (): Promise<UserBlendPositions> => {
+      if (!marginAccountAddress) return EMPTY_USER;
       const data = await BlendService.getAllUserBlendPositions(marginAccountAddress);
       const xlmVal = parseFloat(data.XLM?.underlyingValue ?? '0');
       const usdcVal = parseFloat(data.USDC?.underlyingValue ?? '0');
-      setPositions({
+      return {
         XLM: data.XLM ?? { ...EMPTY_POSITION, tokenSymbol: 'XLM' },
         USDC: data.USDC ?? { ...EMPTY_POSITION, tokenSymbol: 'USDC' },
         totalValueXLM: (xlmVal + usdcVal).toFixed(4),
-      });
-    } catch (err: any) {
-      setError(err?.message ?? 'Failed to fetch positions');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [marginAccountAddress]);
+      };
+    },
+  });
 
-  // Re-fetch whenever marginAccountAddress changes OR a transaction triggers a refresh
-  useEffect(() => {
-    fetch();
-  }, [fetch, refreshKey]);
-
-  return { positions, isLoading, error, refresh: fetch };
+  return {
+    positions: query.data ?? EMPTY_USER,
+    isLoading: query.isLoading || query.isFetching,
+    error: query.error ? (query.error as Error).message : null,
+    refresh: () => query.refetch(),
+  };
 };
 
-// ---------- Blend events / position history ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Blend events / position history
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const useBlendEvents = (tokenSymbol?: string) => {
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
   const refreshKey = useBlendStore((s) => s.refreshKey);
-  const [events, setEvents] = useState<BlendEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async () => {
-    if (!marginAccountAddress) {
-      setEvents([]);
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
+  const query = useQuery({
+    queryKey: ['farm', 'blend', 'events', marginAccountAddress, tokenSymbol ?? null, refreshKey],
+    enabled: Boolean(marginAccountAddress),
+    queryFn: async (): Promise<BlendEvent[]> => {
+      if (!marginAccountAddress) return [];
       const all = await BlendService.getBlendEvents(marginAccountAddress);
-      const filtered = tokenSymbol
-        ? all.filter((e) => e.tokenSymbol === tokenSymbol)
-        : all;
-      setEvents(filtered);
-    } catch (err: any) {
-      setError(err?.message ?? 'Failed to fetch events');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [marginAccountAddress, tokenSymbol]);
+      return tokenSymbol ? all.filter((e) => e.tokenSymbol === tokenSymbol) : all;
+    },
+  });
 
-  // Re-fetch whenever marginAccountAddress/token changes OR a transaction triggers a refresh
-  useEffect(() => {
-    fetch();
-  }, [fetch, refreshKey]);
-
-  return { events, isLoading, error, refresh: fetch };
+  return {
+    events: query.data ?? [],
+    isLoading: query.isLoading || query.isFetching,
+    error: query.error ? (query.error as Error).message : null,
+    refresh: () => query.refetch(),
+  };
 };
 
-// ---------- All Aquarius pools stats ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// All Aquarius pools stats
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface AquariusPoolWithStats {
   pool: AquariusPoolConfig;
@@ -155,111 +131,101 @@ export interface AquariusPoolWithStats {
 }
 
 export const useAllAquariusPoolStats = (): AquariusPoolWithStats[] => {
-  const [allStats, setAllStats] = useState<Record<string, AquariusPoolStats | null>>({});
-  const [loadingKeys, setLoadingKeys] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    const init: Record<string, boolean> = {};
-    AQUARIUS_POOLS.forEach((p) => { init[p.id] = true; });
-    setLoadingKeys(init);
-
-    Promise.allSettled(
-      AQUARIUS_POOLS.map((p) =>
-        AquariusService.getAquariusPoolStats(p.poolAddress).then((s) => ({ id: p.id, stats: s }))
-      )
-    ).then((results) => {
-      const statsMap: Record<string, AquariusPoolStats | null> = {};
+  const query = useQuery({
+    queryKey: ['farm', 'aquarius', 'allPoolStats'],
+    queryFn: async () => {
+      const results = await Promise.allSettled(
+        AQUARIUS_POOLS.map((p) =>
+          AquariusService.getAquariusPoolStats(p.poolAddress).then((s) => ({ id: p.id, stats: s }))
+        )
+      );
+      const map: Record<string, AquariusPoolStats | null> = {};
       results.forEach((r) => {
-        if (r.status === 'fulfilled') statsMap[r.value.id] = r.value.stats;
+        if (r.status === 'fulfilled') map[r.value.id] = r.value.stats;
       });
-      setAllStats(statsMap);
-      setLoadingKeys({});
-    });
+      return map;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
 
-    const interval = setInterval(() => {
-      AQUARIUS_POOLS.forEach((p) => {
-        AquariusService.getAquariusPoolStats(p.poolAddress).then((s) => {
-          setAllStats((prev) => ({ ...prev, [p.id]: s }));
-        }).catch(() => {});
-      });
-    }, 60_000);
-    return () => clearInterval(interval);
-  }, []);
+  const statsMap = query.data ?? {};
+  const loading = query.isLoading;
 
   return AQUARIUS_POOLS.map((p) => ({
     pool: p,
-    stats: allStats[p.id] ?? null,
-    isLoading: loadingKeys[p.id] ?? false,
+    stats: statsMap[p.id] ?? null,
+    isLoading: loading,
   }));
 };
 
-// ---------- Aquarius pool stats (single) ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Aquarius pool stats (single)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const useAquariusPoolStats = (poolAddress: string | null) => {
-  const [stats, setStats] = useState<AquariusPoolStats | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const query = useQuery({
+    queryKey: ['farm', 'aquarius', 'poolStats', poolAddress],
+    enabled: Boolean(poolAddress),
+    queryFn: async (): Promise<AquariusPoolStats | null> => {
+      if (!poolAddress) return null;
+      return AquariusService.getAquariusPoolStats(poolAddress);
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
 
-  useEffect(() => {
-    if (!poolAddress) return;
-    setIsLoading(true);
-    AquariusService.getAquariusPoolStats(poolAddress)
-      .then(setStats)
-      .catch(() => setStats(null))
-      .finally(() => setIsLoading(false));
-    const interval = setInterval(() => {
-      AquariusService.getAquariusPoolStats(poolAddress).then(setStats).catch(() => {});
-    }, 60_000);
-    return () => clearInterval(interval);
-  }, [poolAddress]);
-
-  return { stats, isLoading };
+  return {
+    stats: query.data ?? null,
+    isLoading: query.isLoading || query.isFetching,
+  };
 };
 
-// ---------- Aquarius LP position ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Aquarius LP position
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const useAquariusLpPosition = (
   marginAccountAddress: string | null,
-  poolAddress: string | null
+  poolAddress: string | null,
 ) => {
   const refreshKey = useBlendStore((s) => s.refreshKey);
-  const [lpBalance, setLpBalance] = useState('0');
-  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (!marginAccountAddress || !poolAddress) {
-      setLpBalance('0');
-      return;
-    }
-    setIsLoading(true);
-    AquariusService.getUserLpBalance(marginAccountAddress, poolAddress)
-      .then(setLpBalance)
-      .catch(() => setLpBalance('0'))
-      .finally(() => setIsLoading(false));
-  }, [marginAccountAddress, poolAddress, refreshKey]);
+  const query = useQuery({
+    queryKey: ['farm', 'aquarius', 'lpPosition', marginAccountAddress, poolAddress, refreshKey],
+    enabled: Boolean(marginAccountAddress && poolAddress),
+    queryFn: async () => {
+      if (!marginAccountAddress || !poolAddress) return '0';
+      return AquariusService.getUserLpBalance(marginAccountAddress, poolAddress);
+    },
+  });
 
-  return { lpBalance, isLoading };
+  return {
+    lpBalance: query.data ?? '0',
+    isLoading: query.isLoading || query.isFetching,
+  };
 };
 
-// ---------- Aquarius LP events ----------
+// ─────────────────────────────────────────────────────────────────────────────
+// Aquarius LP events
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const useAquariusEvents = (poolAddress: string | null) => {
   const refreshKey = useBlendStore((s) => s.refreshKey);
-  const [events, setEvents] = useState<AquariusLpEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (!poolAddress) {
-      setEvents([]);
-      return;
-    }
-    setIsLoading(true);
-    AquariusService.getAquariusEvents(poolAddress)
-      .then(setEvents)
-      .catch(() => setEvents([]))
-      .finally(() => setIsLoading(false));
-  }, [poolAddress, refreshKey]);
+  const query = useQuery({
+    queryKey: ['farm', 'aquarius', 'events', poolAddress, refreshKey],
+    enabled: Boolean(poolAddress),
+    queryFn: async (): Promise<AquariusLpEvent[]> => {
+      if (!poolAddress) return [];
+      return AquariusService.getAquariusEvents(poolAddress);
+    },
+  });
 
-  return { events, isLoading };
+  return {
+    events: query.data ?? [],
+    isLoading: query.isLoading || query.isFetching,
+  };
 };
 
 // ---------- Aquarius LP chart helper ----------
@@ -313,11 +279,9 @@ export const buildLpChartData = (
   return points;
 };
 
-// ---------- Chart data helper ----------
-// Builds chart-compatible data from events: shows cumulative underlying supply over time.
 export const buildSupplyChartData = (
   events: BlendEvent[],
-  currentValue: number
+  currentValue: number,
 ): Array<{ date: string; amount: number }> => {
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
@@ -337,12 +301,10 @@ export const buildSupplyChartData = (
     return points;
   }
 
-  // Sort ascending by time
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
   let running = 0;
   const points: Array<{ date: string; amount: number }> = [];
 
-  // Add a zero start point before the first event
   const firstTs = sorted[0].timestamp;
   if (firstTs) {
     const startDate = new Date(firstTs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -359,7 +321,6 @@ export const buildSupplyChartData = (
     points.push({ date, amount: parseFloat(running.toFixed(4)) });
   }
 
-  // Add live current value as the latest point (captures interest accrued since last event)
   if (currentValue > 0) {
     points.push({ date: todayStr, amount: parseFloat(currentValue.toFixed(4)) });
   }

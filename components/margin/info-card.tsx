@@ -14,7 +14,7 @@ interface InfoItem {
 interface ExpandableSection {
   title: string;
   headingBold?: boolean;
-  items?: InfoItem[];
+  items?: readonly InfoItem[];
   defaultExpanded?: boolean;
   delay?: number;
 }
@@ -23,8 +23,8 @@ interface InfoProps {
   data: {
     [key: string]: number | string | null | undefined;
   };
-  items?: InfoItem[];
-  expandableSections?: ExpandableSection[];
+  items?: readonly InfoItem[];
+  expandableSections?: readonly ExpandableSection[];
   showExpandable?: boolean;
 }
 

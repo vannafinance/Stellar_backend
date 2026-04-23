@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, memo } from "react";
+import toast from "react-hot-toast";
 import Image from "next/image";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { iconPaths } from "@/lib/constants";
 import { InfoCard } from "../margin/info-card";
 import { Button } from "../ui/button";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useSupplyLiquidity, usePoolData } from "@/hooks/use-earn";
@@ -28,7 +29,7 @@ const toDisplayAsset = (value: string) => {
   return value;
 };
 
-export const SupplyLiquidityTab = () => {
+export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
   const { isDark } = useTheme();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const selectedOption = toDisplayAsset(selectedAsset);
@@ -41,8 +42,18 @@ export const SupplyLiquidityTab = () => {
   const balance = useUserStore((state) => state.balance);
   const storeTokenBalances = useUserStore((state) => state.tokenBalances);
 
-  const { supply, isLoading, message, clearMessage } = useSupplyLiquidity();
+  const { supply, isLoading, message } = useSupplyLiquidity();
   const { pools } = usePoolData();
+
+  // Toast instead of inline banner.
+  const lastToastedRef = useRef<string>("");
+  useEffect(() => {
+    if (!message.text || message.text === lastToastedRef.current) return;
+    lastToastedRef.current = message.text;
+    if (message.type === "success") toast.success(message.text);
+    else if (message.type === "error") toast.error(message.text);
+    else toast(message.text);
+  }, [message.text, message.type]);
 
   const selectedPool = pools[normalizedAsset as keyof typeof pools];
   const selectedPoolConfig = STELLAR_POOLS[normalizedAsset as keyof typeof STELLAR_POOLS];
@@ -94,7 +105,7 @@ export const SupplyLiquidityTab = () => {
   const monthlyEarnings = (amountNum * supplyAPY) / 100 / 12;
   const yearlyEarnings = (amountNum * supplyAPY) / 100;
 
-  const infoData = {
+  const infoData = useMemo(() => ({
     youGetVToken: sharesPreview,
     tokenPerVToken: exchangeRate,
     currentAPY: supplyAPY,
@@ -105,9 +116,9 @@ export const SupplyLiquidityTab = () => {
     projectedMonthlyTo: monthlyEarnings * 1.1,
     projectedYearlyFrom: yearlyEarnings,
     projectedYearlyTo: yearlyEarnings * 1.1,
-  };
+  }), [sharesPreview, exchangeRate, supplyAPY, monthlyEarnings, yearlyEarnings]);
 
-  const infoPropsData = {
+  const infoPropsData = useMemo(() => ({
     data: infoData,
     expandableSections: [
       {
@@ -129,7 +140,7 @@ export const SupplyLiquidityTab = () => {
       },
     ],
     showExpandable: true,
-  };
+  }), [infoData, selectedOption]);
 
   const getButtonText = () => {
     if (!userAddress) return "Connect Wallet";
@@ -229,25 +240,6 @@ export const SupplyLiquidityTab = () => {
         onClick={handleSupply}
       />
 
-      {/* Message Display */}
-      <AnimatePresence>
-        {message.text && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className={`p-3 rounded-xl text-sm ${
-              message.type === 'success'
-                ? 'bg-green-500/10 border border-green-500/20 text-green-500'
-                : message.type === 'error'
-                ? 'bg-red-500/10 border border-red-500/20 text-red-500'
-                : 'bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]'
-            }`}
-          >
-            {message.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Contract Info */}
       <div className={`text-xs text-center ${isDark ? "text-gray-600" : "text-gray-400"}`}>
@@ -255,4 +247,4 @@ export const SupplyLiquidityTab = () => {
       </div>
     </>
   );
-};
+});

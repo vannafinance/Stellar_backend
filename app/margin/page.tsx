@@ -23,6 +23,8 @@ import {
 import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
 import { useTheme } from "@/contexts/theme-context";
+import { useShallow } from "zustand/shallow";
+import { useSmartPolling } from "@/lib/hooks/useSmartPolling";
 
 const Margin = () => {
   const { isDark } = useTheme();
@@ -35,14 +37,14 @@ const Margin = () => {
   // Ref for scrolling to LeverageCollateral component
   const leverageCollateralRef = useRef<HTMLDivElement>(null);
 
-  const scrollToLeverageSection = () => {
+  const scrollToLeverageSection = useCallback(() => {
     if (leverageCollateralRef.current) {
       leverageCollateralRef.current.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
     }
-  };
+  }, []);
 
   // Scroll to LeverageCollateral when repay is clicked
   useEffect(() => {
@@ -53,39 +55,41 @@ const Margin = () => {
     }
   }, [switchToRepayTab]);
 
-  // Wallet connection state from Stellar user store
-  const isWalletConnected = useUserStore((state) => state.isConnected);
-  const userAddress = useUserStore((state) => state.address);
+  // Wallet connection state — single shallow-compared read
+  const { isWalletConnected, userAddress } = useUserStore(
+    useShallow((state) => ({
+      isWalletConnected: state.isConnected,
+      userAddress: state.address,
+    })),
+  );
 
-  // Margin account data from existing Stellar store
-  const hasMarginAccount = useMarginAccountInfoStore(
-    (state) => state.hasMarginAccount,
-  );
-  const avgHealthFactor = useMarginAccountInfoStore(
-    (state) => state.avgHealthFactor,
-  );
-  const totalCollateralValue = useMarginAccountInfoStore(
-    (state) => state.totalCollateralValue,
-  );
-  const totalBorrowedValue = useMarginAccountInfoStore(
-    (state) => state.totalBorrowedValue,
-  );
-  const totalValue = useMarginAccountInfoStore((state) => state.totalValue);
-  const timeToLiquidation = useMarginAccountInfoStore(
-    (state) => state.timeToLiquidation,
-  );
-  const storeBorrowRate = useMarginAccountInfoStore(
-    (state) => state.borrowRate,
-  );
-  const marginAccountAddress = useMarginAccountInfoStore(
-    (state) => state.marginAccountAddress,
-  );
-  // store.debtLimit holds collateralLeftBeforeLiquidation (repurposed field)
-  // store.minDebt holds netAvailableCollateral (repurposed field)
-  const storedCollateralLeft = useMarginAccountInfoStore((state) => state.debtLimit);
-  const storedNetAvailable = useMarginAccountInfoStore((state) => state.minDebt);
-  const storeIsLoading = useMarginAccountInfoStore(
-    (state) => state.isLoadingBorrowedBalances,
+  // Margin account data — single shallow-compared read.
+  // store.debtLimit holds collateralLeftBeforeLiquidation (repurposed field).
+  // store.minDebt  holds netAvailableCollateral           (repurposed field).
+  const {
+    hasMarginAccount,
+    avgHealthFactor,
+    totalCollateralValue,
+    totalBorrowedValue,
+    totalValue,
+    timeToLiquidation,
+    storeBorrowRate,
+    storedCollateralLeft,
+    storedNetAvailable,
+    storeIsLoading,
+  } = useMarginAccountInfoStore(
+    useShallow((state) => ({
+      hasMarginAccount: state.hasMarginAccount,
+      avgHealthFactor: state.avgHealthFactor,
+      totalCollateralValue: state.totalCollateralValue,
+      totalBorrowedValue: state.totalBorrowedValue,
+      totalValue: state.totalValue,
+      timeToLiquidation: state.timeToLiquidation,
+      storeBorrowRate: state.borrowRate,
+      storedCollateralLeft: state.debtLimit,
+      storedNetAvailable: state.minDebt,
+      storeIsLoading: state.isLoadingBorrowedBalances,
+    })),
   );
 
   // Keep local loading state in sync with the store's loading state
@@ -93,11 +97,12 @@ const Margin = () => {
     setIsLoadingMargin(storeIsLoading);
   }, [storeIsLoading]);
 
-  // Reload margin data using Stellar backend functions
+  // Reload margin data using Stellar backend functions.
+  // The store's checkUserMarginAccount / refreshBorrowedBalances are rate-limited
+  // internally, so polling here is safe and won't storm the RPC.
   const reloadMarginState = useCallback(async () => {
     if (!userAddress) return;
 
-    setIsLoadingMargin(true);
     setMarginError(null);
 
     try {
@@ -111,30 +116,17 @@ const Margin = () => {
       const msg =
         error instanceof Error ? error.message : "Failed to load margin data";
       setMarginError(msg);
-    } finally {
-      setIsLoadingMargin(false);
     }
   }, [userAddress]);
 
-  // Initial data load when wallet connects
-  useEffect(() => {
-    if (!isWalletConnected || !userAddress) {
-      console.log("[Margin Page] Waiting for wallet connection...", {
-        isWalletConnected,
-      });
-      return;
-    }
-
-    console.log("[Margin Page] Wallet connected, loading margin state...", {
-      address: userAddress,
-    });
-
-    const timer = setTimeout(() => {
-      reloadMarginState();
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [isWalletConnected, userAddress, reloadMarginState]);
+  // Poll every 15s while connected. Smart-polling pauses when the tab is
+  // hidden or the user has been idle for 2+ minutes, and fires an immediate
+  // refresh when the tab becomes visible again.
+  useSmartPolling(
+    reloadMarginState,
+    [isWalletConnected, userAddress],
+    { enabled: Boolean(isWalletConnected && userAddress), interval: 15_000 },
+  );
 
   const accountStats = useMemo(() => {
     const hasAnyMarginData =
@@ -220,6 +212,37 @@ const Margin = () => {
     }),
     [],
   );
+
+  // Pre-merge InfoCard data so we pass a stable object reference.
+  const infoCardData = useMemo(
+    () => ({ ...marginAccountInfo, ...oracleAndLtsData }),
+    [marginAccountInfo, oracleAndLtsData],
+  );
+
+  // Expandable sections — stable array (constants are already stable).
+  const infoCardExpandableSections = useMemo(
+    () => [
+      {
+        title: "MORE DETAILS",
+        headingBold: true,
+        items: MARGIN_ACCOUNT_MORE_DETAILS_ITEMS,
+        defaultExpanded: true,
+        delay: 0.1,
+      },
+      {
+        title: "ORACLES AND LTS",
+        headingBold: true,
+        items: MARGIN_ORACLE_LTS_ITEMS,
+        defaultExpanded: false,
+        delay: 0.2,
+      },
+    ],
+    [],
+  );
+
+  // Stable handlers for memoized children.
+  const handleTabSwitched = useCallback(() => setSwitchToRepayTab(false), []);
+  const handleRepayClick = useCallback(() => setSwitchToRepayTab(true), []);
 
   // Format account stats value
   const formatAccountStatValue = (itemId: string, value: number) => {
@@ -434,7 +457,7 @@ const Margin = () => {
           <div className="w-full min-w-0">
             <LeverageCollateral
               switchToRepayTab={switchToRepayTab}
-              onTabSwitched={() => setSwitchToRepayTab(false)}
+              onTabSwitched={handleTabSwitched}
             />
           </div>
 
@@ -505,42 +528,11 @@ const Margin = () => {
               </div>
             </motion.header>
 
-            {/* Active Margin Account address */}
-            {marginAccountAddress && (
-              <motion.div
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200"
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                <span className="text-[11px] font-semibold text-emerald-700">Active Account</span>
-                <span className="text-[11px] font-mono text-emerald-600 truncate">
-                  {marginAccountAddress.slice(0, 8)}…{marginAccountAddress.slice(-6)}
-                </span>
-              </motion.div>
-            )}
-
             <InfoCard
-              data={{ ...marginAccountInfo, ...oracleAndLtsData }}
-              items={[...MARGIN_ACCOUNT_INFO_ITEMS]}
+              data={infoCardData}
+              items={MARGIN_ACCOUNT_INFO_ITEMS}
               showExpandable={true}
-              expandableSections={[
-                {
-                  title: "MORE DETAILS",
-                  headingBold: true,
-                  items: [...MARGIN_ACCOUNT_MORE_DETAILS_ITEMS],
-                  defaultExpanded: true,
-                  delay: 0.1,
-                },
-                {
-                  title: "ORACLES AND LTS",
-                  headingBold: true,
-                  items: [...MARGIN_ORACLE_LTS_ITEMS],
-                  defaultExpanded: false,
-                  delay: 0.2,
-                },
-              ]}
+              expandableSections={infoCardExpandableSections}
             />
           </motion.aside>
         </div>
@@ -555,7 +547,7 @@ const Margin = () => {
             transition={{ duration: 0.5, ease: "easeOut" }}
           >
             <Positionstable
-              onRepayClick={() => setSwitchToRepayTab(true)}
+              onRepayClick={handleRepayClick}
               onOpenPositionClick={scrollToLeverageSection}
             />
           </motion.section>

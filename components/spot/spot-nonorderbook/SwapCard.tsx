@@ -18,6 +18,7 @@ import { SwapSettings } from "./SwapSettings";
 import { Token, SwapButtonState, DexOption } from "./types";
 import { MOCK_TOKENS, MOCK_DEXES } from "./mock-data";
 import { AnimatePresence, motion } from "framer-motion";
+import toast from "react-hot-toast";
 
 // Stellar tokens supported for Aquarius swap
 const STELLAR_TOKENS: Token[] = [
@@ -454,12 +455,15 @@ export const SwapCard = ({
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
+      toast.success(`Swap submitted! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       setAmountIn("");
       setAmountOut("");
       if (marginAccountAddress) refreshBorrowedBalances(marginAccountAddress);
     } else {
       setTxStatus("error");
-      setTxError(result.error ?? "Swap failed");
+      const errorMsg = result.error ?? "Swap failed";
+      setTxError(errorMsg);
+      toast.error(errorMsg);
     }
   }, [buttonState, isAquarius, isSoroswap, swapMode, userAddress, marginAccountAddress, tokenIn, amountIn, tokenInBalance, slippageMode, slippage]);
 
@@ -654,18 +658,6 @@ export const SwapCard = ({
           {isAquarius && swapMode === "margin" && isWalletConnected && !marginAccountAddress && (
             <div className={`mt-1 px-3 py-2 rounded-xl text-[12px] font-medium ${isDark ? "bg-yellow-500/10 text-yellow-400" : "bg-yellow-50 text-yellow-700"}`}>
               Margin account required. Create one in the Margin section.
-            </div>
-          )}
-
-          {/* Tx status */}
-          {txStatus === "success" && (
-            <div className={`mt-1 px-3 py-2 rounded-xl text-[12px] font-medium ${isDark ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-700"}`}>
-              Swap submitted!{txHash && <span className="ml-1 opacity-60 break-all">{txHash.slice(0, 16)}…</span>}
-            </div>
-          )}
-          {txStatus === "error" && txError && (
-            <div className={`mt-1 px-3 py-2 rounded-xl text-[12px] font-medium ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-              {txError}
             </div>
           )}
 

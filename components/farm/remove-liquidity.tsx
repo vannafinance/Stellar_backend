@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useFarmStore } from "@/store/farm-store";
@@ -15,13 +15,14 @@ import { iconPaths } from "@/lib/constants";
 import { PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBlendStore } from "@/store/blend-store";
+import toast from "react-hot-toast";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
 
 const PERCENTAGE_OPTIONS = [25, 50, 75, 100] as const;
 
-export const RemoveLiquidity = () => {
+export const RemoveLiquidity = memo(function RemoveLiquidity() {
   const { isDark } = useTheme();
   const userAddress = useUserStore((state) => state.address);
   const triggerBlendRefresh = useBlendStore((s) => s.triggerRefresh);
@@ -166,9 +167,9 @@ export const RemoveLiquidity = () => {
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
+      toast.success(`Withdrawal successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       setValue("");
       setSelectedPercentage(0);
-      // Refresh Blend balance locally and trigger global positions refresh
       setTimeout(() => {
         triggerBlendRefresh();
         BlendService.getUserBlendBalance(marginAccountAddress, selectedToken).then((info) =>
@@ -177,7 +178,9 @@ export const RemoveLiquidity = () => {
       }, 3000);
     } else {
       setTxStatus("error");
-      setTxError(result.error ?? "Withdrawal failed");
+      const errorMsg = result.error ?? "Withdrawal failed";
+      setTxError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 
@@ -243,9 +246,9 @@ export const RemoveLiquidity = () => {
       if (result.success) {
         setTxStatus("success");
         setTxHash(result.hash ?? "");
+        toast.success(`Liquidity removed! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
         setValue("");
         setSelectedPercentage(0);
-        // Refresh LP balance from on-chain after transaction
         const refreshLpBalance = isSoroswapPool
           ? SoroswapService.getLpBalance(marginAccountAddress)
           : AquariusService.getUserLpBalance(
@@ -256,7 +259,9 @@ export const RemoveLiquidity = () => {
         triggerBlendRefresh();
       } else {
         setTxStatus("error");
-        setTxError(result.error ?? "Remove liquidity failed");
+        const errorMsg = result.error ?? "Remove liquidity failed";
+        setTxError(errorMsg);
+        toast.error(errorMsg);
       }
     };
 
@@ -358,13 +363,6 @@ export const RemoveLiquidity = () => {
           disabled={isSubmitDisabled}
           onClick={handleMultiDexWithdraw}
         />
-
-        {txStatus === "error" && txError && (
-          <div className="text-red-500 text-[12px]">{txError}</div>
-        )}
-        {txStatus === "success" && txHash && (
-          <div className="text-green-500 text-[12px]">Transaction submitted: {txHash}</div>
-        )}
       </div>
     );
   }
@@ -471,4 +469,4 @@ export const RemoveLiquidity = () => {
       />
     </div>
   );
-};
+});
