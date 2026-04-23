@@ -15,6 +15,7 @@ import { Form } from "@/components/farm/form";
 import { singleAssetTableBody } from "@/lib/constants/farm";
 import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
 import { SOROSWAP_POOLS } from "@/lib/soroswap-utils";
+import type { SoroswapLpEvent } from "@/lib/soroswap-utils";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { items } from "@/components/earn/details-tab";
 import { StatsCard } from "@/components/ui/stats-card";
@@ -369,7 +370,7 @@ export default function FarmDetailPage() {
   const soroswapHistoryBody = useMemo(() => {
     if (ssEvents.length === 0) return { rows: [] };
     return {
-      rows: ssEvents.map((ev) => ({
+      rows: ssEvents.map((ev: SoroswapLpEvent) => ({
         cell: [
           {
             title: ev.timestamp ? new Date(ev.timestamp).toLocaleDateString() : '—',
@@ -394,7 +395,7 @@ export default function FarmDetailPage() {
   }, [ssEvents]);
 
   // Soroswap position table headings
-  const soroswapPositionHeadings = [
+  const soroswapPositionHeadings = useMemo(() => [
     { label: "Pool", id: "pool" },
     { label: "LP Shares", id: "lp-shares" },
     { label: `${ssTokenA} Deposited`, id: "token-a" },
