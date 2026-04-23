@@ -34,6 +34,8 @@ export interface MarginAccountInfoStateType {
   totalCollateralValue: number;
   totalValue: number;
   avgHealthFactor: number;
+  collateralLeftBeforeLiquidation: number;
+  netAvailableCollateral: number;
   timeToLiquidation: number;
   borrowRate: number;
   liquidationPremium: number;
@@ -46,15 +48,18 @@ export interface MarginAccountInfoStateType {
   isCreatingAccount: boolean;
   accountCreationError: string | null;
   borrowedBalances: Record<string, BorrowedBalance>;
+  collateralBalances: Record<string, BorrowedBalance>;
   isLoadingBorrowedBalances: boolean;
 }
 
 // Initial State
 const initialState: MarginAccountInfoStateType = {
-  totalBorrowedValue: 90,
-  totalCollateralValue: 1000,
+  totalBorrowedValue: 0,
+  totalCollateralValue: 0,
   totalValue: 0,
   avgHealthFactor: 0,
+  collateralLeftBeforeLiquidation: 0,
+  netAvailableCollateral: 0,
   timeToLiquidation: 0,
   borrowRate: 0,
   liquidationPremium: 0,
@@ -67,6 +72,7 @@ const initialState: MarginAccountInfoStateType = {
   isCreatingAccount: false,
   accountCreationError: null,
   borrowedBalances: {},
+  collateralBalances: {},
   isLoadingBorrowedBalances: false,
 };
 
@@ -76,13 +82,20 @@ export const useMarginAccountInfoStore = createNewStore(initialState, {
   devTools: true,
   persist: {
     name: "margin-account-info-store",
-    version: 1,
-    migrate: (persistedState: any, version: number) => {
-      // Always reset loading states on page load
+    version: 2,
+    migrate: (persistedState: any, _version: number) => {
+      // Always reset loading states and balance data on version change —
+      // balances are fetched fresh from the blockchain on every page load.
       return {
         ...persistedState,
         isCreatingAccount: false,
         isLoadingBorrowedBalances: false,
+        borrowedBalances: {},
+        collateralBalances: {},
+        totalBorrowedValue: 0,
+        totalCollateralValue: 0,
+        totalValue: 0,
+        avgHealthFactor: 0,
         // Keep hasMarginAccount and marginAccountAddress persisted
       };
     },
@@ -103,6 +116,22 @@ export const clearMarginAccount = () => {
     hasMarginAccount: false,
     marginAccountAddress: null,
     accountCreationError: null,
+    totalBorrowedValue: 0,
+    totalCollateralValue: 0,
+    totalValue: 0,
+    avgHealthFactor: 0,
+    collateralLeftBeforeLiquidation: 0,
+    netAvailableCollateral: 0,
+    timeToLiquidation: 0,
+    borrowRate: 0,
+    liquidationPremium: 0,
+    liquidationFee: 0,
+    debtLimit: 0,
+    minDebt: 0,
+    maxDebt: 0,
+    borrowedBalances: {},
+    collateralBalances: {},
+    isLoadingBorrowedBalances: false,
   });
 };
 
@@ -284,25 +313,16 @@ export const checkUserMarginAccount = async (userAddress: string) => {
         });
       } else {
         console.log('❌ No margin account found - user needs to create one');
-        useMarginAccountInfoStore.getState().set({
-          hasMarginAccount: false,
-          marginAccountAddress: null,
-        });
+        clearMarginAccount();
       }
     } catch (blockchainError) {
       console.error('❌ Error checking blockchain for existing account:', blockchainError);
       // Fallback to no account on blockchain error
-      useMarginAccountInfoStore.getState().set({
-        hasMarginAccount: false,
-        marginAccountAddress: null,
-      });
+      clearMarginAccount();
     }
   } catch (error) {
     console.error('❌ Error in checkUserMarginAccount:', error);
-    useMarginAccountInfoStore.getState().set({
-      hasMarginAccount: false,
-      marginAccountAddress: null,
-    });
+    clearMarginAccount();
   }
 };
 
@@ -354,6 +374,7 @@ export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
     let totalBorrowedValue = 0;
     let totalCollateralValue = 0;
     const borrowedBalances: Record<string, { amount: string; usdValue: string }> = {};
+    const collateralBalances: Record<string, { amount: string; usdValue: string }> = {};
 
     // ── Borrowed totals ───────────────────────────────────────────────────────
     if (borrowedResult.success && borrowedResult.data) {
@@ -390,7 +411,13 @@ export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
 
       Object.entries(dedupedCollateral).forEach(([token, amount]) => {
         const price = TOKEN_PRICES[token] ?? 1;
-        totalCollateralValue += parseFloat(amount) * price;
+        const tokenAmount = parseFloat(amount);
+        const usd = tokenAmount * price;
+        totalCollateralValue += usd;
+        collateralBalances[token] = {
+          amount,
+          usdValue: usd.toFixed(2),
+        };
       });
     }
 
@@ -418,20 +445,27 @@ export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
     //  Total Value = net equity (collateral minus debt)
     const totalValue = netAvailableCollateral;
 
+    //  Debt limit = maximum safe debt at liquidation threshold
+    const debtLimit = totalCollateralValue > 0
+      ? totalCollateralValue / LIQUIDATION_THRESHOLD
+      : 0;
+
     //  Borrow rate: use a flat 6.5% placeholder (matches lending pool borrow APY)
     const borrowRate = totalBorrowedValue > 0 ? 6.5 : 0;
 
     useMarginAccountInfoStore.getState().set({
       borrowedBalances,
+      collateralBalances,
       totalBorrowedValue,
       totalCollateralValue,
       totalValue,
       avgHealthFactor,
+      collateralLeftBeforeLiquidation,
+      netAvailableCollateral,
       borrowRate,
-      // Expose computed sub-stats so the page can read them directly
-      // (stored in the same interface — repurpose unused fields)
-      debtLimit: collateralLeftBeforeLiquidation,
-      minDebt: netAvailableCollateral,
+      debtLimit,
+      minDebt: 0,
+      maxDebt: debtLimit,
       isLoadingBorrowedBalances: false,
     });
   } catch (error: any) {

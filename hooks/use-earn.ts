@@ -90,6 +90,16 @@ export const usePoolData = () => {
     return () => clearInterval(interval);
   }, [fetchPoolData]);
 
+  // Retry automatically when the fetch fails (e.g. testnet cold-start rate limits)
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => {
+      setError(null);
+      fetchPoolData();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [error, fetchPoolData]);
+
   return {
     pools,
     isLoading: isLoadingPools,

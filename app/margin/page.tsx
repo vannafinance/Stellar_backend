@@ -5,6 +5,7 @@ import {
   CAROUSEL_ITEMS,
   MARGIN_ACCOUNT_INFO_ITEMS,
   MARGIN_ACCOUNT_MORE_DETAILS_ITEMS,
+  MARGIN_ORACLE_LTS_ITEMS,
   ACCOUNT_STATS_ITEMS,
 } from "@/lib/constants/margin";
 import { motion, AnimatePresence } from "framer-motion";
@@ -69,10 +70,20 @@ const Margin = () => {
   const totalBorrowedValue = useMarginAccountInfoStore(
     (state) => state.totalBorrowedValue,
   );
-  const debtLimit = useMarginAccountInfoStore((state) => state.debtLimit);
+  const totalValue = useMarginAccountInfoStore((state) => state.totalValue);
+  const timeToLiquidation = useMarginAccountInfoStore(
+    (state) => state.timeToLiquidation,
+  );
   const storeBorrowRate = useMarginAccountInfoStore(
     (state) => state.borrowRate,
   );
+  const marginAccountAddress = useMarginAccountInfoStore(
+    (state) => state.marginAccountAddress,
+  );
+  // store.debtLimit holds collateralLeftBeforeLiquidation (repurposed field)
+  // store.minDebt holds netAvailableCollateral (repurposed field)
+  const storedCollateralLeft = useMarginAccountInfoStore((state) => state.debtLimit);
+  const storedNetAvailable = useMarginAccountInfoStore((state) => state.minDebt);
   const storeIsLoading = useMarginAccountInfoStore(
     (state) => state.isLoadingBorrowedBalances,
   );
@@ -81,29 +92,6 @@ const Margin = () => {
   useEffect(() => {
     setIsLoadingMargin(storeIsLoading);
   }, [storeIsLoading]);
-
-  // Build marginState from store data, matching the interface used in the UI
-  const marginState = useMemo(() => {
-    if (
-      !hasMarginAccount &&
-      avgHealthFactor === 0 &&
-      totalCollateralValue === 0
-    ) {
-      return null;
-    }
-    return {
-      hf: avgHealthFactor,
-      collateralUsd: totalCollateralValue,
-      borrowUsd: totalBorrowedValue,
-      maxBorrow: debtLimit,
-    };
-  }, [
-    avgHealthFactor,
-    totalCollateralValue,
-    totalBorrowedValue,
-    debtLimit,
-    hasMarginAccount,
-  ]);
 
   // Reload margin data using Stellar backend functions
   const reloadMarginState = useCallback(async () => {
@@ -149,33 +137,43 @@ const Margin = () => {
   }, [isWalletConnected, userAddress, reloadMarginState]);
 
   const accountStats = useMemo(() => {
-    if (!marginState) {
-      console.log("[Account Stats] No margin state available");
+    const hasAnyMarginData =
+      hasMarginAccount || totalCollateralValue > 0 || totalBorrowedValue > 0;
+
+    if (!hasAnyMarginData) {
       return null;
     }
 
-    const hf = marginState.hf || 0;
-    const collateral = marginState.collateralUsd || 0;
-    const borrow = marginState.borrowUsd || 0;
-
-    const collateralLeft = Math.max(0, collateral - borrow);
-    const netAvailableCollateral = collateral;
-
-    const stats = {
-      netHealthFactor: hf,
-      collateralLeftBeforeLiquidation: collateralLeft,
-      netAvailableCollateral: netAvailableCollateral,
-      netAmountBorrowed: borrow,
-      netProfitAndLoss: 0,
+    return {
+      netHealthFactor: avgHealthFactor,
+      // storedCollateralLeft = state.debtLimit (repurposed) = collateralLeftBeforeLiquidation
+      collateralLeftBeforeLiquidation: storedCollateralLeft,
+      // storedNetAvailable = state.minDebt (repurposed) = netAvailableCollateral
+      netAvailableCollateral: storedNetAvailable,
+      netAmountBorrowed: totalBorrowedValue,
+      netProfitAndLoss: totalValue,
     };
-
-    console.log("[Account Stats] Calculated:", stats);
-    return stats;
-  }, [marginState]);
+  }, [
+    avgHealthFactor,
+    storedCollateralLeft,
+    storedNetAvailable,
+    totalBorrowedValue,
+    totalValue,
+    hasMarginAccount,
+    totalCollateralValue,
+  ]);
 
   // Format data for InfoCard component (numeric values for Stellar backend's InfoCard)
   const marginAccountInfo = useMemo(() => {
-    if (isLoadingMargin || !marginState) {
+    const hasAnyMarginData =
+      hasMarginAccount || totalCollateralValue > 0 || totalBorrowedValue > 0;
+
+    // Actual max debt = collateral / liquidation threshold (1.1)
+    const actualDebtLimit = totalCollateralValue > 0
+      ? parseFloat((totalCollateralValue / 1.1).toFixed(4))
+      : 0;
+
+    if (!hasAnyMarginData) {
       return {
         totalBorrowedValue: 0,
         totalCollateralValue: 0,
@@ -191,22 +189,37 @@ const Margin = () => {
       };
     }
 
-    const borrow = marginState.borrowUsd || 0;
-    const collateral = marginState.collateralUsd || 0;
     return {
-      totalBorrowedValue: borrow,
-      totalCollateralValue: collateral,
-      totalValue: collateral - borrow,
-      avgHealthFactor: marginState.hf || 0,
-      timeToLiquidation: 0,
-      borrowRate: storeBorrowRate || 6.5,
-      liquidationPremium: 5,
-      liquidationFee: 1,
-      debtLimit: marginState.maxBorrow || 0,
-      minDebt: 10,
-      maxDebt: marginState.maxBorrow || 0,
+      totalBorrowedValue,
+      totalCollateralValue,
+      totalValue,
+      avgHealthFactor,
+      timeToLiquidation,
+      borrowRate: storeBorrowRate,
+      liquidationPremium: 0,
+      liquidationFee: 0,
+      debtLimit: actualDebtLimit,
+      minDebt: 0,
+      maxDebt: actualDebtLimit,
     };
-  }, [marginState, isLoadingMargin, storeBorrowRate]);
+  }, [
+    avgHealthFactor,
+    hasMarginAccount,
+    storeBorrowRate,
+    timeToLiquidation,
+    totalBorrowedValue,
+    totalCollateralValue,
+    totalValue,
+  ]);
+
+  const oracleAndLtsData = useMemo(
+    () => ({
+      oracleContract: "Band Oracle",
+      liquidationThreshold: "1.10x",
+      riskEngine: "Enabled",
+    }),
+    [],
+  );
 
   // Format account stats value
   const formatAccountStatValue = (itemId: string, value: number) => {
@@ -491,8 +504,25 @@ const Margin = () => {
                 </p>
               </div>
             </motion.header>
+
+            {/* Active Margin Account address */}
+            {marginAccountAddress && (
+              <motion.div
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                <span className="text-[11px] font-semibold text-emerald-700">Active Account</span>
+                <span className="text-[11px] font-mono text-emerald-600 truncate">
+                  {marginAccountAddress.slice(0, 8)}…{marginAccountAddress.slice(-6)}
+                </span>
+              </motion.div>
+            )}
+
             <InfoCard
-              data={marginAccountInfo}
+              data={{ ...marginAccountInfo, ...oracleAndLtsData }}
               items={[...MARGIN_ACCOUNT_INFO_ITEMS]}
               showExpandable={true}
               expandableSections={[
@@ -506,7 +536,7 @@ const Margin = () => {
                 {
                   title: "ORACLES AND LTS",
                   headingBold: true,
-                  items: [...MARGIN_ACCOUNT_MORE_DETAILS_ITEMS],
+                  items: [...MARGIN_ORACLE_LTS_ITEMS],
                   defaultExpanded: false,
                   delay: 0.2,
                 },

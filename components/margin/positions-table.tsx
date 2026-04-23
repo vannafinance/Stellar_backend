@@ -2,9 +2,8 @@ import { Position } from "@/lib/types";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { Button } from "../ui/button";
-import { useCollateralBorrowStore } from "@/store/collateral-borrow-store";
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useMarginAccountInfoStore, type BorrowedBalance } from "@/store/margin-account-info-store";
 import { TABLE_ROW_HEADINGS, COIN_ICONS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
 
@@ -33,12 +32,54 @@ export const Positionstable = ({
   onOpenPositionClick,
 }: PositionstableProps) => {
   const { isDark } = useTheme();
-  const positions = useCollateralBorrowStore((state) => state.position);
+  const collateralBalances = useMarginAccountInfoStore((state) => state.collateralBalances);
+  const borrowedBalances = useMarginAccountInfoStore((state) => state.borrowedBalances);
+  const totalCollateralValue = useMarginAccountInfoStore((state) => state.totalCollateralValue);
+  const totalBorrowedValue = useMarginAccountInfoStore((state) => state.totalBorrowedValue);
+  const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
+
+  const positions = useMemo<Position[]>(() => {
+    const collateralEntries = (Object.entries(collateralBalances) as [string, BorrowedBalance][]).filter(
+      ([, bal]) => parseFloat(bal.amount) > 0
+    );
+    if (collateralEntries.length === 0) return [];
+
+    const borrowedEntries = Object.entries(borrowedBalances) as [string, BorrowedBalance][];
+
+    const totalBorrowUsd = borrowedEntries.reduce(
+      (sum: number, [, bal]: [string, BorrowedBalance]) => sum + parseFloat(bal.usdValue || '0'), 0
+    );
+
+    const borrowedArray: Position['borrowed'] = borrowedEntries
+      .filter(([, bal]) => parseFloat(bal.amount) > 0)
+      .map(([token, bal]) => ({
+        assetData: { asset: token, amount: parseFloat(bal.amount).toFixed(4) },
+        percentage: totalBorrowUsd > 0
+          ? Math.round((parseFloat(bal.usdValue) / totalBorrowUsd) * 100)
+          : 0,
+        usdValue: parseFloat(bal.usdValue),
+      }));
+
+    const equity = totalCollateralValue - totalBorrowedValue;
+    const leverage =
+      totalCollateralValue > 0 && equity > 0
+        ? parseFloat((totalCollateralValue / equity).toFixed(2))
+        : 1;
+
+    return collateralEntries.map(([token, bal], idx) => ({
+      positionId: idx + 1,
+      collateral: { asset: token, amount: parseFloat(bal.amount).toFixed(4) },
+      collateralUsdValue: parseFloat(bal.usdValue),
+      borrowed: borrowedArray,
+      leverage,
+      interestAccrued: 0,
+      isOpen: true,
+      user: '',
+    }));
+  }, [collateralBalances, borrowedBalances, totalCollateralValue, totalBorrowedValue]);
+
   const [activeTab, setActiveTab] = useState<string>("currentPositions");
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const hasMarginAccount = useMarginAccountInfoStore(
-    (state) => state.hasMarginAccount,
-  );
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Filter positions based on active tab

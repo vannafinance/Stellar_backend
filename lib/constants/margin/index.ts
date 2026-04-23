@@ -11,11 +11,19 @@ export const TABLE_ROW_HEADINGS = [
   "Action",
 ] as const;
 
-export const COIN_ICONS = {
+export const COIN_ICONS: Record<string, string> = {
+  // Legacy ETH test tokens
   "0xETH": "/icons/eth-icon.png",
   "0xUSDC": "/icons/usdc-icon.svg",
   "0xUSDT": "/icons/usdt-icon.svg",
-} as const;
+  // Stellar / Soroban tokens
+  XLM: "/coins/xlmbg.png",
+  BLUSDC: "/icons/usdc-icon.svg",
+  AQUSDC: "/icons/usdc-icon.svg",
+  SOUSDC: "/icons/usdc-icon.svg",
+  USDC: "/icons/usdc-icon.svg",
+  EURC: "/icons/usdc-icon.svg",
+};
 
 // ============================================
 // Collateral Box Constants
@@ -198,6 +206,13 @@ export const MARGIN_ACCOUNT_MORE_DETAILS_ITEMS = [
     id: "maxDebt",
     name: "Max Debt",
   },
+] as const;
+
+// Items shown in the "ORACLES AND LTS" expandable section
+export const MARGIN_ORACLE_LTS_ITEMS = [
+  { id: "oracleContract", name: "Oracle Contract" },
+  { id: "liquidationThreshold", name: "Liquidation Threshold" },
+  { id: "riskEngine", name: "Risk Engine" },
 ] as const;
 
 // ============================================

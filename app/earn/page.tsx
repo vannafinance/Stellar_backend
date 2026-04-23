@@ -10,7 +10,7 @@ import { useUserStore } from "@/store/user";
 import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { setSelectedPool } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
-import { useEarnPage } from "@/hooks/use-earn";
+import { usePoolData, useUserPositions } from "@/hooks/use-earn";
 import { depositData, netApyData } from "@/lib/constants/earn";
 
 // USD prices for testnet tokens
@@ -18,17 +18,25 @@ const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, AQUARIUS_USD
 
 /**
  * Scale a reference series so its last data point equals `liveEndValue`.
- * Preserves the original chart shape — only the magnitude changes.
+ * Dates are remapped to a rolling 365-day window ending today so that
+ * "3 Months", "6 Months", etc. chart filters always find matching data.
  */
 const scaleSeries = (
   template: Array<{ date: string; amount: number }>,
   liveEndValue: number
 ): Array<{ date: string; amount: number }> => {
-  if (liveEndValue <= 0 || template.length === 0) return template;
+  if (liveEndValue <= 0 || template.length === 0) return [];
   const lastTemplate = template[template.length - 1].amount;
-  if (lastTemplate === 0) return template;
+  if (lastTemplate === 0) return [];
   const scale = liveEndValue / lastTemplate;
-  return template.map((p) => ({ date: p.date, amount: parseFloat((p.amount * scale).toFixed(2)) }));
+  const now = new Date();
+  const n = template.length;
+  return template.map((p, i) => {
+    const daysAgo = Math.round((n - 1 - i) * 365 / Math.max(n - 1, 1));
+    const d = new Date(now);
+    d.setDate(d.getDate() - daysAgo);
+    return { date: d.toISOString().split('T')[0], amount: parseFloat((p.amount * scale).toFixed(2)) };
+  });
 };
 
 // Format a raw token amount into a compact human-readable string (e.g. 1250000 → "1.3M")
@@ -151,7 +159,8 @@ export default function Earn() {
   const [activeTab, setActiveTab] = useState("vaults");
 
   // Live data from on-chain contracts (auto-refreshes every 30s)
-  const { pools, userPositions } = useEarnPage();
+  const { pools } = usePoolData();
+  const { positions: userPositions } = useUserPositions();
 
   // Set default pool selection on mount
   useEffect(() => {

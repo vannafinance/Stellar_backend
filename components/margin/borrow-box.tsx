@@ -6,7 +6,6 @@ import { BorrowInfo } from "@/lib/types";
 import { motion } from "framer-motion";
 import { MAX_LEVERAGE, MODE_CONFIG } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
-import { useUserStore } from "@/store/user";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 type Mode = "Deposit" | "Borrow";
@@ -27,10 +26,19 @@ export const BorrowBox = ({
   onBorrowItemsChange,
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
-  const getTokenBalanceKey = (symbol: string) => {
-    if (symbol === "BLUSDC" || symbol === "BLEND_USDC") return "BLEND_USDC";
-    if (symbol === "AqUSDC" || symbol === "AquiresUSDC") return "AQUARIUS_USDC";
-    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC") return "SOROSWAP_USDC";
+  const TOKEN_PRICES: Record<string, number> = {
+    XLM: 0.10,
+    BLUSDC: 1.00,
+    AQUSDC: 1.00,
+    SOUSDC: 1.00,
+    USDC: 1.00,
+    EURC: 1.00,
+  };
+
+  const getCollateralBalanceKey = (symbol: string) => {
+    if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";
+    if (symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC") return "AQUSDC";
+    if (symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC") return "SOUSDC";
     return symbol;
   };
   const getBorrowedBalanceKey = (symbol: string) => {
@@ -42,7 +50,7 @@ export const BorrowBox = ({
   const config = MODE_CONFIG[mode];
 
   // Store access
-  const tokenBalances = useUserStore((state) => state.tokenBalances);
+  const collateralBalances = useMarginAccountInfoStore((state) => state.collateralBalances);
   const borrowedBalances = useMarginAccountInfoStore((state) => state.borrowedBalances);
 
   // Form state
@@ -51,6 +59,15 @@ export const BorrowBox = ({
   >({});
   const [selectedAmountType, setSelectedAmountType] = useState<string>("Amount in %");
   const [inputValues, setInputValues] = useState<Record<number, number>>({});
+
+  const selectedToken = selectedOptions[0] || DropdownOptions[0];
+  const selectedCollateralKey = getCollateralBalanceKey(selectedToken);
+  const selectedTokenPrice = TOKEN_PRICES[selectedCollateralKey] ?? 1;
+
+  // Borrow preview based on selected leverage: borrow = deposit * (leverage - 1)
+  // totalDeposit is in USD, so divide by token price to get the token amount to display.
+  const previewBorrowableUsd = Math.max(0, totalDeposit * (leverage - 1));
+  const previewBorrowableAmount = selectedTokenPrice > 0 ? previewBorrowableUsd / selectedTokenPrice : 0;
 
   // Combined useEffect: Create BorrowInfo items and notify parent
   useEffect(() => {
@@ -213,9 +230,7 @@ export const BorrowBox = ({
                 isDark ? "text-white" : "text-[#111111]"
               }`}
             >
-              {borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])]
-                ? parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])].amount).toFixed(4)
-                : "0.00"}
+              {previewBorrowableAmount.toFixed(4)}
             </p>
           </div>
 
@@ -227,14 +242,14 @@ export const BorrowBox = ({
           >
             <span>
               Balance:{" "}
-              {tokenBalances[getTokenBalanceKey(selectedOptions[0] || "XLM") as keyof typeof tokenBalances] || tokenBalances.XLM}{" "}
-              {selectedOptions[0] || "XLM"}
+              {collateralBalances[selectedCollateralKey]
+                ? parseFloat(collateralBalances[selectedCollateralKey].amount).toFixed(4)
+                : "0.0000"}{" "}
+              {selectedToken}
             </span>
             <span>
               ≈{" "}
-              {borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])]
-                ? parseFloat(borrowedBalances[getBorrowedBalanceKey(selectedOptions[0] || DropdownOptions[0])].usdValue).toFixed(2)
-                : "0.00"}{" "}
+              {previewBorrowableUsd.toFixed(2)}{" "}
               USD
             </span>
           </div>
