@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   SoroswapService,
   SoroswapPoolStats,
+  SoroswapLpEvent,
   SOROSWAP_POOLS,
   SoroswapPoolConfig,
 } from '@/lib/soroswap-utils';
@@ -92,9 +93,25 @@ export const useSoroswapLpPosition = (marginAccountAddress: string | null) => {
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Soroswap token balance in margin account
-// ─────────────────────────────────────────────────────────────────────────────
+// ---------- Soroswap LP events (position history + chart) ----------
+
+export const useSoroswapEvents = (pairAddress?: string | null) => {
+  const refreshKey = useBlendStore((s) => s.refreshKey);
+  const [events, setEvents] = useState<SoroswapLpEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    setIsLoading(true);
+    SoroswapService.getSoroswapLpEvents(pairAddress ?? undefined)
+      .then(setEvents)
+      .catch(() => setEvents([]))
+      .finally(() => setIsLoading(false));
+  }, [pairAddress, refreshKey]);
+
+  return { events, isLoading };
+};
+
+// ---------- Soroswap token balance in margin account ----------
 
 export const useSoroswapTokenBalance = (
   marginAccountAddress: string | null,

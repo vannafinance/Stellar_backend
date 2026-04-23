@@ -40,7 +40,7 @@ const filterDataByTimeRange = (
   filter: string,
 ): Array<{ date: string; amount: number }> => {
   const now = new Date();
-  let startDate = new Date();
+  const startDate = new Date(now);
 
   switch (filter) {
     case "3 Months":
@@ -58,6 +58,9 @@ const filterDataByTimeRange = (
       return data;
   }
 
+  // Normalize to start of day so "YYYY-MM-DD" strings (UTC midnight) are compared correctly
+  startDate.setHours(0, 0, 0, 0);
+
   return data.filter((item) => {
     const itemDate = new Date(item.date);
     return itemDate >= startDate;
@@ -70,7 +73,7 @@ const filterDataByDays = (
   days: string,
 ): Array<{ date: string; amount: number }> => {
   const now = new Date();
-  let startDate = new Date();
+  const startDate = new Date(now);
 
   switch (days) {
     case "1D":
@@ -88,6 +91,9 @@ const filterDataByDays = (
     default:
       return data;
   }
+
+  // Normalize to start of day so "YYYY-MM-DD" strings (UTC midnight) are compared correctly
+  startDate.setHours(0, 0, 0, 0);
 
   return data.filter((item) => {
     const itemDate = new Date(item.date);

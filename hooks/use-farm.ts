@@ -228,24 +228,28 @@ export const useAquariusEvents = (poolAddress: string | null) => {
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Chart helpers (pure functions — unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ---------- Aquarius LP chart helper ----------
+// Builds cumulative LP balance chart from deposit/withdraw events.
+// Accepts any event type that has type, shareAmount, and timestamp.
 export const buildLpChartData = (
-  events: AquariusLpEvent[],
-  currentLpBalance: number,
+  events: Array<{ type: 'deposit' | 'withdraw'; shareAmount: string; timestamp: number }>,
+  currentLpBalance: number
 ): Array<{ date: string; amount: number }> => {
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
 
   if (events.length === 0) {
     if (currentLpBalance <= 0) return [];
-    const past = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-    return [
-      { date: past.toISOString().split('T')[0], amount: currentLpBalance },
-      { date: todayStr, amount: currentLpBalance },
-    ];
+    // No event history — build a monthly flat-line series covering the last 12 months
+    const points: Array<{ date: string; amount: number }> = [];
+    for (let m = 12; m >= 1; m--) {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - m);
+      d.setDate(1);
+      points.push({ date: d.toISOString().split('T')[0], amount: currentLpBalance });
+    }
+    points.push({ date: todayStr, amount: currentLpBalance });
+    return points;
   }
 
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
@@ -284,11 +288,17 @@ export const buildSupplyChartData = (
 
   if (events.length === 0) {
     if (currentValue <= 0) return [];
-    const past = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-    return [
-      { date: past.toISOString().split('T')[0], amount: currentValue },
-      { date: todayStr, amount: currentValue },
-    ];
+    // No event history — build a monthly flat-line series covering the last 12 months
+    // so all time-range filters ("3 Months", "6 Months", "1 Year") show data.
+    const points: Array<{ date: string; amount: number }> = [];
+    for (let m = 12; m >= 1; m--) {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - m);
+      d.setDate(1);
+      points.push({ date: d.toISOString().split('T')[0], amount: currentValue });
+    }
+    points.push({ date: todayStr, amount: currentValue });
+    return points;
   }
 
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
