@@ -34,14 +34,6 @@ const filterOptions = ["3 Months", "6 Months", "1 Year", "All Time"];
 const dayOptions = ["1D", "7D", "30D", "1Y"];
 const depositApyOptions = ["Deposit APY", "Borrow APY"];
 
-// Helper function to format date for display
-const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  const day = date.getDate();
-  const month = date.toLocaleString("default", { month: "short" });
-  return `${day} ${month}`;
-};
-
 // Helper function to filter data based on selected filter
 const filterDataByTimeRange = (
   data: Array<{ date: string; amount: number }>,
@@ -214,8 +206,10 @@ export const Chart = ({ type, currencyTab, height, containerWidth, containerHeig
 
   // Format Y-axis label
   const formatYAxisLabel = (value: number): string => {
-    if (type === "net-apy" || type === "deposit-apy") {
-      // For APY, show with 2 decimal places
+    if (type === "deposit-apy") {
+      return `${value.toFixed(2)}%`;
+    }
+    if (type === "net-apy") {
       return `${value.toFixed(2)}`;
     }
     // For deposit amounts, show with commas

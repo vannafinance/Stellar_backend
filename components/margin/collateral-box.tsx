@@ -93,13 +93,25 @@ const CollateralComponent = (props: Collateral) => {
     }
   }, [isEditing, props.collaterals?.amount, props.collaterals?.amountInUsd, props.collaterals?.asset, props.collaterals?.balanceType]);
 
-  // Calculate USD value from input (1:1 conversion)
+  // USD price lookup (testnet prices)
+  const TOKEN_PRICES: Record<string, number> = {
+    XLM: 0.10,
+    BLUSDC: 1.00,
+    AqUSDC: 1.00,
+    SoUSDC: 1.00,
+    USDC: 1.00,
+    AQUSDC: 1.00,
+    SOUSDC: 1.00,
+  };
+
+  // Calculate USD value from input using token price
   useEffect(() => {
     if (isEditing && valueInput) {
       const amount = parseFloat(valueInput) || 0;
-      setValueInUsd(amount.toString());
+      const price = TOKEN_PRICES[selectedCurrency] ?? 1;
+      setValueInUsd((amount * price).toFixed(4));
     }
-  }, [valueInput, isEditing]);
+  }, [valueInput, isEditing, selectedCurrency]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValueInput(e.target.value);

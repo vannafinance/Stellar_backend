@@ -5,24 +5,15 @@ import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
 import { useEarnPoolStore } from "@/store/earn-pool-store";
 import { usePoolData } from "@/hooks/use-earn";
+import { useSelectedPoolStore } from "@/store/selected-pool-store";
+import { iconPaths } from "@/lib/constants";
 
-// Stellar table headings for user distribution
-const tableHeadings = [
-  {
-    label: "User Id",
-    id: "user-id",
-  },
-  {
-    label: "Supplied Assets",
-    id: "supplied-assets",
-  },
-  {
-    label: "Supply (%)",
-    id: "supply-percent",
-  },
+const distributionHeadings = [
+  { label: "User Id", id: "user-id" },
+  { label: "Supplied Assets", id: "supplied-assets" },
+  { label: "Supply (%)", id: "supply-percent" },
 ];
 
-// Static transaction table body for use in other pages (e.g. farm detail page)
 export const transactionTableBody = {
   rows: [] as {
     cell: {
@@ -37,37 +28,71 @@ export const transactionTableBody = {
   }[],
 };
 
-// Transaction table headings
 export const transactionTableHeadings = [
-  {
-    label: "Date",
-    id: "date",
-  },
-  {
-    label: "Type",
-    id: "type",
-  },
-  {
-    label: "Amount",
-    id: "amount",
-  },
-  {
-    label: "Status",
-    id: "status",
-  },
-  {
-    label: "Tx Hash",
-    id: "txHash",
-  },
+  { label: "Date", id: "date" },
+  { label: "Type", id: "type" },
+  { label: "Amount", id: "amount" },
+  { label: "Status", id: "status" },
+  { label: "Tx Hash", id: "txHash" },
 ];
+
+// Map internal asset key → display symbol
+const DISPLAY_SYMBOL: Record<string, string> = {
+  XLM: "XLM",
+  USDC: "BLUSDC",
+  AQUARIUS_USDC: "AqUSDC",
+  SOROSWAP_USDC: "SoUSDC",
+};
+
+const toInternalAsset = (value: string): string => {
+  if (value === "AqUSDC" || value === "AQUARIUS_USDC") return "AQUARIUS_USDC";
+  if (value === "SoUSDC" || value === "SOROSWAP_USDC") return "SOROSWAP_USDC";
+  if (value === "BLUSDC") return "USDC";
+  return value.toUpperCase();
+};
+
+const TOKEN_PRICES: Record<string, number> = {
+  XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0,
+};
 
 export const ActivityTab = () => {
   const { isDark } = useTheme();
   const recentTransactions = useEarnPoolStore((state) => state.recentTransactions);
   const { pools } = usePoolData();
+  const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
+  const assetKey = toInternalAsset(selectedAsset);
+  const displaySymbol = DISPLAY_SYMBOL[assetKey] ?? assetKey;
+
+  // Pool distribution for the currently viewed pool
+  const userDistributionBody = useMemo(() => {
+    const pool = pools[assetKey as keyof typeof pools];
+    const totalSupply = parseFloat(pool?.totalSupply || '0');
+    const price = TOKEN_PRICES[assetKey] ?? 1;
+    const usdValue = totalSupply * price;
+
+    return {
+      rows: [
+        {
+          cell: [
+            {
+              icon: iconPaths[displaySymbol] || "/icons/usdc-icon.svg",
+              title: `${displaySymbol} Pool`,
+              clickable: "address",
+            },
+            {
+              icon: iconPaths[displaySymbol] || "/icons/usdc-icon.svg",
+              title: `${totalSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${displaySymbol}`,
+              description: `$${usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            },
+            { percentage: 100 },
+          ],
+        },
+      ],
+    };
+  }, [pools, assetKey, displaySymbol]);
 
   // Format transactions for table
-  const transactionTableBody = useMemo(() => {
+  const txTableBody = useMemo(() => {
     if (recentTransactions.length === 0) {
       return {
         rows: [
@@ -96,9 +121,9 @@ export const ActivityTab = () => {
             badge: tx.type === 'supply' ? 'green' : 'orange',
           },
           {
-            icon: `/icons/${tx.asset.toLowerCase()}.svg`,
-            title: `${tx.amount} ${tx.asset}`,
-            description: `$${(parseFloat(tx.amount) * (tx.asset === 'XLM' ? 0.1 : 1)).toFixed(2)}`,
+            icon: iconPaths[tx.asset] || `/icons/usdc-icon.svg`,
+            title: `${tx.amount} ${DISPLAY_SYMBOL[tx.asset] ?? tx.asset}`,
+            description: `$${(parseFloat(tx.amount) * (TOKEN_PRICES[tx.asset] ?? 1)).toFixed(2)}`,
           },
           {
             title: tx.status,
@@ -114,52 +139,6 @@ export const ActivityTab = () => {
     };
   }, [recentTransactions]);
 
-  // Sample user distribution data (would come from indexer in production)
-  const userDistributionBody = useMemo(() => {
-    // Show placeholder data - in production this would come from an indexer
-    const totalXLM = parseFloat(pools.XLM?.totalSupply || '0');
-    const totalUSDC = parseFloat(pools.USDC?.totalSupply || '0');
-
-    return {
-      rows: [
-        {
-          cell: [
-            {
-              icon: "/icons/user.png",
-              title: "Protocol Pool",
-              clickable: "address",
-            },
-            {
-              icon: "/coins/xlmbg.png",
-              title: `${totalXLM.toLocaleString()} XLM`,
-              description: `$${(totalXLM * 0.1).toLocaleString()}`,
-            },
-            {
-              percentage: 100,
-            },
-          ],
-        },
-        {
-          cell: [
-            {
-              icon: "/icons/user.png",
-              title: "BLUSDC Pool",
-              clickable: "address",
-            },
-            {
-              icon: "/icons/usdc.svg",
-              title: `${totalUSDC.toLocaleString()} BLUSDC`,
-              description: `$${totalUSDC.toLocaleString()}`,
-            },
-            {
-              percentage: 100,
-            },
-          ],
-        },
-      ],
-    };
-  }, [pools]);
-
   return (
     <section
       className={`w-full h-fit rounded-[20px] border-[1px] p-[24px] flex flex-col gap-[24px] ${
@@ -173,7 +152,7 @@ export const ActivityTab = () => {
           showPieChart={true}
           tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
           heading={{ heading: "Pool Distribution" }}
-          tableHeadings={tableHeadings}
+          tableHeadings={distributionHeadings}
           tableBody={userDistributionBody}
         />
       </article>
@@ -194,7 +173,7 @@ export const ActivityTab = () => {
           heading={{ heading: "" }}
           filters={{ filters: ["All", "Deposits", "Withdrawals"], customizeDropdown: true }}
           tableHeadings={transactionTableHeadings}
-          tableBody={transactionTableBody}
+          tableBody={txTableBody}
         />
       </article>
 

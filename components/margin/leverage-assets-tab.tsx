@@ -357,21 +357,16 @@ export const LeverageAssetsTab = () => {
           }
 
           if (requestedBorrowUsd > maxAdditionalBorrowUsd) {
-            // Keep a safety margin below threshold because on-chain checks use strict ">"
-            // and integer math.
-            const safeMultiplier = depositAmountUsd > 0
-              ? 1 + (maxAdditionalBorrowUsd * 0.9) / depositAmountUsd
+            const maxSafeLeverage = depositAmountUsd > 0
+              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.9) / depositAmountUsd).toFixed(2))
               : 1;
-            multiplier = Math.max(1, Math.min(multiplier, safeMultiplier));
-            setLeverage(Math.max(1, Math.min(10, Number(multiplier.toFixed(2)))));
-            if (multiplier <= 1.000001) {
-              alert(
-                'Borrow amount is too high for current account health. ' +
-                'Deposit can proceed, but borrow must be near zero. Add more collateral or repay existing debt.'
-              );
-              setIsProcessing(false);
-              return;
-            }
+            alert(
+              `Selected leverage (${multiplier}x) exceeds your account's safe borrowing limit.\n\n` +
+              `Maximum safe leverage with current collateral: ~${maxSafeLeverage}x\n\n` +
+              `To borrow at ${multiplier}x, add more collateral or repay existing debt first.`
+            );
+            setIsProcessing(false);
+            return;
           }
         }
 

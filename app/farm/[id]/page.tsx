@@ -208,12 +208,6 @@ export default function FarmDetailPage() {
     };
   }, [events]);
 
-  // Table body based on active tab
-  const tableBodyData = useMemo(() => {
-    if (activeTab === 'position-history') return positionHistoryBody;
-    return currentPositionBody;
-  }, [activeTab, currentPositionBody, positionHistoryBody]);
-
   // Analytics stats cards
   const analyticsItems = useMemo(() => {
     if (!reserveData) return items;
@@ -389,6 +383,70 @@ export default function FarmDetailPage() {
       }],
     };
   }, [mySSLpBalance, ssStats, ssTokenA, ssTokenB]);
+
+  // Route "All Transactions" table to the correct data source for the current pool type.
+  const detailTableHeadings = useMemo(() => {
+    if (activeTab !== "current-position") return transactionTableHeadings;
+    if (isSoroswapEarly) return soroswapPositionHeadings;
+    if (isAquariusEarly) return aquariusPositionHeadings;
+    return positionTableHeadings;
+  }, [activeTab, isSoroswapEarly, isAquariusEarly, soroswapPositionHeadings, aquariusPositionHeadings]);
+
+  const detailTableBody = useMemo(() => {
+    if (activeTab === "current-position") {
+      if (isSoroswapEarly) return soroswapCurrentPositionBody;
+      if (isAquariusEarly) return aquariusCurrentPositionBody;
+      return currentPositionBody;
+    }
+
+    if (isSoroswapEarly) return { rows: [] };
+    if (isAquariusEarly) return aquariusHistoryBody;
+    return positionHistoryBody;
+  }, [
+    activeTab,
+    isSoroswapEarly,
+    isAquariusEarly,
+    soroswapCurrentPositionBody,
+    aquariusCurrentPositionBody,
+    currentPositionBody,
+    aquariusHistoryBody,
+    positionHistoryBody,
+  ]);
+
+  const detailChart = useMemo(() => {
+    if (isSoroswapEarly) {
+      return {
+        heading: "My LP Position",
+        uptrend: mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(4)} LP shares` : undefined,
+        data: ssChartData,
+      };
+    }
+
+    if (isAquariusEarly) {
+      return {
+        heading: "My LP Position",
+        uptrend: myLpBalance > 0 ? `${myLpBalance.toFixed(4)} LP shares` : undefined,
+        data: aqChartData,
+      };
+    }
+
+    return {
+      heading: chartHeading,
+      uptrend: myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined,
+      data: chartLiveData,
+    };
+  }, [
+    isSoroswapEarly,
+    isAquariusEarly,
+    mySSLpBalance,
+    myLpBalance,
+    ssChartData,
+    aqChartData,
+    chartHeading,
+    myUnderlying,
+    tokenSymbol,
+    chartLiveData,
+  ]);
 
   // Soroswap analytics cards
   const soroswapAnalyticsItems = useMemo(() => [
@@ -576,12 +634,17 @@ export default function FarmDetailPage() {
                 </nav>
                 {activeUiTab === "all-transactions" ? (
                   <div className={`w-full flex flex-col gap-6 rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
-                    <Chart type="farm" heading={chartHeading} uptrend={myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined} customData={chartLiveData.length > 0 ? chartLiveData : undefined} />
+                    <Chart
+                      type="farm"
+                      heading={detailChart.heading}
+                      uptrend={detailChart.uptrend}
+                      customData={detailChart.data.length > 0 ? detailChart.data : undefined}
+                    />
                     <Table filterDropdownPosition="right" tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
                       heading={{ heading: "All Transactions", tabsItems: [{ id: "current-position", label: "Current Position" }, { id: "position-history", label: "Position History" }], tabType: "solid" }}
                       activeTab={activeTab} onTabChange={setActiveTab} filters={{ filters: ["All"], customizeDropdown: true }}
-                      tableHeadings={activeTab === "current-position" ? positionTableHeadings : transactionTableHeadings}
-                      tableBody={tableBodyData}
+                      tableHeadings={detailTableHeadings}
+                      tableBody={detailTableBody}
                     />
                   </div>
                 ) : (

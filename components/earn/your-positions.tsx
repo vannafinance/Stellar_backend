@@ -8,7 +8,7 @@ import { usePoolData } from "@/hooks/use-earn";
 import { useUserStore } from "@/store/user";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
-import { formatValue } from "@/lib/utils/format-value";
+import { depositData } from "@/lib/constants/earn";
 
 const tabs = [
   { id: "current-positions", label: "Current Position" },
@@ -18,35 +18,68 @@ const tabs = [
 const toInternalAsset = (value: string) => {
   if (value === "AqUSDC" || value === "AQUARIUS_USDC") return "AQUARIUS_USDC";
   if (value === "SoUSDC" || value === "SOROSWAP_USDC") return "SOROSWAP_USDC";
-  return value;
+  if (value === "BLUSDC") return "USDC";
+  return value.toUpperCase();
 };
 
 const toDisplayAsset = (value: string) => {
   if (value === "AQUARIUS_USDC") return "AqUSDC";
   if (value === "SOROSWAP_USDC") return "SoUSDC";
+  if (value === "USDC") return "BLUSDC";
   return value;
+};
+
+// Scale a template series so its last point equals liveEndValue; empty array when value=0.
+// Dates are remapped to a rolling 365-day window ending today so time filters always find data.
+const scaleSeries = (
+  template: Array<{ date: string; amount: number }>,
+  liveEndValue: number
+): Array<{ date: string; amount: number }> => {
+  if (liveEndValue <= 0 || template.length === 0) return [];
+  const lastTemplate = template[template.length - 1].amount;
+  if (lastTemplate === 0) return [];
+  const scale = liveEndValue / lastTemplate;
+  const now = new Date();
+  const n = template.length;
+  return template.map((p, i) => {
+    const daysAgo = Math.round((n - 1 - i) * 365 / Math.max(n - 1, 1));
+    const d = new Date(now);
+    d.setDate(d.getDate() - daysAgo);
+    return { date: d.toISOString().split('T')[0], amount: parseFloat((p.amount * scale).toFixed(2)) };
+  });
+};
+
+// USD price lookup
+const TOKEN_PRICES: Record<string, number> = {
+  XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0,
 };
 
 export const YourPositions = () => {
   const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState<string>("current-positions");
 
-  const userAddress = useUserStore((state) => state.address);
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
-  const asset = toDisplayAsset(toInternalAsset(selectedAsset));
   const assetKey = toInternalAsset(selectedAsset);
-  const { pools } = usePoolData();
+  const asset = toDisplayAsset(assetKey);
 
+  const { pools } = usePoolData();
   const pool = pools[assetKey as keyof typeof pools];
   const supplyAPY = parseFloat(pool?.supplyAPY || '0');
-  // For now, positions are derived from deposited balances in the user store
+  const exchangeRate = parseFloat(pool?.exchangeRate || '1');
+
+  // Correct: look up deposited balance using the actual asset key
   const depositedBalances = useUserStore((state) => state.depositedBalances);
-  const deposited = parseFloat(depositedBalances?.[assetKey === 'XLM' ? 'XLM' : 'USDC'] || '0');
+  const deposited = parseFloat(depositedBalances?.[assetKey as keyof typeof depositedBalances] || '0');
   const hasPosition = deposited > 0;
 
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
-  };
+  const price = TOKEN_PRICES[assetKey] ?? 1;
+  const vTokenBalance = exchangeRate > 0 ? deposited / exchangeRate : deposited;
+
+  // Generate scaled chart data for the user's current deposit
+  const mySupplyChartData = useMemo(
+    () => scaleSeries(depositData, deposited * price),
+    [deposited, price]
+  );
 
   const positionTableHeadings = [
     { label: "Pool", id: "pool" },
@@ -55,10 +88,6 @@ export const YourPositions = () => {
     { label: "USD Value", id: "usd-value" },
     { label: "APY", id: "apy" },
   ];
-
-  const price = assetKey === 'XLM' ? 0.1 : 1;
-  const exchangeRate = parseFloat(pool?.exchangeRate || '1');
-  const vTokenBalance = deposited / exchangeRate;
 
   const positionTableBody = hasPosition
     ? {
@@ -70,18 +99,10 @@ export const YourPositions = () => {
                 title: asset,
                 tags: ["Vanna", "Vault"],
               },
-              {
-                title: `${vTokenBalance.toFixed(4)} v${asset}`,
-              },
-              {
-                title: `${deposited.toFixed(4)} ${asset}`,
-              },
-              {
-                title: `$${(deposited * price).toFixed(2)}`,
-              },
-              {
-                title: `${supplyAPY.toFixed(2)}%`,
-              },
+              { title: `${vTokenBalance.toFixed(4)} v${asset}` },
+              { title: `${deposited.toFixed(4)} ${asset}` },
+              { title: `$${(deposited * price).toFixed(2)}` },
+              { title: `${supplyAPY.toFixed(2)}%` },
             ],
           },
         ],
@@ -95,7 +116,7 @@ export const YourPositions = () => {
       }`}
       aria-label="Your Positions Overview"
     >
-      {/* Supply chart */}
+      {/* Supply chart — shows user's deposit value over time */}
       <figure className="w-full flex-1 min-h-0">
         <Chart
           type="my-supply"
@@ -103,6 +124,7 @@ export const YourPositions = () => {
           height={393}
           containerWidth="w-full"
           containerHeight="h-full"
+          customData={mySupplyChartData}
         />
       </figure>
 
@@ -112,7 +134,6 @@ export const YourPositions = () => {
           <div className={`w-full rounded-2xl border p-6 flex flex-col items-center justify-center gap-4 text-center ${
             isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
           }`}>
-            {/* Icon */}
             <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
               isDark ? "bg-[#2A2A2A]" : "bg-[#F4F0FD]"
             }`}>
@@ -161,18 +182,11 @@ export const YourPositions = () => {
               tabType: "solid",
             }}
             activeTab={activeTab}
-            onTabChange={handleTabChange}
-            tableHeadings={
-              activeTab === "current-positions" ? positionTableHeadings : []
-            }
-            tableBody={
-              activeTab === "current-positions" ? positionTableBody : { rows: [] }
-            }
+            onTabChange={setActiveTab}
+            tableHeadings={activeTab === "current-positions" ? positionTableHeadings : []}
+            tableBody={activeTab === "current-positions" ? positionTableBody : { rows: [] }}
             tableBodyBackground={isDark ? "bg-[#111111]" : "bg-white"}
-            filters={{
-              customizeDropdown: true,
-              filters: ["All"],
-            }}
+            filters={{ customizeDropdown: true, filters: ["All"] }}
           />
         )}
       </article>
