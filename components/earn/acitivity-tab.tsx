@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
 import { useEarnPoolStore } from "@/store/earn-pool-store";
-import { usePoolData } from "@/hooks/use-earn";
+import { usePoolData, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
 
@@ -57,6 +57,7 @@ const TOKEN_PRICES: Record<string, number> = {
 
 export const ActivityTab = () => {
   const { isDark } = useTheme();
+  useEarnTransactions();
   const recentTransactions = useEarnPoolStore((state) => state.recentTransactions);
   const { pools } = usePoolData();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);

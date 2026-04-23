@@ -23,6 +23,16 @@ const makeKey  = (name: string) => StellarSdk.xdr.ScVal.scvSymbol(name);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface SoroswapLpEvent {
+  type: 'deposit' | 'withdraw';
+  shareAmount: string;  // LP shares (7 decimals)
+  amountXLM: string;    // XLM contributed/withdrawn (7 decimals)
+  amountUSDC: string;   // USDC contributed/withdrawn (7 decimals)
+  timestamp: number;    // unix ms
+  txHash: string;
+  ledger: number;
+}
+
 export interface SoroswapPoolStats {
   reserveXLM:   string; // human-readable (7 decimals)
   reserveUSDC:  string;
@@ -395,6 +405,72 @@ export class SoroswapService {
     } catch (err) {
       console.error('[SoroswapService] getSwapQuote error:', err);
       return null;
+    }
+  }
+
+  // ── LP event history ──────────────────────────────────────────────────────
+
+  /**
+   * Fetch deposit / withdraw LP events from the Soroswap pair contract.
+   * The pair emits (Symbol("deposit"|"withdraw"), depositor) with body (shares, amt0, amt1).
+   */
+  static async getSoroswapLpEvents(
+    pairAddress?: string
+  ): Promise<SoroswapLpEvent[]> {
+    try {
+      const resolvedPair = pairAddress ?? SOROSWAP_XLM_USDC_POOL;
+      if (!resolvedPair) return [];
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const latest = await server.getLatestLedger();
+      const startLedger = Math.max(0, latest.sequence - 518400); // ~30 days
+
+      const depositTopic  = StellarSdk.xdr.ScVal.scvSymbol('deposit').toXDR('base64');
+      const withdrawTopic = StellarSdk.xdr.ScVal.scvSymbol('withdraw').toXDR('base64');
+
+      const safeGet = async (topic: string) => {
+        try {
+          const resp = await (server as any).getEvents({
+            startLedger,
+            filters: [{ contractIds: [resolvedPair], topics: [[topic]] }],
+            limit: 200,
+          });
+          if (resp?.error) return [];
+          return resp?.events ?? [];
+        } catch { return []; }
+      };
+
+      const [depositEvs, withdrawEvs] = await Promise.all([
+        safeGet(depositTopic),
+        safeGet(withdrawTopic),
+      ]);
+
+      const parseEv = (ev: any, type: 'deposit' | 'withdraw'): SoroswapLpEvent | null => {
+        try {
+          const body = ev.value ? (StellarSdk.scValToNative(ev.value) as any[]) : null;
+          if (!Array.isArray(body) || body.length < 3) return null;
+          const toHuman = (v: any) => (Number(v?.toString?.() ?? v ?? 0) / STROOP).toFixed(7);
+          return {
+            type,
+            shareAmount: toHuman(body[0]),
+            amountXLM:   toHuman(body[1]),
+            amountUSDC:  toHuman(body[2]),
+            timestamp: ev.ledgerClosedAt ? new Date(ev.ledgerClosedAt).getTime() : 0,
+            txHash: ev.txHash ?? '',
+            ledger: ev.ledger ?? 0,
+          };
+        } catch { return null; }
+      };
+
+      const all: SoroswapLpEvent[] = [
+        ...depositEvs.map((ev: any) => parseEv(ev, 'deposit')),
+        ...withdrawEvs.map((ev: any) => parseEv(ev, 'withdraw')),
+      ].filter((e): e is SoroswapLpEvent => e !== null);
+
+      return all.sort((a, b) => b.timestamp - a.timestamp);
+    } catch (err: any) {
+      console.warn('[SoroswapService] getSoroswapLpEvents error:', err?.message ?? err);
+      return [];
     }
   }
 

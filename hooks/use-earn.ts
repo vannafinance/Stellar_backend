@@ -429,6 +429,32 @@ export const useWithdrawLiquidity = () => {
   };
 };
 
+// Hook to load on-chain earn pool transactions for the connected user
+export const useEarnTransactions = () => {
+  const address = useUserStore((state) => state.address);
+  const isConnected = useUserStore((state) => state.isConnected);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchTransactions = useCallback(async () => {
+    if (!address || !isConnected) return;
+    setIsLoading(true);
+    try {
+      const events = await ContractService.getEarnPoolEvents(address);
+      useEarnPoolStore.getState().set({ recentTransactions: events });
+    } catch (err) {
+      console.error('[useEarnTransactions]', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [address, isConnected]);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
+
+  return { isLoading, refresh: fetchTransactions };
+};
+
 // Combined hook for earn page
 export const useEarnPage = () => {
   const wallet = useUserStore();

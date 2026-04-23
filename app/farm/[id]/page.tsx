@@ -35,7 +35,7 @@ import {
   useAquariusEvents,
   buildLpChartData,
 } from "@/hooks/use-farm";
-import { useSoroswapPoolStats, useSoroswapLpPosition } from "@/hooks/use-soroswap";
+import { useSoroswapPoolStats, useSoroswapLpPosition, useSoroswapEvents } from "@/hooks/use-soroswap";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 const UI_TABS = [
@@ -115,6 +115,7 @@ export default function FarmDetailPage() {
   const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats();
   const { lpBalance: ssLpBalanceRaw } = useSoroswapLpPosition(marginAccountAddress);
   const mySSLpBalance = parseFloat(ssLpBalanceRaw ?? '0');
+  const { events: ssEvents } = useSoroswapEvents(ssStats?.pairAddress);
   const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
   const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
 
@@ -349,11 +350,39 @@ export default function FarmDetailPage() {
     },
   ], [ssStats, ssStatsLoading, ssTokenA, ssTokenB]);
 
-  // Soroswap LP chart data (no on-chain events yet — flat line from current balance)
+  // Soroswap LP chart data — built from on-chain events + current balance
   const ssChartData = useMemo(
-    () => buildLpChartData([], mySSLpBalance),
-    [mySSLpBalance]
+    () => buildLpChartData(ssEvents, mySSLpBalance),
+    [ssEvents, mySSLpBalance]
   );
+
+  // Soroswap position history table
+  const soroswapHistoryBody = useMemo(() => {
+    if (ssEvents.length === 0) return { rows: [] };
+    return {
+      rows: ssEvents.map((ev) => ({
+        cell: [
+          {
+            title: ev.timestamp ? new Date(ev.timestamp).toLocaleDateString() : '—',
+            description: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '',
+          },
+          {
+            title: ev.type === 'deposit' ? 'Add Liquidity' : 'Remove Liquidity',
+            badge: ev.type === 'deposit' ? 'green' : 'orange',
+          },
+          { title: `${ev.shareAmount} LP` },
+          { title: 'Success', badge: 'green' },
+          ev.txHash
+            ? {
+                title: `${ev.txHash.slice(0, 8)}...${ev.txHash.slice(-4)}`,
+                clickable: 'link',
+                link: `https://stellar.expert/explorer/testnet/tx/${ev.txHash}`,
+              }
+            : { title: '—' },
+        ],
+      })),
+    };
+  }, [ssEvents]);
 
   // Soroswap position table headings
   const soroswapPositionHeadings = [
@@ -399,7 +428,7 @@ export default function FarmDetailPage() {
       return currentPositionBody;
     }
 
-    if (isSoroswapEarly) return { rows: [] };
+    if (isSoroswapEarly) return soroswapHistoryBody;
     if (isAquariusEarly) return aquariusHistoryBody;
     return positionHistoryBody;
   }, [
@@ -409,6 +438,7 @@ export default function FarmDetailPage() {
     soroswapCurrentPositionBody,
     aquariusCurrentPositionBody,
     currentPositionBody,
+    soroswapHistoryBody,
     aquariusHistoryBody,
     positionHistoryBody,
   ]);
@@ -708,12 +738,12 @@ export default function FarmDetailPage() {
                       heading={{ heading: "Your Transactions", tabsItems: [{ id: "current-position", label: "Current Position" }, { id: "position-history", label: "Position History" }], tabType: "solid" }}
                       activeTab={activeTab} onTabChange={setActiveTab} filters={{ filters: ["All"], customizeDropdown: true }}
                       tableHeadings={activeTab === "current-position" ? (isSoroswapEarly ? soroswapPositionHeadings : aquariusPositionHeadings) : transactionTableHeadings}
-                      tableBody={activeTab === "current-position" ? (isSoroswapEarly ? soroswapCurrentPositionBody : aquariusCurrentPositionBody) : (isSoroswapEarly ? { rows: [] } : aquariusHistoryBody)}
+                      tableBody={activeTab === "current-position" ? (isSoroswapEarly ? soroswapCurrentPositionBody : aquariusCurrentPositionBody) : (isSoroswapEarly ? soroswapHistoryBody : aquariusHistoryBody)}
                     />
                     <Table filterDropdownPosition="right" tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
                       heading={{ heading: "All Transactions" }} filters={{ filters: ["All"] }}
                       tableHeadings={transactionTableHeadings}
-                      tableBody={isSoroswapEarly ? { rows: [] } : aquariusHistoryBody}
+                      tableBody={isSoroswapEarly ? soroswapHistoryBody : aquariusHistoryBody}
                     />
                   </div>
                 )}
