@@ -92,15 +92,16 @@ export const SupplyApy = (props: SupplyApyProps) => {
           >
             Reset
           </button>
-          <nav className="w-full h-[32px]" aria-label="Filter Type Selection">
+          <nav className="w-full" aria-label="Filter Type Selection">
             <AnimatedTabs
               tabs={[
                 { label: "Greater than", id: "greater-than" },
                 { label: "Less than", id: "less-than" },
               ]}
-              type="ghost"
+              type="ghost-compact"
               activeTab={activeTab}
-              containerClassName="w-full"
+              containerClassName={`w-full border ${isDark ? "border-[#2A2A2A]" : "border-[#E2E2E2]"}`}
+              tabClassName="flex-1"
               onTabChange={(tab) => {
                 setActiveTab(tab);
                 if (tab === "greater-than") {

@@ -141,45 +141,6 @@ const DropdownOption = memo(
 
 DropdownOption.displayName = "DropdownOption";
 
-// Memoized filter chip component
-const FilterChip = memo(
-  ({
-    item,
-    isActive,
-    onClick,
-    compact,
-  }: {
-    item: string;
-    isActive: boolean;
-    onClick: () => void;
-    compact?: boolean;
-  }) => {
-    const { isDark } = useTheme();
-
-    return (
-      <motion.div
-        onClick={onClick}
-        className={`${
-          isActive
-            ? "text-[#703AE6] bg-[#F1EBFD]"
-            : isDark
-            ? "text-white hover:text-[#703AE6]"
-            : "text-black hover:text-[#703AE6]"
-        } w-fit h-fit rounded-[6px] ${
-          compact ? "py-[3px] px-[8px] text-[12px]" : "py-[6px] px-[12px] text-[14px]"
-        } font-semibold cursor-pointer`}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        transition={{ duration: 0.15 }}
-      >
-        {item}
-      </motion.div>
-    );
-  }
-);
-
-FilterChip.displayName = "FilterChip";
-
 // Static pool icons - show Base chain icon (Base-only for now)
 const CHAIN_ICONS: [string, string][] = [["BASE", "/icons/base-icon.svg"]];
 
@@ -188,18 +149,10 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [searchValue, setSearchValue] = useState("");
-  const [dropdownFilters, setDropdownFilters] = useState<string[]>([
-    props.dropdownOptionsFilters?.[0] || "All",
-  ]);
 
   // Memoized filtered options - only recalculate when dependencies change
   const filteredOptions = useMemo(() => {
     let filtered = props.dropdownOptions;
-
-    // Filter by dropdown filters
-    if (!dropdownFilters.includes("All")) {
-      filtered = filtered.filter((item) => dropdownFilters.includes(item));
-    }
 
     // Filter by search
     if (searchValue) {
@@ -210,7 +163,7 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
     }
 
     return filtered;
-  }, [searchValue, dropdownFilters, props.dropdownOptions]);
+  }, [searchValue, props.dropdownOptions]);
 
   // Memoized display text
   const displayText = useMemo(() => {
@@ -259,29 +212,9 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
   const toggleDropdown = useCallback(() => setIsOpen((prev) => !prev), []);
 
   const handleClearFilters = useCallback(() => {
-    setDropdownFilters(["All"]);
-  }, []);
-
-  const handleFilterChipClick = useCallback(
-    (item: string) => {
-      const hasAll = dropdownFilters.includes("All");
-
-      if (item === "All") {
-        if (!hasAll) setDropdownFilters(["All"]);
-      } else {
-        if (hasAll) {
-          setDropdownFilters([item]);
-        } else {
-          setDropdownFilters((prev) =>
-            prev.includes(item)
-              ? prev.filter((i) => i !== item)
-              : [...prev, item]
-          );
-        }
-      }
-    },
-    [dropdownFilters]
-  );
+    props.onDropdownItemChange([]);
+    setSearchValue("");
+  }, [props]);
 
   const handleClearSelection = useCallback(
     (e: React.MouseEvent) => {
@@ -485,8 +418,8 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
                 : props.currentDropdownItem.length > 0
                   ? "top-[44px]"
                   : "top-[38px]"
-            } ${props.compact ? "w-[170px] max-w-[calc(100vw-32px)]" : "w-[240px] max-w-[calc(100vw-32px)]"} h-fit rounded-[12px] ${
-              props.compact ? "p-3 gap-[10px]" : "p-[16px] gap-[15px]"
+            } ${props.compact ? "w-[220px] max-w-[calc(100vw-32px)]" : "w-[260px] max-w-[calc(100vw-32px)]"} h-fit rounded-[12px] ${
+              props.compact ? "p-[12px] gap-[10px]" : "p-[16px] gap-[14px]"
             } flex flex-col shadow-lg z-[9999] ${
               props.dropDownType === "all-chains" || props.dropdownPosition === "left"
                 ? "left-0 right-auto"
@@ -506,23 +439,19 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
             />
           )}
 
-          {(props.showDropdownFilters !== false) && (
-            <div className="w-full h-full flex items-center px-[4px] justify-between">
-              <div className="w-fit h-fit flex gap-[4px] flex-wrap">
-                {props.dropdownOptionsFilters?.map((item) => (
-                  <FilterChip
-                    key={item}
-                    item={item}
-                    isActive={dropdownFilters.includes(item)}
-                    onClick={() => handleFilterChipClick(item)}
-                    compact={props.compact}
-                  />
-                ))}
+          {(props.showDropdownFilters !== false) && props.currentDropdownItem.length > 0 && (
+            <div className="w-full flex items-center justify-between px-[2px]">
+              <div
+                className={`font-semibold ${props.compact ? "text-[11px]" : "text-[12px]"} ${
+                  isDark ? "text-[#919191]" : "text-[#5C5B5B]"
+                }`}
+              >
+                {props.currentDropdownItem.length} selected
               </div>
               <motion.div
                 onClick={handleClearFilters}
-                className={`cursor-pointer w-fit h-fit ${props.compact ? "text-[12px]" : "text-[14px]"} font-semibold underline rounded-[8px] ${
-                  isDark ? "text-white" : ""
+                className={`cursor-pointer ${props.compact ? "text-[11px]" : "text-[12px]"} font-semibold ${
+                  isDark ? "text-[#A78BFA] hover:text-[#C4A9FF]" : "text-[#703AE6] hover:text-[#5A2FC7]"
                 }`}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -533,7 +462,16 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
             </div>
           )}
 
-          <div className={`w-full h-full flex flex-col ${props.compact ? "gap-[10px]" : "gap-[15px]"}`}>
+          <div className={`w-full h-full flex flex-col overflow-y-auto overflow-x-hidden max-h-[240px] py-[6px] px-[6px] -mx-[6px] ${props.compact ? "gap-[10px]" : "gap-[15px]"}`}>
+            {filteredOptions.length === 0 && (
+              <div
+                className={`${props.compact ? "text-[12px]" : "text-[13px]"} font-medium text-center py-[8px] ${
+                  isDark ? "text-[#777]" : "text-[#999]"
+                }`}
+              >
+                No results found
+              </div>
+            )}
             {filteredOptions.map((item, index) => (
               <motion.div
                 key={item}
