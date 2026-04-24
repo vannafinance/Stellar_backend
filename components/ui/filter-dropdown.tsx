@@ -413,13 +413,11 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
         {isOpen && (
           <motion.div
             className={`absolute ${
-              props.dropDownType === "all-chains"
-                ? "left-0 top-[42px]"
-                : props.currentDropdownItem.length > 0
-                  ? "top-[44px]"
-                  : "top-[38px]"
+              props.compact
+                ? "top-[calc(100%+6px)]"
+                : "top-[calc(100%+8px)]"
             } ${props.compact ? "w-[220px] max-w-[calc(100vw-32px)]" : "w-[260px] max-w-[calc(100vw-32px)]"} h-fit rounded-[12px] ${
-              props.compact ? "p-[12px] gap-[10px]" : "p-[16px] gap-[14px]"
+              props.compact ? "p-[12px] gap-[10px]" : "p-[14px] gap-[12px]"
             } flex flex-col shadow-lg z-[9999] ${
               props.dropDownType === "all-chains" || props.dropdownPosition === "left"
                 ? "left-0 right-auto"
@@ -462,7 +460,7 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
             </div>
           )}
 
-          <div className={`w-full h-full flex flex-col overflow-y-auto overflow-x-hidden max-h-[240px] py-[6px] px-[6px] -mx-[6px] ${props.compact ? "gap-[10px]" : "gap-[15px]"}`}>
+          <div className={`w-full flex flex-col overflow-y-auto overflow-x-hidden max-h-[200px] py-[6px] px-[6px] -mx-[6px] ${props.compact ? "gap-[8px]" : "gap-[10px]"}`}>
             {filteredOptions.length === 0 && (
               <div
                 className={`${props.compact ? "text-[12px]" : "text-[13px]"} font-medium text-center py-[8px] ${
