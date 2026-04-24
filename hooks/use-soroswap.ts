@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   SoroswapService,
   SoroswapPoolStats,
-  SoroswapLpEvent,
   SOROSWAP_POOLS,
   SoroswapPoolConfig,
 } from '@/lib/soroswap-utils';
@@ -96,20 +94,25 @@ export const useSoroswapLpPosition = (marginAccountAddress: string | null) => {
 
 // ---------- Soroswap LP events (position history + chart) ----------
 
-export const useSoroswapEvents = (pairAddress?: string | null) => {
+export const useSoroswapEvents = (
+  pairAddress?: string | null,
+  marginAccountAddress?: string | null,
+) => {
   const refreshKey = useBlendStore((s) => s.refreshKey);
-  const [events, setEvents] = useState<SoroswapLpEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    setIsLoading(true);
-    SoroswapService.getSoroswapLpEvents(pairAddress ?? undefined)
-      .then(setEvents)
-      .catch(() => setEvents([]))
-      .finally(() => setIsLoading(false));
-  }, [pairAddress, refreshKey]);
+  const query = useQuery({
+    queryKey: ['soroswap', 'lpEvents', pairAddress ?? null, marginAccountAddress ?? null, refreshKey],
+    enabled: Boolean(pairAddress && marginAccountAddress),
+    queryFn: async () => {
+      if (!pairAddress || !marginAccountAddress) return [];
+      return SoroswapService.getSoroswapLpEvents(pairAddress, marginAccountAddress);
+    },
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: true,
+  });
 
-  return { events, isLoading };
+  return { events: query.data ?? [], isLoading: query.isLoading || query.isFetching };
 };
 
 // ---------- Soroswap token balance in margin account ----------

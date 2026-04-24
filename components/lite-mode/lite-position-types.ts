@@ -171,7 +171,7 @@ const POOL_INFO: Record<string, { protocol: string; poolVersion: string; poolTyp
   BLUSDC: { protocol: "Blend",  poolVersion: "V1",  poolType: "single", tokens: ["USDC"],       supplyApr: 8.1,  vannaFeeApr: 5.0, liquidationLtv: 86 },
 };
 
-const TOKEN_PRICES: Record<string, number> = { XLM: 0.10, USDC: 1.0, BLUSDC: 1.0 };
+const TOKEN_PRICES: Record<string, number> = { XLM: 1.0, USDC: 1.0, BLUSDC: 1.0 };
 
 export function buildRealPositions(
   borrowedBalances: Record<string, { amount: string; usdValue: string }>,
@@ -204,10 +204,9 @@ export function buildRealPositions(
       tokens: [token], supplyApr: 5.2, vannaFeeApr: 3.5, liquidationLtv: 82,
     };
 
-    // Infer collateral asset: if borrowed XLM, user deposited USDC (and vice versa).
-    // If prices match, treat as same-asset.
-    const inferredCollateralAsset = token === "XLM" ? "USDC" : "XLM";
-    const collateralAsset = inferredCollateralAsset;
+    // Single-asset Blend pools (XLM, USDC) are same-asset: the user deposits and
+    // borrows the same token, so collateral = borrow token.
+    const collateralAsset = token;
     const collateralPrice = TOKEN_PRICES[collateralAsset] ?? 1.0;
     const collateralAmount = collateralUsd / collateralPrice;
 
@@ -230,7 +229,7 @@ export function buildRealPositions(
       borrowAsset: token,
       borrowAmount,
       borrowUsd,
-      isSameAsset: false,
+      isSameAsset: true,
       leverage,
       supplyApr: info.supplyApr,
       vannaFeeApr: info.vannaFeeApr,

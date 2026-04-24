@@ -147,13 +147,13 @@ export default function FarmDetailPage() {
   // Real data hooks — Aquarius (multi-asset)
   const { stats: aqStats, isLoading: aqStatsLoading } = useAquariusPoolStats(aquariusPoolAddress);
   const { lpBalance } = useAquariusLpPosition(marginAccountAddress, aquariusPoolAddress);
-  const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress);
+  const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress, marginAccountAddress);
 
   // Real data hooks — Soroswap (multi-asset)
   const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats(isSoroswapEarly);
   const { lpBalance: ssLpBalanceRaw } = useSoroswapLpPosition(marginAccountAddress);
   const mySSLpBalance = parseFloat(ssLpBalanceRaw ?? '0');
-  const { events: ssEvents } = useSoroswapEvents(ssStats?.pairAddress);
+  const { events: ssEvents } = useSoroswapEvents(ssStats?.pairAddress, marginAccountAddress);
   const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
   const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
 
@@ -652,7 +652,13 @@ export default function FarmDetailPage() {
 
       {!isMultiAsset && (
         <section className="px-4 sm:px-10 lg:px-30" aria-label="Pool Statistics">
-          <FarmHeaderStats tokenSymbol={tokenSymbol} isSoroswapEarly={isSoroswapEarly} matchedSoroswapPool={matchedSoroswapPool} />
+          {isAquariusEarly ? (
+            <AccountStatsGhost items={aquariusStatsItems} />
+          ) : isSoroswapEarly ? (
+            <AccountStatsGhost items={soroswapStatsItems} />
+          ) : (
+            <FarmHeaderStats tokenSymbol={tokenSymbol} isSoroswapEarly={isSoroswapEarly} matchedSoroswapPool={matchedSoroswapPool} />
+          )}
         </section>
       )}
 
@@ -690,7 +696,7 @@ export default function FarmDetailPage() {
                   <div className={`w-full flex flex-col gap-6 rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
                     <h2 className={`text-[21px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Statistics</h2>
                     <article className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
-                      {analyticsItems.map((item, idx) => (<StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />))}
+                      {(isSoroswapEarly ? soroswapAnalyticsItems : isAquariusEarly ? aquariusAnalyticsItems : analyticsItems).map((item, idx) => (<StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />))}
                     </article>
                   </div>
                 )}

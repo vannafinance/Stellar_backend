@@ -415,7 +415,8 @@ export class SoroswapService {
    * The pair emits (Symbol("deposit"|"withdraw"), depositor) with body (shares, amt0, amt1).
    */
   static async getSoroswapLpEvents(
-    pairAddress?: string
+    pairAddress?: string,
+    userAddress?: string,
   ): Promise<SoroswapLpEvent[]> {
     try {
       const resolvedPair = pairAddress ?? SOROSWAP_XLM_USDC_POOL;
@@ -447,6 +448,10 @@ export class SoroswapService {
 
       const parseEv = (ev: any, type: 'deposit' | 'withdraw'): SoroswapLpEvent | null => {
         try {
+          if (userAddress && Array.isArray(ev.topic) && ev.topic[1]) {
+            const depositor = StellarSdk.scValToNative(ev.topic[1]) as string;
+            if (depositor !== userAddress) return null;
+          }
           const body = ev.value ? (StellarSdk.scValToNative(ev.value) as any[]) : null;
           if (!Array.isArray(body) || body.length < 3) return null;
           const toHuman = (v: any) => (Number(v?.toString?.() ?? v ?? 0) / STROOP).toFixed(7);

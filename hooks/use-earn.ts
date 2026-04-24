@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { WalletService, ContractService, AssetType, ASSET_TYPES } from '@/lib/stellar-utils';
 import { useUserStore } from '@/store/user';
@@ -376,30 +376,30 @@ export const useWithdrawLiquidity = () => {
   };
 };
 
-// Hook to load on-chain earn pool transactions for the connected user
+// Hook to load on-chain earn pool transactions for the connected user.
+// Uses react-query so the fetch re-fires automatically when the wallet
+// reconnects after a page reload (enabled transitions false → true).
 export const useEarnTransactions = () => {
   const address = useUserStore((state) => state.address);
   const isConnected = useUserStore((state) => state.isConnected);
-  const [isLoading, setIsLoading] = useState(false);
 
-  const fetchTransactions = useCallback(async () => {
-    if (!address || !isConnected) return;
-    setIsLoading(true);
-    try {
-      const events = await ContractService.getEarnPoolEvents(address);
-      useEarnPoolStore.getState().set({ recentTransactions: events });
-    } catch (err) {
-      console.error('[useEarnTransactions]', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [address, isConnected]);
+  const query = useQuery({
+    queryKey: ['earn', 'transactions', address ?? null],
+    enabled: Boolean(address && isConnected),
+    queryFn: async () => {
+      if (!address) return [];
+      return ContractService.getEarnPoolEvents(address);
+    },
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: true,
+  });
 
-  useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
-
-  return { isLoading, refresh: fetchTransactions };
+  return {
+    transactions: query.data ?? [],
+    isLoading: query.isLoading || query.isFetching,
+    refresh: () => query.refetch(),
+  };
 };
 
 // Combined hook for earn page

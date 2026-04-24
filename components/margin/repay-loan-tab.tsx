@@ -13,6 +13,8 @@ import { getAddress } from "@stellar/freighter-api";
 import { WalletService } from "@/lib/stellar-utils";
 import toast from "react-hot-toast";
 
+const REPAY_DUST_EPSILON = 1e-6;
+
 export const RepayLoanTab = () => {
   const { isDark } = useTheme();
   const normalizeContractTokenSymbol = (symbol: string) =>
@@ -40,11 +42,28 @@ export const RepayLoanTab = () => {
   const [selectedRepayPercentage, setSelectedRepayPercentage] =
     useState<number>(10);
   const [repayAmount, setRepayAmount] = useState<number>(0);
+  const [currentDebtWad, setCurrentDebtWad] = useState<string>('0');
   const [repayAmountInUsd] = useState<number>(0);
 
   // Popup visibility states
   const [isPayNowPopupOpen, setIsPayNowPopupOpen] = useState(false);
   const [isFlashClosePopupOpen, setIsFlashClosePopupOpen] = useState(false);
+
+  const clampRepayDust = (value: number) => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.abs(value) < REPAY_DUST_EPSILON ? 0 : value;
+  };
+
+  const formatStatValue = (value: number, key: string) => {
+    const cleaned = clampRepayDust(value);
+    if (cleaned === 0) return "0";
+
+    const digits = key === "availableBalance" ? 6 : 7;
+    return cleaned.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: digits,
+    });
+  };
 
   // Load user data and borrowed balances on mount
   useEffect(() => {
@@ -81,15 +100,24 @@ export const RepayLoanTab = () => {
   // Refresh borrowed balances for selected currency
   const refreshBorrowedBalances = async (marginAccountAddress: string) => {
     try {
-      const result = await MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress);
-      if (result.success && result.data) {
-        const tokenData = result.data[normalizeContractTokenSymbol(selectedRepayCurrency)];
-        if (tokenData) {
-          setRepayStats(prev => ({
-            ...prev,
-            netOutstandingAmountToPay: parseFloat(tokenData.amount) || 0
-          }));
-        }
+      const debtResult = await MarginAccountService.getBorrowedTokenDebtWad(
+        marginAccountAddress,
+        normalizeContractTokenSymbol(selectedRepayCurrency)
+      );
+
+      if (debtResult.success && debtResult.debtWad) {
+        const outstanding = clampRepayDust(parseFloat(debtResult.amount || '0') || 0);
+        setCurrentDebtWad(debtResult.debtWad);
+        setRepayStats(prev => ({
+          ...prev,
+          netOutstandingAmountToPay: outstanding,
+        }));
+      } else {
+        setCurrentDebtWad('0');
+        setRepayStats(prev => ({
+          ...prev,
+          netOutstandingAmountToPay: 0,
+        }));
       }
     } catch (error) {
       console.error("Error refreshing balances:", error);
@@ -106,8 +134,15 @@ export const RepayLoanTab = () => {
   // Handler for percentage click
   const handlePercentageClick = (item: number) => {
     setSelectedRepayPercentage(item);
-    // Calculate amount based on percentage
-    const calculatedAmount = (repayStats.netOutstandingAmountToPay * item) / 100;
+
+    if (item === 100 && currentDebtWad && currentDebtWad !== '0') {
+      const fullAmount = parseFloat(currentDebtWad) / 1e18;
+      setRepayAmount(clampRepayDust(Number.isFinite(fullAmount) ? fullAmount : 0));
+      return;
+    }
+
+    // Calculate amount based on percentage.
+    const calculatedAmount = clampRepayDust((repayStats.netOutstandingAmountToPay * item) / 100);
     setRepayAmount(calculatedAmount);
   };
 
@@ -125,12 +160,28 @@ export const RepayLoanTab = () => {
 
     setIsLoading(true);
     try {
-      const repayAmountWad = (BigInt(Math.floor(repayAmount * 1000000)) * BigInt(1000000000000)).toString();
+      const latestDebt = await MarginAccountService.getBorrowedTokenDebtWad(
+        marginAccount,
+        normalizeContractTokenSymbol(selectedRepayCurrency)
+      );
+
+      const inputRepayWad = BigInt(Math.floor(repayAmount * 1_000_000)) * BigInt(1_000_000_000_000);
+      const debtWad = latestDebt.success && latestDebt.debtWad
+        ? BigInt(latestDebt.debtWad)
+        : (currentDebtWad && currentDebtWad !== '0' ? BigInt(currentDebtWad) : BigInt(0));
+      const finalRepayWad = debtWad > BigInt(0)
+        ? (inputRepayWad > debtWad ? debtWad : inputRepayWad)
+        : inputRepayWad;
+
+      if (finalRepayWad <= BigInt(0)) {
+        toast.error('Nothing to repay for this token');
+        return;
+      }
       
       const result = await MarginAccountService.repayLoan(
         marginAccount,
         normalizeContractTokenSymbol(selectedRepayCurrency),
-        repayAmountWad
+        finalRepayWad.toString()
       );
 
       if (result.success) {
@@ -138,10 +189,10 @@ export const RepayLoanTab = () => {
         await refreshBorrowedBalances(marginAccount);
         setRepayAmount(0);
       } else {
-        toast.error(`Loan repayment failed: ${result.error}`);
+        toast.error(result.error || 'Loan repayment failed');
       }
     } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
+      toast.error(error?.message || 'Repay failed');
     } finally {
       setIsLoading(false);
       setIsPayNowPopupOpen(false);
@@ -214,7 +265,7 @@ export const RepayLoanTab = () => {
                   isDark ? "text-white" : "text-[#111111]"
                 }`}
               >
-                {value}
+                {formatStatValue(value, key)}
               </span>
             </motion.article>
           ))}

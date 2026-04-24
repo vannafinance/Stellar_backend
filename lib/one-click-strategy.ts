@@ -136,7 +136,7 @@ export async function executeOneClickStrategy(
     poolType,
     poolTokens,
     scenario,
-    prices = { XLM: 0.10, USDC: 1.0 },
+    prices = { XLM: 1.0, USDC: 1.0 },
     onStep,
   } = params;
 

@@ -13,6 +13,19 @@ import type { LitePosition } from "./lite-position-types";
 import { calcExitPreview } from "./lite-position-math";
 import { closePosition } from "@/lib/one-click-strategy";
 
+function parseContractError(msg: string): string {
+  if (!msg) return "Transaction failed. Please try again.";
+  if (msg.includes("cancelled") || msg.includes("rejected")) return "Transaction cancelled by user.";
+  if (msg.includes("MissingValue") || msg.includes("map key not found"))
+    return "Position not found on-chain. It may already be closed or the balance is insufficient.";
+  if (msg.includes("InsufficientBalance") || msg.includes("insufficient"))
+    return "Insufficient balance to close this position.";
+  if (msg.includes("HostError") || msg.includes("Error("))
+    return "Smart contract error: the transaction was rejected by the network. Please check your position and try again.";
+  // Truncate any other long message
+  return msg.length > 120 ? msg.slice(0, 120) + "…" : msg;
+}
+
 interface PositionDetailProps {
   position: LitePosition;
   onBack: () => void;
@@ -140,7 +153,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
         exitPct,
         onStep: (msg) => setTxModal((p) => ({ ...p, message: msg })),
       });
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) throw new Error(parseContractError(result.error ?? ""));
       setTxModal({
         open: true, status: "success",
         title: exitPct === 100 ? "Position Closed" : `${exitPct}% Exit Complete`,
@@ -150,11 +163,12 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
       await refreshBorrowedBalances(marginAccountAddress);
       onExitSuccess?.();
     } catch (err: any) {
-      const cancelled = err?.message?.includes("cancelled") || err?.message?.includes("rejected");
+      const msg = err?.message || "Close position failed.";
+      const cancelled = msg.includes("cancelled") || msg.includes("rejected");
       setTxModal({
         open: true, status: "error",
-        title: cancelled ? "Cancelled" : "Failed",
-        message: cancelled ? "Transaction cancelled by user." : err?.message || "Close position failed.",
+        title: cancelled ? "Cancelled" : "Transaction Failed",
+        message: parseContractError(msg),
       });
     } finally {
       setLoading(false);

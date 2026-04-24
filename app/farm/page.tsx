@@ -3,7 +3,6 @@
 import { Table } from "@/components/earn/table";
 import { AccountStats } from "@/components/margin/account-stats";
 import { Carousel } from "@/components/ui/carousel";
-import { useTheme } from "@/contexts/theme-context";
 import {
   FARM_STATS_ITEMS,
   farmTableHeadings,
@@ -13,22 +12,37 @@ import { useUserStore } from "@/store/user";
 import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useFarmStore } from "@/store/farm-store";
-import { useBlendPoolStats, useUserBlendPositions, useAllAquariusPoolStats } from "@/hooks/use-farm";
-import { useAllSoroswapPoolStats } from "@/hooks/use-soroswap";
-import { useEffect } from "react";
+import { useBlendPoolStats, useUserBlendPositions, useAllAquariusPoolStats, useAllAquariusLpPositions } from "@/hooks/use-farm";
+import { useAllSoroswapPoolStats, useSoroswapPoolStats, useSoroswapLpPosition } from "@/hooks/use-soroswap";
+import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
+
+function fmtNum(value: number, decimals = 2): string {
+  if (!Number.isFinite(value)) return '—';
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(decimals)}B`;
+  if (value >= 1_000_000)     return `${(value / 1_000_000).toFixed(decimals)}M`;
+  if (value >= 1_000)         return `${(value / 1_000).toFixed(decimals)}K`;
+  return value.toFixed(decimals);
+}
 
 export default function FarmPage() {
   const [activeFilterTab, setActiveFilterTab] = useState<string>("lending-single-assets");
   const [activePositionFilterTab, setActivePositionFilterTab] = useState<string>("current-position");
   const [activeTab, setActiveTab] = useState<string>("vaults");
   const userAddress = useUserStore((state) => state.address);
-  const { isDark } = useTheme();
+  const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
 
-  // Real Blend data
+  // Blend
   const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
   const { positions: userPositions } = useUserBlendPositions();
+  // Aquarius & Soroswap pool lists (all pools)
   const aquariusPools = useAllAquariusPoolStats();
   const soroswapPools = useAllSoroswapPoolStats();
+  // User LP positions
+  const { stats: ssStats } = useSoroswapPoolStats(Boolean(marginAccountAddress));
+  const { lpBalance: ssLpBalanceRaw } = useSoroswapLpPosition(marginAccountAddress);
+  const mySSLpBalance = parseFloat(ssLpBalanceRaw ?? '0');
+  const { positions: aqLpPositions } = useAllAquariusLpPositions(marginAccountAddress);
 
   // Build real single-asset table rows from live pool data
   const singleAssetTableBody = useMemo(() => {
@@ -43,8 +57,8 @@ export default function FarmPage() {
         cell: [
           { chain: symbol, title: symbol, tags: ['Blend', 'Supply'] },
           { title: 'Blend' },
-          { title: s ? fmt(s.totalSupply, ` ${symbol}`) : '—' },
-          { title: s ? fmt(s.totalSupply, ` ${symbol}`) : '—' },
+          { title: s ? `${fmtNum(parseFloat(s.totalSupply))} ${symbol}` : (loading ? '...' : '—') },
+          { title: s ? `${fmtNum(parseFloat(s.totalSupply))} ${symbol}` : (loading ? '...' : '—') },
           { title: s ? fmt(s.supplyAPY, '%') : '—' },
           { title: s ? fmt(s.borrowAPY, '%') : '—' },
           { title: s ? fmt(s.utilizationRate, '%') : '—' },
@@ -55,14 +69,16 @@ export default function FarmPage() {
     return { rows };
   }, [poolStats, statsLoading]);
 
-  // Build positions table from user's Blend holdings
+  // Build positions table from user's Blend + Soroswap + Aquarius holdings
   const positionsTableBody = useMemo(() => {
-    const assets = ['XLM', 'USDC'] as const;
-    const rows = assets
+    const rows: any[] = [];
+
+    // Blend single-asset positions
+    (['XLM', 'USDC'] as const)
       .filter((sym) => parseFloat(userPositions[sym]?.underlyingValue ?? '0') > 0)
-      .map((sym) => {
+      .forEach((sym) => {
         const pos = userPositions[sym];
-        return {
+        rows.push({
           cell: [
             { chain: sym, title: sym, tags: ['Blend', 'Supply'] },
             { title: 'Blend' },
@@ -73,14 +89,57 @@ export default function FarmPage() {
             { title: '—' },
             { title: poolStats[sym]?.bRate ?? '—' },
           ],
-        };
+        });
       });
 
-    if (rows.length === 0) {
-      return { rows: [] };
+    // Soroswap LP position
+    if (mySSLpBalance > 0) {
+      const totalShares = parseFloat(ssStats?.totalShares ?? '0');
+      const ratio = totalShares > 0 ? mySSLpBalance / totalShares : 0;
+      const xlmShare = (ratio * parseFloat(ssStats?.reserveXLM ?? '0')).toFixed(4);
+      const usdcShare = (ratio * parseFloat(ssStats?.reserveUSDC ?? '0')).toFixed(6);
+      rows.push({
+        id: 'soroswap-xlm-usdc',
+        cell: [
+          { chain: 'XLM', titles: ['XLM', 'USDC'], tags: ['Soroswap', 'LP'] },
+          { title: 'Soroswap' },
+          { title: `${mySSLpBalance.toFixed(4)} LP` },
+          { title: `${xlmShare} XLM + ${usdcShare} USDC` },
+          { title: ssStats?.feeFraction ?? '0.30%' },
+          { title: '—' },
+          { title: '—' },
+          { title: '—' },
+        ],
+      });
     }
+
+    // Aquarius LP positions
+    AQUARIUS_POOLS.forEach((pool) => {
+      const lpBal = parseFloat(aqLpPositions[pool.id] ?? '0');
+      if (lpBal <= 0) return;
+      const aqPoolStats = aquariusPools.find((p) => p.pool.id === pool.id)?.stats ?? null;
+      const totalShares = parseFloat(aqPoolStats?.totalShares ?? '0');
+      const ratio = totalShares > 0 ? lpBal / totalShares : 0;
+      const shareA = (ratio * parseFloat(aqPoolStats?.reserveA ?? '0')).toFixed(4);
+      const shareB = (ratio * parseFloat(aqPoolStats?.reserveB ?? '0')).toFixed(4);
+      const [tokenA, tokenB] = pool.tokens;
+      rows.push({
+        id: pool.id,
+        cell: [
+          { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius', 'LP'] },
+          { title: 'Aquarius' },
+          { title: `${lpBal.toFixed(4)} LP` },
+          { title: `${shareA} ${tokenA} + ${shareB} ${tokenB}` },
+          { title: aqPoolStats?.feeFraction ?? '0.30%' },
+          { title: '—' },
+          { title: '—' },
+          { title: '—' },
+        ],
+      });
+    });
+
     return { rows };
-  }, [userPositions, poolStats]);
+  }, [userPositions, poolStats, mySSLpBalance, ssStats, aqLpPositions, aquariusPools]);
 
   // Build LP/Multiple Assets table from live Aquarius + Soroswap pool data
   const lpTableBody = useMemo(() => {
@@ -88,20 +147,20 @@ export default function FarmPage() {
       const [tokenA, tokenB] = pool.tokens;
       const loading = isLoading;
       const tvlTitle = stats
-        ? `${parseFloat(stats.reserveA).toFixed(2)} ${tokenA}`
+        ? `${fmtNum(parseFloat(stats.reserveA))} ${tokenA}`
         : loading ? '...' : '—';
       const tvlDescription = stats
-        ? `+ ${parseFloat(stats.reserveB).toFixed(2)} ${tokenB}`
+        ? `+ ${fmtNum(parseFloat(stats.reserveB))} ${tokenB}`
         : undefined;
       const fee = stats ? stats.feeFraction : loading ? '...' : '—';
-      const shares = stats ? `${parseFloat(stats.totalShares).toFixed(2)} LP` : loading ? '...' : '—';
+      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '—';
       return {
         id: pool.id,
         cell: [
           { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius', pool.feeFraction / 100 + '%', 'Testnet'] },
           { title: 'Aquarius' },
-          { title: tvlTitle, description: tvlDescription },
           { title: shares },
+          { title: tvlTitle, description: tvlDescription },
           { title: fee },
           { title: '—' },
           { title: '—' },
@@ -115,19 +174,19 @@ export default function FarmPage() {
       const [tokenA, tokenB] = pool.tokens;
       const loading = isLoading;
       const tvlTitle = stats
-        ? `${parseFloat(stats.reserveXLM).toFixed(2)} ${tokenA}`
+        ? `${fmtNum(parseFloat(stats.reserveXLM))} ${tokenA}`
         : loading ? '...' : '—';
       const tvlDescription = stats
-        ? `+ ${parseFloat(stats.reserveUSDC).toFixed(2)} ${tokenB}`
+        ? `+ ${fmtNum(parseFloat(stats.reserveUSDC))} ${tokenB}`
         : undefined;
-      const shares = stats ? `${parseFloat(stats.totalShares).toFixed(2)} LP` : loading ? '...' : '—';
+      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '—';
       return {
         id: pool.id,
         cell: [
           { chain: tokenA, titles: [tokenA, tokenB], tags: ['Soroswap', pool.feeFraction / 100 + '%', 'Testnet'] },
           { title: 'Soroswap' },
-          { title: tvlTitle, description: tvlDescription },
           { title: shares },
+          { title: tvlTitle, description: tvlDescription },
           { title: loading ? '...' : stats ? `${pool.feeFraction / 100}%` : '—' },
           { title: '—' },
           { title: '—' },
@@ -140,14 +199,31 @@ export default function FarmPage() {
     return { rows: [...ssRows, ...aqRows] };
   }, [aquariusPools, soroswapPools]);
 
-  // Live farm stats values
+  // Live farm stats values — sum across Blend + Soroswap + Aquarius
   const farmStatsValues = useMemo(() => {
-    const totalDeposit = parseFloat(userPositions.totalValueXLM ?? '0');
+    const blendXlm  = parseFloat(userPositions.XLM?.underlyingValue  ?? '0');
+    const blendUsdc = parseFloat(userPositions.USDC?.underlyingValue ?? '0');
+
+    const ssTotalShares = parseFloat(ssStats?.totalShares ?? '0');
+    const ssRatio = ssTotalShares > 0 ? mySSLpBalance / ssTotalShares : 0;
+    const ssXlm  = ssRatio * parseFloat(ssStats?.reserveXLM  ?? '0');
+    const ssUsdc = ssRatio * parseFloat(ssStats?.reserveUSDC ?? '0');
+
+    let aqValue = 0;
+    aquariusPools.forEach(({ pool, stats }) => {
+      const lpBal = parseFloat(aqLpPositions[pool.id] ?? '0');
+      if (lpBal > 0 && stats) {
+        const ratio = parseFloat(stats.totalShares) > 0 ? lpBal / parseFloat(stats.totalShares) : 0;
+        aqValue += ratio * (parseFloat(stats.reserveA) + parseFloat(stats.reserveB));
+      }
+    });
+
+    const total = blendXlm + blendUsdc + ssXlm + ssUsdc + aqValue;
     return {
-      depositTVL: totalDeposit > 0 ? `${totalDeposit.toFixed(4)} XLM` : '—',
+      depositTVL: total > 0 ? `${total.toFixed(4)} XLM` : '—',
       earnings: '—',
     };
-  }, [userPositions]);
+  }, [userPositions, mySSLpBalance, ssStats, aqLpPositions, aquariusPools]);
 
 
   // Get filter tab type options based on active tab

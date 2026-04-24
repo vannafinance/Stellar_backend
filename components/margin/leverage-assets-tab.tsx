@@ -335,18 +335,24 @@ export const LeverageAssetsTab = () => {
         let multiplier = leverage; // Use the leverage state as multiplier
         const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
 
-        // Cap requested borrow by current account health to avoid guaranteed
-        // RiskEngine rejections (applies to all supported collateral symbols).
+        // Pre-validate borrow against the Risk Engine's formula before submitting.
+        // Contract check: (collateral + borrow) / (existingDebt + borrow) > 1.1
+        // Rearranged for max borrow: borrow < (collateral - 1.1 * existingDebt) / (1.1 - 1)
         if (multiplier > 1) {
           const latestMarginState = useMarginAccountInfoStore.getState();
           const liveTotalBorrowedValue = latestMarginState.totalBorrowedValue;
           const liveTotalCollateralValue = latestMarginState.totalCollateralValue;
           const threshold = 1.1;
-          // Risk engine compares collateral/debt by value, so keep all math in USD.
           const projectedCollateralUsd = liveTotalCollateralValue + depositAmountUsd;
-          const maxDebtUsd = projectedCollateralUsd / threshold;
-          const maxAdditionalBorrowUsd = Math.max(0, maxDebtUsd - liveTotalBorrowedValue);
           const requestedBorrowUsd = depositAmountUsd * (multiplier - 1);
+
+          // Max borrow derived from contract formula:
+          // (projectedCollateral + borrow) / (existingDebt + borrow) > threshold
+          // => borrow < (projectedCollateral - threshold * existingDebt) / (threshold - 1)
+          const maxAdditionalBorrowUsd = Math.max(
+            0,
+            (projectedCollateralUsd - threshold * liveTotalBorrowedValue) / (threshold - 1)
+          );
 
           if (maxAdditionalBorrowUsd <= 0) {
             toast.error(
@@ -358,7 +364,7 @@ export const LeverageAssetsTab = () => {
 
           if (requestedBorrowUsd > maxAdditionalBorrowUsd) {
             const maxSafeLeverage = depositAmountUsd > 0
-              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.9) / depositAmountUsd).toFixed(2))
+              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.95) / depositAmountUsd).toFixed(2))
               : 1;
             toast.error(
               `Selected leverage (${multiplier}x) exceeds your account's safe borrowing limit. Max safe leverage: ~${maxSafeLeverage}x. Add more collateral or repay existing debt first.`

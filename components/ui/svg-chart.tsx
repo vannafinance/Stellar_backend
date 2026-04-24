@@ -101,10 +101,13 @@ export const SvgChart = ({
 
   const minV = Math.min(...points.map((p) => p.value));
   const maxV = Math.max(...points.map((p) => p.value));
-  const vRange = maxV - minV || 1;
+  // When all values are equal (flat line) anchor at 0 so the line renders at
+  // ~80% height instead of at the bottom with a meaningless Y range above it.
+  const effectiveMin = minV === maxV ? 0 : minV;
+  const vRange = maxV - effectiveMin || 1;
 
   const gx = (i: number) => PAD.left + (i / (n - 1)) * W;
-  const gy = (v: number) => PAD.top + H - ((v - minV) / vRange) * H;
+  const gy = (v: number) => PAD.top + H - ((v - effectiveMin) / vRange) * H;
 
   // Smooth cubic bezier
   const linePath = points.reduce((acc, p, i) => {
@@ -120,7 +123,7 @@ export const SvgChart = ({
   const areaPath = `${linePath} L${gx(n - 1)},${PAD.top + H} L${gx(0)},${PAD.top + H} Z`;
 
   const yTicks = Array.from({ length: Y_TICKS + 1 }, (_, i) => {
-    const v = minV + (vRange * i) / Y_TICKS;
+    const v = effectiveMin + (vRange * i) / Y_TICKS;
     return { v, y: gy(v) };
   });
 

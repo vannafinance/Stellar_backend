@@ -207,18 +207,54 @@ export const useAquariusLpPosition = (
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Aquarius LP events
+// All Aquarius LP positions (one query for all pools)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const useAquariusEvents = (poolAddress: string | null) => {
+export const useAllAquariusLpPositions = (marginAccountAddress: string | null) => {
   const refreshKey = useBlendStore((s) => s.refreshKey);
 
   const query = useQuery({
-    queryKey: ['farm', 'aquarius', 'events', poolAddress, refreshKey],
-    enabled: Boolean(poolAddress),
+    queryKey: ['farm', 'aquarius', 'allLpPositions', marginAccountAddress, refreshKey],
+    enabled: Boolean(marginAccountAddress),
+    queryFn: async (): Promise<Record<string, string>> => {
+      if (!marginAccountAddress) return {};
+      const results = await Promise.allSettled(
+        AQUARIUS_POOLS.map(async (pool) => ({
+          poolId: pool.id,
+          balance: await AquariusService.getUserLpBalance(
+            marginAccountAddress,
+            pool.poolAddress,
+            pool.tokens[0],
+            pool.tokens[1],
+          ),
+        }))
+      );
+      const map: Record<string, string> = {};
+      results.forEach((r) => {
+        if (r.status === 'fulfilled') map[r.value.poolId] = r.value.balance;
+      });
+      return map;
+    },
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+  });
+
+  return { positions: query.data ?? {}, isLoading: query.isLoading || query.isFetching };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aquarius LP events
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const useAquariusEvents = (poolAddress: string | null, marginAccountAddress?: string | null) => {
+  const refreshKey = useBlendStore((s) => s.refreshKey);
+
+  const query = useQuery({
+    queryKey: ['farm', 'aquarius', 'events', poolAddress, marginAccountAddress ?? null, refreshKey],
+    enabled: Boolean(poolAddress && marginAccountAddress),
     queryFn: async (): Promise<AquariusLpEvent[]> => {
-      if (!poolAddress) return [];
-      return AquariusService.getAquariusEvents(poolAddress);
+      if (!poolAddress || !marginAccountAddress) return [];
+      return AquariusService.getAquariusEvents(poolAddress, marginAccountAddress);
     },
   });
 

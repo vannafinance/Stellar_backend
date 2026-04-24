@@ -7,6 +7,7 @@ import { useMarginAccountInfoStore, type BorrowedBalance } from "@/store/margin-
 import { TABLE_ROW_HEADINGS, COIN_ICONS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
 import { useShallow } from "zustand/shallow";
+import { useMarginHistory } from "@/hooks/use-margin";
 
 interface PositionstableProps {
   onRepayClick?: () => void;
@@ -89,6 +90,8 @@ export const Positionstable = ({
     }));
   }, [collateralBalances, borrowedBalances, totalCollateralValue, totalBorrowedValue]);
 
+  const { history } = useMarginHistory();
+
   const [activeTab, setActiveTab] = useState<string>("currentPositions");
   const [currentPage, setCurrentPage] = useState<number>(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -152,12 +155,94 @@ export const Positionstable = ({
               isDark ? "text-[#919191]" : "text-[#76737B]"
             }`}
           >
-            No positions history available
+            No transaction history
           </p>
         )}
       </div>
     </section>
   );
+
+  // ── HISTORY ROW ──
+  const HISTORY_HEADINGS = ["Date", "Type", "Asset", "Amount", "Tx Hash"];
+
+  const renderHistoryRow = (
+    item: { type: 'borrow' | 'repay'; asset: string; amount: string; timestamp: number; hash: string },
+    idx: number
+  ) => {
+    const date = item.timestamp
+      ? new Date(item.timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+      : '—';
+
+    const isBorrow = item.type === 'borrow';
+    const badgeClass = isBorrow
+      ? 'bg-red-100 text-red-600'
+      : 'bg-green-100 text-green-600';
+    const badgeLabel = isBorrow ? 'Borrow' : 'Repay';
+
+    const shortHash = item.hash
+      ? `${item.hash.slice(0, 8)}...${item.hash.slice(-4)}`
+      : '—';
+
+    return (
+      <motion.article
+        key={`history-${idx}`}
+        className={`flex border rounded-[12px] w-full ${isDark ? "bg-[#222222]" : "bg-[#F7F7F7]"}`}
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.4, delay: idx * 0.08, ease: "easeOut" }}
+      >
+        {/* Date */}
+        <div className={`w-full flex items-center py-[16px] px-[12px] text-[13px] font-medium ${isDark ? "text-[#AAAAAA]" : "text-[#555555]"}`}>
+          {date}
+        </div>
+
+        {/* Type badge */}
+        <div className="w-full flex items-center py-[16px] px-[12px]">
+          <span className={`rounded-[4px] py-[2px] px-[8px] text-[11px] font-semibold ${badgeClass}`}>
+            {badgeLabel}
+          </span>
+        </div>
+
+        {/* Asset */}
+        <div className="w-full flex items-center gap-[8px] py-[16px] px-[12px]">
+          {item.asset && (
+            <Image
+              src={getTokenIcon(item.asset)}
+              alt={item.asset}
+              width={20}
+              height={20}
+              className="rounded-[10px] shrink-0"
+            />
+          )}
+          <span className={`text-[13px] font-medium ${isDark ? "text-white" : ""}`}>
+            {item.asset || '—'}
+          </span>
+        </div>
+
+        {/* Amount */}
+        <div className={`w-full flex items-center py-[16px] px-[12px] text-[13px] font-medium ${isDark ? "text-white" : ""}`}>
+          {item.amount}
+        </div>
+
+        {/* Tx Hash */}
+        <div className="w-full flex items-center py-[16px] px-[12px]">
+          {item.hash ? (
+            <a
+              href={`https://stellar.expert/explorer/testnet/tx/${item.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[13px] font-medium text-[#703AE6] hover:underline"
+            >
+              {shortHash}
+            </a>
+          ) : (
+            <span className={`text-[13px] ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>—</span>
+          )}
+        </div>
+      </motion.article>
+    );
+  };
 
   // ── POSITION CARD ──
   const renderPositionCard = (item: Position, idx: number) => (
@@ -470,7 +555,41 @@ export const Positionstable = ({
         ))}
       </nav>
 
-      {hasMarginAccount && filteredPositions.length > 0 ? (
+      {activeTab === "positionsHistory" ? (
+        history.length > 0 ? (
+          <div className="w-full overflow-x-auto no-scrollbar hidden md:block">
+            <section className="rounded-xl min-w-[700px]">
+              {/* History table headers */}
+              <ul className="flex" role="row">
+                {HISTORY_HEADINGS.map((heading, idx) => (
+                  <motion.li
+                    className={`w-full pt-[11.25px] px-3 pb-3 font-medium text-[12px] sm:text-[13px] ${
+                      isDark ? "text-[#999999]" : "text-[#464545]"
+                    }`}
+                    key={heading}
+                    initial={{ opacity: 0, y: -10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.3, delay: idx * 0.05 }}
+                  >
+                    {heading}
+                  </motion.li>
+                ))}
+              </ul>
+
+              {/* History rows */}
+              <section
+                ref={scrollContainerRef}
+                className="flex flex-col gap-2 max-h-[520px] overflow-y-auto pr-1 thin-scrollbar"
+              >
+                {history.map((item, idx) => renderHistoryRow(item, idx))}
+              </section>
+            </section>
+          </div>
+        ) : (
+          renderEmpty()
+        )
+      ) : hasMarginAccount && filteredPositions.length > 0 ? (
         <>
           {/* Desktop table */}
           <div className="w-full overflow-x-auto no-scrollbar hidden md:block">
