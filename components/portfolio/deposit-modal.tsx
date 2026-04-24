@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useDeposit } from "@/hooks/use-wallet";
 import { ASSET_TYPES, AssetType } from "@/lib/stellar-utils";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
+import toast from "react-hot-toast";
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -37,6 +38,15 @@ export const DepositModal: React.FC<DepositModalProps> = ({ isOpen, onClose }) =
   const { deposit, isLoading, message, clearMessage } = useDeposit();
   const balance = useUserStore((state) => state.balance);
   const { isDark } = useTheme();
+  const lastToastedRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!message.text || message.text === lastToastedRef.current) return;
+    lastToastedRef.current = message.text;
+    if (message.type === "success") toast.success(message.text);
+    else if (message.type === "error") toast.error(message.text);
+    else toast(message.text);
+  }, [message.text, message.type]);
 
   const handleDeposit = async () => {
     const numAmount = parseFloat(amount);
@@ -231,43 +241,6 @@ export const DepositModal: React.FC<DepositModalProps> = ({ isOpen, onClose }) =
                 )}
               </div>
 
-              {/* Status message */}
-              <AnimatePresence>
-                {message.text && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] font-medium ${
-                      message.type === "success"
-                        ? "bg-green-500/10 border border-green-500/20 text-green-600"
-                        : message.type === "error"
-                        ? "bg-red-500/10 border border-red-500/20 text-red-500"
-                        : "bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]"
-                    }`}>
-                      {message.type === "success" && (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="shrink-0">
-                          <path d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                      {message.type === "error" && (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="shrink-0">
-                          <path d="M18 6L6 18M6 6l12 12" />
-                        </svg>
-                      )}
-                      {message.type === "info" && (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 animate-spin">
-                          <circle cx="12" cy="12" r="10" strokeOpacity="0.25" strokeWidth="4" />
-                          <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      )}
-                      {message.text}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
             {/* Footer */}

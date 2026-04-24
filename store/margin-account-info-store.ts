@@ -1,6 +1,20 @@
 import createNewStore from "@/zustand/index";
 import { MarginAccountService, type MarginAccount } from "@/lib/margin-utils";
 
+// ────────────────────────────────────────────────────────────────────
+// Rate-limiting / request-dedup gates.
+// Goal: prevent StrictMode double-fire, rapid remounts, and concurrent
+// refresh calls from hammering the blockchain.
+// ────────────────────────────────────────────────────────────────────
+const MIN_FETCH_INTERVAL_MS = 3_000;
+const CACHE_DURATION_MS = 5_000;
+
+const lastCheckByUser = new Map<string, number>();
+const inflightCheckByUser = new Map<string, Promise<void>>();
+
+const lastRefreshByAccount = new Map<string, number>();
+const inflightRefreshByAccount = new Map<string, Promise<void>>();
+
 // Approximate USD prices for testnet display (XLM oracle price ≈ $0.10)
 const TOKEN_PRICES: Record<string, number> = {
   XLM: 0.10,
@@ -282,48 +296,71 @@ export const setupContractConfiguration = async (): Promise<{ success: boolean; 
   }
 };
 
-export const checkUserMarginAccount = async (userAddress: string) => {
-  try {
-    console.log('🔍 Checking margin account for user:', userAddress);
-    
-    // Step 1: Check localStorage first (fastest)
-    const accountInfo = MarginAccountService.getMarginAccountInfo(userAddress);
-    
-    if (accountInfo.hasAccount) {
-      console.log('✅ Found margin account in localStorage:', accountInfo.accountAddress);
-      useMarginAccountInfoStore.getState().set({
-        hasMarginAccount: true,
-        marginAccountAddress: accountInfo.accountAddress || null,
-      });
-      return;
-    }
-    
-    // Step 2: No account in localStorage - check blockchain
-    console.log('🌐 No account in localStorage, searching blockchain...');
-    
+export const checkUserMarginAccount = async (
+  userAddress: string,
+  forceRefresh = false,
+): Promise<void> => {
+  // Dedup concurrent calls for the same user.
+  const existing = inflightCheckByUser.get(userAddress);
+  if (existing) return existing;
+
+  // Respect cache TTL unless caller asks for a force refresh.
+  const last = lastCheckByUser.get(userAddress) ?? 0;
+  const age = Date.now() - last;
+  if (!forceRefresh && age < CACHE_DURATION_MS) {
+    return;
+  }
+  if (!forceRefresh && age < MIN_FETCH_INTERVAL_MS) {
+    return;
+  }
+
+  const run = (async () => {
     try {
-      // Discover existing account from blockchain
-      const blockchainAccount = await MarginAccountService.discoverExistingAccount(userAddress);
-      
-      if (blockchainAccount) {
-        console.log('✅ Recovered margin account from blockchain:', blockchainAccount);
+      console.log('🔍 Checking margin account for user:', userAddress);
+
+      // Step 1: Check localStorage first (fastest)
+      const accountInfo = MarginAccountService.getMarginAccountInfo(userAddress);
+
+      if (accountInfo.hasAccount) {
+        console.log('✅ Found margin account in localStorage:', accountInfo.accountAddress);
         useMarginAccountInfoStore.getState().set({
           hasMarginAccount: true,
-          marginAccountAddress: blockchainAccount,
+          marginAccountAddress: accountInfo.accountAddress || null,
         });
-      } else {
-        console.log('❌ No margin account found - user needs to create one');
+        return;
+      }
+
+      // Step 2: No account in localStorage - check blockchain
+      console.log('🌐 No account in localStorage, searching blockchain...');
+
+      try {
+        const blockchainAccount = await MarginAccountService.discoverExistingAccount(userAddress);
+
+        if (blockchainAccount) {
+          console.log('✅ Recovered margin account from blockchain:', blockchainAccount);
+          useMarginAccountInfoStore.getState().set({
+            hasMarginAccount: true,
+            marginAccountAddress: blockchainAccount,
+          });
+        } else {
+          console.log('❌ No margin account found - user needs to create one');
+          clearMarginAccount();
+        }
+      } catch (blockchainError) {
+        console.error('❌ Error checking blockchain for existing account:', blockchainError);
         clearMarginAccount();
       }
-    } catch (blockchainError) {
-      console.error('❌ Error checking blockchain for existing account:', blockchainError);
-      // Fallback to no account on blockchain error
+    } catch (error) {
+      console.error('❌ Error in checkUserMarginAccount:', error);
       clearMarginAccount();
+    } finally {
+      lastCheckByUser.set(userAddress, Date.now());
+      inflightCheckByUser.delete(userAddress);
     }
-  } catch (error) {
-    console.error('❌ Error in checkUserMarginAccount:', error);
-    clearMarginAccount();
-  }
+  })();
+
+  inflightCheckByUser.set(userAddress, run);
+  return run;
 };
 
 export const createMarginAccount = async (userAddress: string): Promise<boolean> => {
@@ -356,13 +393,27 @@ export const updateAccountData = (data: Partial<MarginAccountInfoStateType>) => 
   useMarginAccountInfoStore.getState().set(data);
 };
 
-export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
-  try {
-    if (!marginAccountAddress || typeof marginAccountAddress !== 'string' || marginAccountAddress.length < 10) {
-      console.warn('⚠️ Invalid margin account address, skipping balance refresh');
-      return;
-    }
+export const refreshBorrowedBalances = async (
+  marginAccountAddress: string,
+  forceRefresh = false,
+): Promise<void> => {
+  if (!marginAccountAddress || typeof marginAccountAddress !== 'string' || marginAccountAddress.length < 10) {
+    console.warn('⚠️ Invalid margin account address, skipping balance refresh');
+    return;
+  }
 
+  // Dedup concurrent refresh calls for the same account.
+  const existing = inflightRefreshByAccount.get(marginAccountAddress);
+  if (existing) return existing;
+
+  // Respect cache TTL unless caller asks for a force refresh.
+  const last = lastRefreshByAccount.get(marginAccountAddress) ?? 0;
+  const age = Date.now() - last;
+  if (!forceRefresh && age < CACHE_DURATION_MS) return;
+  if (!forceRefresh && age < MIN_FETCH_INTERVAL_MS) return;
+
+  const run = (async () => {
+  try {
     useMarginAccountInfoStore.getState().set({ isLoadingBorrowedBalances: true });
 
     // Fetch borrowed balances AND collateral balances in parallel
@@ -471,7 +522,14 @@ export const refreshBorrowedBalances = async (marginAccountAddress: string) => {
   } catch (error: any) {
     console.error('❌ Error refreshing balances:', error);
     useMarginAccountInfoStore.getState().set({ isLoadingBorrowedBalances: false });
+  } finally {
+    lastRefreshByAccount.set(marginAccountAddress, Date.now());
+    inflightRefreshByAccount.delete(marginAccountAddress);
   }
+  })();
+
+  inflightRefreshByAccount.set(marginAccountAddress, run);
+  return run;
 };
 
 export const resetToInitialState = () => {

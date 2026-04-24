@@ -5,7 +5,7 @@ import { useFarmStore } from "@/store/farm-store";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/theme-context";
 import Image from "next/image";
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, memo } from "react";
 import { iconPaths } from "@/lib/constants";
 import { AccountStatsGhost } from "@/components/earn/account-stats-ghost";
 import { Chart } from "@/components/earn/chart";
@@ -15,6 +15,7 @@ import { Form } from "@/components/farm/form";
 import { singleAssetTableBody } from "@/lib/constants/farm";
 import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
 import { SOROSWAP_POOLS } from "@/lib/soroswap-utils";
+import type { SoroswapLpEvent } from "@/lib/soroswap-utils";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { items } from "@/components/earn/details-tab";
 import { StatsCard } from "@/components/ui/stats-card";
@@ -35,7 +36,7 @@ import {
   useAquariusEvents,
   buildLpChartData,
 } from "@/hooks/use-farm";
-import { useSoroswapPoolStats, useSoroswapLpPosition } from "@/hooks/use-soroswap";
+import { useSoroswapPoolStats, useSoroswapLpPosition, useSoroswapEvents } from "@/hooks/use-soroswap";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 
 const UI_TABS = [
@@ -43,14 +44,49 @@ const UI_TABS = [
   { id: "analytics", label: "Analytics" },
 ];
 
-// Headings for current position table
 const positionTableHeadings = [
   { label: "Asset", id: "asset" },
-  { label: "Supplied (b-Tokens)", id: "b-tokens" },
-  { label: "Underlying Value", id: "underlying" },
-  { label: "Supply APY", id: "supply-apy" },
+  { label: "b-Tokens", id: "b-tokens" },
+  { label: "Value", id: "underlying" },
+  { label: "APY", id: "supply-apy" },
   { label: "b-Rate", id: "b-rate" },
 ];
+
+const FarmHeaderStats = memo(function FarmHeaderStats({
+  tokenSymbol,
+  isSoroswapEarly,
+  matchedSoroswapPool,
+}: {
+  tokenSymbol: 'XLM' | 'USDC' | null;
+  isSoroswapEarly: boolean;
+  matchedSoroswapPool: { tokens: string[] } | null;
+}) {
+  const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
+  const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats(isSoroswapEarly);
+
+  const reserveData = tokenSymbol ? poolStats[tokenSymbol] : null;
+  const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
+  const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
+
+  const items = useMemo(() => {
+    if (isSoroswapEarly) {
+      return [
+        { id: "reserveXLM", name: `${ssTokenA} Reserve`, amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveXLM).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenA}` : "N/A" },
+        { id: "reserveUSDC", name: `${ssTokenB} Reserve`, amount: ssStatsLoading ? "..." : ssStats ? `${parseFloat(ssStats.reserveUSDC).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenB}` : "N/A" },
+        { id: "fee", name: "Fee Rate", amount: ssStats?.feeFraction ?? (ssStatsLoading ? "..." : "N/A") },
+        { id: "totalShares", name: "Total LP Shares", amount: ssStatsLoading ? "..." : ssStats ? parseFloat(ssStats.totalShares).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "N/A" },
+      ];
+    }
+    return [
+      { id: "supplyApy", name: "Supply APY", amount: statsLoading ? "..." : reserveData ? `${reserveData.supplyAPY}%` : "N/A" },
+      { id: "borrowApy", name: "Borrow APY", amount: statsLoading ? "..." : reserveData ? `${reserveData.borrowAPY}%` : "N/A" },
+      { id: "utilization", name: "Utilization Rate", amount: statsLoading ? "..." : reserveData ? `${reserveData.utilizationRate}%` : "N/A" },
+      { id: "totalSupply", name: "Total Pool Supply", amount: statsLoading ? "..." : reserveData ? `${parseFloat(reserveData.totalSupply).toLocaleString()} ${tokenSymbol}` : "N/A" },
+    ];
+  }, [isSoroswapEarly, ssStats, ssStatsLoading, ssTokenA, ssTokenB, reserveData, statsLoading, tokenSymbol]);
+
+  return <AccountStatsGhost items={items} />;
+});
 
 export default function FarmDetailPage() {
   const params = useParams();
@@ -100,8 +136,10 @@ export default function FarmDetailPage() {
     return SOROSWAP_POOLS.find((p) => p.id === id) ?? SOROSWAP_POOLS[0];
   }, [isSoroswapEarly, id]);
 
+  const isBlendPool = !isSoroswapEarly && !isAquariusEarly;
+
   // Real data hooks — Blend (single-asset)
-  const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats();
+  const { stats: poolStats, isLoading: statsLoading } = useBlendPoolStats(isBlendPool);
   const { positions: userPositions, isLoading: posLoading } = useUserBlendPositions();
   const { events, isLoading: eventsLoading } = useBlendEvents(tokenSymbol ?? undefined);
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
@@ -109,43 +147,17 @@ export default function FarmDetailPage() {
   // Real data hooks — Aquarius (multi-asset)
   const { stats: aqStats, isLoading: aqStatsLoading } = useAquariusPoolStats(aquariusPoolAddress);
   const { lpBalance } = useAquariusLpPosition(marginAccountAddress, aquariusPoolAddress);
-  const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress);
+  const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress, marginAccountAddress);
 
   // Real data hooks — Soroswap (multi-asset)
-  const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats();
+  const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats(isSoroswapEarly);
   const { lpBalance: ssLpBalanceRaw } = useSoroswapLpPosition(marginAccountAddress);
   const mySSLpBalance = parseFloat(ssLpBalanceRaw ?? '0');
+  const { events: ssEvents } = useSoroswapEvents(ssStats?.pairAddress, marginAccountAddress);
   const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
   const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
 
-  // Pool stats for this token
   const reserveData = tokenSymbol ? poolStats[tokenSymbol] : null;
-
-  // Stats strip items (real data)
-  const statsItems = useMemo(() => [
-    {
-      id: "supplyApy",
-      name: "Supply APY",
-      amount: statsLoading ? "..." : reserveData ? `${reserveData.supplyAPY}%` : "N/A",
-    },
-    {
-      id: "borrowApy",
-      name: "Borrow APY",
-      amount: statsLoading ? "..." : reserveData ? `${reserveData.borrowAPY}%` : "N/A",
-    },
-    {
-      id: "utilization",
-      name: "Utilization Rate",
-      amount: statsLoading ? "..." : reserveData ? `${reserveData.utilizationRate}%` : "N/A",
-    },
-    {
-      id: "totalSupply",
-      name: "Total Pool Supply",
-      amount: statsLoading ? "..." : reserveData
-        ? `${parseFloat(reserveData.totalSupply).toLocaleString()} ${tokenSymbol}`
-        : "N/A",
-    },
-  ], [reserveData, statsLoading, tokenSymbol]);
 
   // User position for this token
   const myPosition = tokenSymbol ? userPositions[tokenSymbol] : null;
@@ -257,14 +269,13 @@ export default function FarmDetailPage() {
     [aqEvents, myLpBalance]
   );
 
-  // Aquarius current position table
-  const aquariusPositionHeadings = [
+  const aquariusPositionHeadings = useMemo(() => [
     { label: "Pool", id: "pool" },
     { label: "LP Shares", id: "lp-shares" },
     { label: `${poolTokenA} Deposited`, id: "token-a" },
     { label: `${poolTokenB} Deposited`, id: "token-b" },
     { label: "Fee Rate", id: "fee-rate" },
-  ];
+  ], [poolTokenA, poolTokenB]);
 
   const aquariusCurrentPositionBody = useMemo(() => {
     if (myLpBalance <= 0) return { rows: [] };
@@ -349,20 +360,48 @@ export default function FarmDetailPage() {
     },
   ], [ssStats, ssStatsLoading, ssTokenA, ssTokenB]);
 
-  // Soroswap LP chart data (no on-chain events yet — flat line from current balance)
+  // Soroswap LP chart data — built from on-chain events + current balance
   const ssChartData = useMemo(
-    () => buildLpChartData([], mySSLpBalance),
-    [mySSLpBalance]
+    () => buildLpChartData(ssEvents, mySSLpBalance),
+    [ssEvents, mySSLpBalance]
   );
 
+  // Soroswap position history table
+  const soroswapHistoryBody = useMemo(() => {
+    if (ssEvents.length === 0) return { rows: [] };
+    return {
+      rows: ssEvents.map((ev: SoroswapLpEvent) => ({
+        cell: [
+          {
+            title: ev.timestamp ? new Date(ev.timestamp).toLocaleDateString() : '—',
+            description: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '',
+          },
+          {
+            title: ev.type === 'deposit' ? 'Add Liquidity' : 'Remove Liquidity',
+            badge: ev.type === 'deposit' ? 'green' : 'orange',
+          },
+          { title: `${ev.shareAmount} LP` },
+          { title: 'Success', badge: 'green' },
+          ev.txHash
+            ? {
+                title: `${ev.txHash.slice(0, 8)}...${ev.txHash.slice(-4)}`,
+                clickable: 'link',
+                link: `https://stellar.expert/explorer/testnet/tx/${ev.txHash}`,
+              }
+            : { title: '—' },
+        ],
+      })),
+    };
+  }, [ssEvents]);
+
   // Soroswap position table headings
-  const soroswapPositionHeadings = [
+  const soroswapPositionHeadings = useMemo(() => [
     { label: "Pool", id: "pool" },
     { label: "LP Shares", id: "lp-shares" },
     { label: `${ssTokenA} Deposited`, id: "token-a" },
     { label: `${ssTokenB} Deposited`, id: "token-b" },
     { label: "Fee Rate", id: "fee-rate" },
-  ];
+  ], [ssTokenA, ssTokenB]);
 
   // Soroswap current position
   const soroswapCurrentPositionBody = useMemo(() => {
@@ -399,7 +438,7 @@ export default function FarmDetailPage() {
       return currentPositionBody;
     }
 
-    if (isSoroswapEarly) return { rows: [] };
+    if (isSoroswapEarly) return soroswapHistoryBody;
     if (isAquariusEarly) return aquariusHistoryBody;
     return positionHistoryBody;
   }, [
@@ -409,6 +448,7 @@ export default function FarmDetailPage() {
     soroswapCurrentPositionBody,
     aquariusCurrentPositionBody,
     currentPositionBody,
+    soroswapHistoryBody,
     aquariusHistoryBody,
     positionHistoryBody,
   ]);
@@ -610,10 +650,15 @@ export default function FarmDetailPage() {
         </div>
       </header>
 
-      {/* Stats bar — single asset only */}
       {!isMultiAsset && (
         <section className="px-4 sm:px-10 lg:px-30" aria-label="Pool Statistics">
-          <AccountStatsGhost items={isSoroswapEarly ? soroswapStatsItems : statsItems} />
+          {isAquariusEarly ? (
+            <AccountStatsGhost items={aquariusStatsItems} />
+          ) : isSoroswapEarly ? (
+            <AccountStatsGhost items={soroswapStatsItems} />
+          ) : (
+            <FarmHeaderStats tokenSymbol={tokenSymbol} isSoroswapEarly={isSoroswapEarly} matchedSoroswapPool={matchedSoroswapPool} />
+          )}
         </section>
       )}
 
@@ -651,7 +696,7 @@ export default function FarmDetailPage() {
                   <div className={`w-full flex flex-col gap-6 rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
                     <h2 className={`text-[21px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>Statistics</h2>
                     <article className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
-                      {analyticsItems.map((item, idx) => (<StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />))}
+                      {(isSoroswapEarly ? soroswapAnalyticsItems : isAquariusEarly ? aquariusAnalyticsItems : analyticsItems).map((item, idx) => (<StatsCard key={idx} heading={item.heading} mainInfo={item.mainInfo} subInfo={item.subInfo} tooltip={item.tooltip} />))}
                     </article>
                   </div>
                 )}
@@ -708,12 +753,12 @@ export default function FarmDetailPage() {
                       heading={{ heading: "Your Transactions", tabsItems: [{ id: "current-position", label: "Current Position" }, { id: "position-history", label: "Position History" }], tabType: "solid" }}
                       activeTab={activeTab} onTabChange={setActiveTab} filters={{ filters: ["All"], customizeDropdown: true }}
                       tableHeadings={activeTab === "current-position" ? (isSoroswapEarly ? soroswapPositionHeadings : aquariusPositionHeadings) : transactionTableHeadings}
-                      tableBody={activeTab === "current-position" ? (isSoroswapEarly ? soroswapCurrentPositionBody : aquariusCurrentPositionBody) : (isSoroswapEarly ? { rows: [] } : aquariusHistoryBody)}
+                      tableBody={activeTab === "current-position" ? (isSoroswapEarly ? soroswapCurrentPositionBody : aquariusCurrentPositionBody) : (isSoroswapEarly ? soroswapHistoryBody : aquariusHistoryBody)}
                     />
                     <Table filterDropdownPosition="right" tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
                       heading={{ heading: "All Transactions" }} filters={{ filters: ["All"] }}
                       tableHeadings={transactionTableHeadings}
-                      tableBody={isSoroswapEarly ? { rows: [] } : aquariusHistoryBody}
+                      tableBody={isSoroswapEarly ? soroswapHistoryBody : aquariusHistoryBody}
                     />
                   </div>
                 )}

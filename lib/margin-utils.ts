@@ -72,6 +72,36 @@ export class MarginAccountService {
     return `Borrow failed for ${tokenSymbol}. Please check collateral, existing debt, and risk limits, then retry.`;
   }
 
+  private static formatUserFacingContractError(raw: any, action: 'repay' | 'borrow' | 'generic' = 'generic'): string {
+    const text = typeof raw === 'string' ? raw : JSON.stringify(raw ?? {});
+    const compact = text.split('\nEvent log')[0]?.trim() || text;
+
+    if (action === 'repay') {
+      if (
+        compact.includes('Error(Object, ArithDomain)') ||
+        compact.includes('ArithDomain') ||
+        compact.includes('collect_from') ||
+        compact.includes('u256_sub')
+      ) {
+        return 'Repay amount is slightly above the live outstanding debt (rounding/interest update). Please retry with 100% again or use a slightly lower amount.';
+      }
+
+      if (compact.includes('HostError')) {
+        return 'Repay transaction failed on-chain. Please refresh debt value and retry.';
+      }
+    }
+
+    if (compact.includes('HostError')) {
+      return 'Transaction failed on-chain. Please retry in a moment.';
+    }
+
+    if (compact.length > 220) {
+      return `${compact.slice(0, 220)}...`;
+    }
+
+    return compact || 'Transaction failed';
+  }
+
   private static addUsdcAliases(
     balances: Record<string, { amount: string; usdValue: string }>
   ): Record<string, { amount: string; usdValue: string }> {
@@ -1491,6 +1521,66 @@ export class MarginAccountService {
   }
 
   /**
+   * Get exact borrowed debt for a token in raw WAD precision.
+   * This is used by repay flow to avoid rounded overpay values.
+   */
+  static async getBorrowedTokenDebtWad(
+    marginAccountAddress: string,
+    tokenSymbol: string
+  ): Promise<{ success: boolean; debtWad?: string; amount?: string; error?: string }> {
+    try {
+      if (!marginAccountAddress || typeof marginAccountAddress !== 'string' || marginAccountAddress.length < 10) {
+        return { success: false, error: 'Invalid margin account address' };
+      }
+
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      const userAddress = await getAddress();
+      if (userAddress.error) {
+        return { success: false, error: 'Failed to get user address' };
+      }
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(userAddress.address);
+      const contract = new StellarSdk.Contract(marginAccountAddress);
+
+      const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          contract.call(
+            'get_borrowed_token_debt',
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' })
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const preparedTx = await server.prepareTransaction(tx);
+      const sim = await server.simulateTransaction(preparedTx);
+
+      if ('error' in sim || !('result' in sim) || !sim.result?.retval) {
+        return { success: false, error: 'Failed to fetch token debt' };
+      }
+
+      const debtRaw = StellarSdk.scValToNative(sim.result.retval);
+      const debtWad = debtRaw?.toString?.() ?? String(debtRaw ?? '0');
+      const debtAmount = (parseFloat(debtWad) / Math.pow(10, 18)).toFixed(7);
+
+      return {
+        success: true,
+        debtWad,
+        amount: debtAmount,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: this.formatUserFacingContractError(error?.message || error, 'repay'),
+      };
+    }
+  }
+
+  /**
    * Get collateral balances for a margin account
    * @param marginAccountAddress - The margin account address
    * @returns Object with collateral token balances
@@ -1653,8 +1743,104 @@ export class MarginAccountService {
       console.error('❌ Error repaying loan:', error);
       return {
         success: false,
-        error: error?.message || 'Failed to repay loan'
+        error: this.formatUserFacingContractError(error?.message || error, 'repay')
       };
+    }
+  }
+
+  /**
+   * Get on-chain borrow/repay transaction history for a margin account.
+   * Queries Trader_Borrow and Trader_Repay_Event events from the ACCOUNT_MANAGER contract.
+   */
+  static async getMarginTransactionHistory(
+    marginAccountAddress: string
+  ): Promise<{ type: 'borrow' | 'repay'; asset: string; amount: string; timestamp: number; hash: string }[]> {
+    const WAD = BigInt('1000000000000000000');
+
+    const wadToHuman = (raw: unknown): number => {
+      try {
+        const bi = BigInt(raw!.toString());
+        return Number(bi / WAD) + Number(bi % WAD) / 1e18;
+      } catch {
+        return 0;
+      }
+    };
+
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const ledgerResp = await server.getLatestLedger();
+      const startLedger = Math.max(1, ledgerResp.sequence - 518400);
+
+      const borrowTopic = StellarSdk.xdr.ScVal.scvSymbol('Trader_Borrow').toXDR('base64');
+      const repayTopic = StellarSdk.xdr.ScVal.scvSymbol('Trader_Repay_Event').toXDR('base64');
+
+      const safeGetEvents = async (topic: string) => {
+        try {
+          const resp = await (server as any).getEvents({
+            startLedger,
+            filters: [{
+              type: 'contract',
+              contractIds: [CONTRACT_ADDRESSES.ACCOUNT_MANAGER],
+              topics: [[topic]],
+            }],
+            limit: 200,
+          });
+          if (resp?.error) return [];
+          return resp?.events ?? [];
+        } catch {
+          return [];
+        }
+      };
+
+      const [borrowEvents, repayEvents] = await Promise.all([
+        safeGetEvents(borrowTopic),
+        safeGetEvents(repayTopic),
+      ]);
+
+      const results: { type: 'borrow' | 'repay'; asset: string; amount: string; timestamp: number; hash: string }[] = [];
+
+      for (const ev of borrowEvents ?? []) {
+        try {
+          const topics = (ev.topic ?? []).map((t: any) => StellarSdk.scValToNative(t));
+          const accountAddr = topics[1] as string;
+          if (!accountAddr || accountAddr !== marginAccountAddress) continue;
+
+          const tokenSymbol = StellarSdk.scValToNative(ev.value) as string;
+          results.push({
+            type: 'borrow',
+            asset: String(tokenSymbol ?? ''),
+            amount: '—',
+            timestamp: ev.ledgerClosedAt ? new Date(ev.ledgerClosedAt).getTime() : 0,
+            hash: ev.txHash ?? '',
+          });
+        } catch { /* skip malformed events */ }
+      }
+
+      for (const ev of repayEvents ?? []) {
+        try {
+          const topics = (ev.topic ?? []).map((t: any) => StellarSdk.scValToNative(t));
+          const accountAddr = topics[1] as string;
+          if (!accountAddr || accountAddr !== marginAccountAddress) continue;
+
+          const data = ev.value ? StellarSdk.scValToNative(ev.value) : null;
+          if (!data || typeof data !== 'object') continue;
+
+          const rawData = data as Record<string, unknown>;
+          results.push({
+            type: 'repay',
+            asset: String(rawData.token_symbol ?? ''),
+            amount: wadToHuman(rawData.token_amount).toFixed(7),
+            timestamp: ev.ledgerClosedAt ? new Date(ev.ledgerClosedAt).getTime() : 0,
+            hash: ev.txHash ?? '',
+          });
+        } catch { /* skip malformed events */ }
+      }
+
+      results.sort((a, b) => b.timestamp - a.timestamp);
+      return results.slice(0, 50);
+    } catch (err: any) {
+      console.warn('[MarginAccountService] getMarginTransactionHistory error:', err?.message ?? err);
+      return [];
     }
   }
 

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, memo } from "react";
+import toast from "react-hot-toast";
 import Image from "next/image";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { iconPaths } from "@/lib/constants";
 import { InfoCard } from "../margin/info-card";
 import { Button } from "../ui/button";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWithdrawLiquidity, usePoolData, useUserPositions } from "@/hooks/use-earn";
@@ -26,7 +27,7 @@ const toDisplayAsset = (value: string) => {
   return value;
 };
 
-export const WithdrawLiquidity = () => {
+export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
   const { isDark } = useTheme();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const selectedOption = toDisplayAsset(selectedAsset);
@@ -37,7 +38,17 @@ export const WithdrawLiquidity = () => {
 
   const userAddress = useUserStore((state) => state.address);
 
-  const { withdraw, isLoading, message, clearMessage } = useWithdrawLiquidity();
+  const { withdraw, isLoading, message } = useWithdrawLiquidity();
+
+  // Toast instead of inline banner.
+  const lastToastedRef = useRef<string>("");
+  useEffect(() => {
+    if (!message.text || message.text === lastToastedRef.current) return;
+    lastToastedRef.current = message.text;
+    if (message.type === "success") toast.success(message.text);
+    else if (message.type === "error") toast.error(message.text);
+    else toast(message.text);
+  }, [message.text, message.type]);
   const { pools } = usePoolData();
   const { positions, refresh: refreshPositions } = useUserPositions();
 
@@ -81,7 +92,7 @@ export const WithdrawLiquidity = () => {
   const sharesNum = parseFloat(shares) || 0;
   const assetsPreview = sharesNum * exchangeRate;
 
-  const infoData = {
+  const infoData = useMemo(() => ({
     youGetAsset: assetsPreview,
     tokenPerVToken: exchangeRate,
     currentAPY: supplyAPY,
@@ -92,9 +103,9 @@ export const WithdrawLiquidity = () => {
     projectedMonthlyTo: 0,
     projectedYearlyFrom: 0,
     projectedYearlyTo: 0,
-  };
+  }), [assetsPreview, exchangeRate, supplyAPY]);
 
-  const infoPropsData = {
+  const infoPropsData = useMemo(() => ({
     data: infoData,
     expandableSections: [
       {
@@ -109,7 +120,7 @@ export const WithdrawLiquidity = () => {
       },
     ],
     showExpandable: true,
-  };
+  }), [infoData, selectedOption]);
 
   const getButtonText = () => {
     if (!userAddress) return "Connect Wallet";
@@ -209,25 +220,6 @@ export const WithdrawLiquidity = () => {
         onClick={handleWithdraw}
       />
 
-      {/* Message Display */}
-      <AnimatePresence>
-        {message.text && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className={`p-3 rounded-xl text-sm ${
-              message.type === 'success'
-                ? 'bg-green-500/10 border border-green-500/20 text-green-500'
-                : message.type === 'error'
-                ? 'bg-red-500/10 border border-red-500/20 text-red-500'
-                : 'bg-[#703AE6]/10 border border-[#703AE6]/20 text-[#703AE6]'
-            }`}
-          >
-            {message.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Contract Info */}
       <div className={`text-xs text-center ${isDark ? "text-gray-600" : "text-gray-400"}`}>
@@ -235,4 +227,4 @@ export const WithdrawLiquidity = () => {
       </div>
     </>
   );
-};
+});

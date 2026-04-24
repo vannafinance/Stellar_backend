@@ -49,10 +49,10 @@ export const TokenSearchModal = ({
   return (
     <Modal open={isOpen} onClose={onClose} bottomSheet>
       <div
-        className={`w-full max-w-[440px] rounded-[20px] flex flex-col overflow-hidden ${
+        className={`w-full max-w-[560px] rounded-[20px] flex flex-col overflow-hidden ${
           isDark ? "bg-[#222222] border border-[#333333]" : "bg-white border border-[#E2E2E2]"
         }`}
-        style={{ height: "min(580px, 85vh)" }}
+        style={{ maxHeight: "min(580px, 85vh)" }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">

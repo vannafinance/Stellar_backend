@@ -92,6 +92,19 @@ export interface AquariusTransactionResult {
 
 const WAD = 1e18;
 const LP_SHARE_SCALE = 1e7;
+const AQUARIUS_AMM_API_BASE = 'https://amm-api-testnet.aqua.network';
+const AQUARIUS_API_CACHE_TTL_MS = 60_000;
+
+interface AquariusApiPoolsResponse {
+  items?: AquariusApiPoolItem[];
+}
+
+interface AquariusApiPoolItem {
+  address?: string;
+  reserves?: [string, string] | string[];
+  fee?: string;
+  total_share?: string;
+}
 
 const toWad = (amount: number): bigint => {
   if (!Number.isFinite(amount) || amount <= 0) return BigInt(0);
@@ -106,6 +119,51 @@ const toLpShareUnits = (amount: number): bigint => {
 const makeKey = (name: string) => StellarSdk.xdr.ScVal.scvSymbol(name);
 
 export class AquariusService {
+  private static apiPoolStatsCache: {
+    expiresAt: number;
+    byAddress: Record<string, AquariusPoolStats>;
+  } | null = null;
+
+  private static async getAquariusApiPoolStatsByAddress(): Promise<Record<string, AquariusPoolStats>> {
+    const now = Date.now();
+    if (AquariusService.apiPoolStatsCache && AquariusService.apiPoolStatsCache.expiresAt > now) {
+      return AquariusService.apiPoolStatsCache.byAddress;
+    }
+
+    const response = await fetch(`${AQUARIUS_AMM_API_BASE}/pools/?limit=200`);
+    if (!response.ok) {
+      throw new Error(`Aquarius API error: ${response.status}`);
+    }
+
+    const json = (await response.json()) as AquariusApiPoolsResponse;
+    const byAddress: Record<string, AquariusPoolStats> = {};
+
+    for (const pool of json.items ?? []) {
+      const address = (pool.address ?? '').trim().toUpperCase();
+      if (!address) continue;
+
+      const reserveA = pool.reserves?.[0] ?? '0';
+      const reserveB = pool.reserves?.[1] ?? '0';
+      const totalShare = pool.total_share ?? '0';
+      const feeRaw = Math.round((parseFloat(pool.fee ?? '0.003') || 0.003) * 10_000);
+
+      byAddress[address] = {
+        reserveA,
+        reserveB,
+        totalShares: totalShare,
+        feeFraction: `${(feeRaw / 100).toFixed(2)}%`,
+        feeRaw,
+      };
+    }
+
+    AquariusService.apiPoolStatsCache = {
+      expiresAt: now + AQUARIUS_API_CACHE_TTL_MS,
+      byAddress,
+    };
+
+    return byAddress;
+  }
+
   private static async pollTransactionStatus(
     server: StellarSdk.rpc.Server,
     hash: string
@@ -200,6 +258,44 @@ export class AquariusService {
       console.error('[AquariusService] getAquariusUsdcWalletBalance error:', error);
       return '0';
     }
+  }
+
+  static async hasAquariusUsdcTrustline(walletAddress: string): Promise<boolean> {
+    try {
+      const server = new StellarSdk.Horizon.Server(HORIZON_URL);
+      const account = await server.loadAccount(walletAddress);
+
+      return account.balances.some((balance) => {
+        if (balance.asset_type !== 'credit_alphanum4' && balance.asset_type !== 'credit_alphanum12') {
+          return false;
+        }
+        const assetBalance = balance as StellarSdk.Horizon.HorizonApi.BalanceLineAsset;
+        return (
+          assetBalance.asset_code === 'USDC' &&
+          assetBalance.asset_issuer === ASSET_ISSUERS.USDC_AQUARIUS
+        );
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  private static formatAquariusSwapError(raw: any): string {
+    const text = typeof raw === 'string' ? raw : JSON.stringify(raw ?? {});
+
+    if (text.includes('trustline entry is missing for account')) {
+      return 'USDC trustline is missing in your wallet. Please add Aquarius USDC trustline, then retry swap.';
+    }
+
+    if (text.includes('Error(Contract, #13)')) {
+      return 'Swap failed because destination token trustline is missing. Please add USDC trustline in your wallet and retry.';
+    }
+
+    if (text.includes('HostError')) {
+      return 'Aquarius swap failed on-chain. Please retry in a moment.';
+    }
+
+    return text || 'Swap failed';
   }
 
   static async getRegistryUsdcAddress(): Promise<string | null> {
@@ -421,6 +517,15 @@ export class AquariusService {
   // Fetch pool reserves, fee, and total shares directly from the Aquarius pool contract.
   static async getAquariusPoolStats(poolAddress: string): Promise<AquariusPoolStats | null> {
     try {
+      // Prefer Aquarius AMM API for live pool values shown on aqua.network.
+      const apiPools = await AquariusService.getAquariusApiPoolStatsByAddress();
+      const fromApi = apiPools[poolAddress.trim().toUpperCase()];
+      if (fromApi) return fromApi;
+    } catch (error) {
+      console.warn('[AquariusService] AMM API pool stats fetch failed, falling back to contract read:', error);
+    }
+
+    try {
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
       const tempKeypair = StellarSdk.Keypair.random();
       const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
@@ -522,30 +627,44 @@ export class AquariusService {
 
   // Fetch deposit_liquidity / withdraw_liquidity events from the Aquarius pool contract.
   static async getAquariusEvents(
-    poolAddress: string
+    poolAddress: string,
+    userAddress?: string,
   ): Promise<AquariusLpEvent[]> {
     try {
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
       const latest = await server.getLatestLedger();
       const startLedger = Math.max(0, latest.sequence - 518400); // ~30 days
 
-      const [depositResult, withdrawResult] = await Promise.all([
-        server
-          .getEvents({
+      // Topics must be XDR-encoded ScVal base64 strings, not plain strings.
+      const depositTopic  = StellarSdk.xdr.ScVal.scvSymbol('deposit_liquidity').toXDR('base64');
+      const withdrawTopic = StellarSdk.xdr.ScVal.scvSymbol('withdraw_liquidity').toXDR('base64');
+
+      const safeGet = async (topic: string) => {
+        try {
+          const resp = await (server as any).getEvents({
             startLedger,
-            filters: [{ contractIds: [poolAddress], topics: [['deposit_liquidity']] }],
-          })
-          .catch(() => ({ events: [] })),
-        server
-          .getEvents({
-            startLedger,
-            filters: [{ contractIds: [poolAddress], topics: [['withdraw_liquidity']] }],
-          })
-          .catch(() => ({ events: [] })),
+            filters: [{ type: 'contract', contractIds: [poolAddress], topics: [[topic]] }],
+            limit: 200,
+          });
+          return resp?.events ?? [];
+        } catch {
+          return [];
+        }
+      };
+
+      const [depositEvs, withdrawEvs] = await Promise.all([
+        safeGet(depositTopic),
+        safeGet(withdrawTopic),
       ]);
 
       const parseEv = (ev: any, type: 'deposit' | 'withdraw'): AquariusLpEvent | null => {
         try {
+          if (userAddress && Array.isArray(ev.topic) && ev.topic[1]) {
+            try {
+              const depositor = StellarSdk.scValToNative(ev.topic[1]) as string;
+              if (depositor !== userAddress) return null;
+            } catch { /* if topics[1] isn't an address, fall through and keep event */ }
+          }
           // body: [share_amount, amountA, amountB]
           const body = ev.value ? (StellarSdk.scValToNative(ev.value) as any[]) : null;
           if (!Array.isArray(body) || body.length < 3) return null;
@@ -565,8 +684,8 @@ export class AquariusService {
       };
 
       const all: AquariusLpEvent[] = [
-        ...(depositResult.events || []).map((ev: any) => parseEv(ev, 'deposit')),
-        ...(withdrawResult.events || []).map((ev: any) => parseEv(ev, 'withdraw')),
+        ...depositEvs.map((ev: any) => parseEv(ev, 'deposit')),
+        ...withdrawEvs.map((ev: any) => parseEv(ev, 'withdraw')),
       ].filter((e): e is AquariusLpEvent => e !== null);
 
       return all.sort((a, b) => b.timestamp - a.timestamp);
@@ -1145,6 +1264,17 @@ export class AquariusService {
     slippagePct: number = 0.5,
   ): Promise<AquariusTransactionResult> {
     try {
+      // XLM -> USDC wallet swaps require an Aquarius USDC trustline on destination wallet.
+      if (tokenInSymbol === 'XLM') {
+        const hasTrustline = await AquariusService.hasAquariusUsdcTrustline(walletAddress);
+        if (!hasTrustline) {
+          return {
+            success: false,
+            error: 'USDC trustline is missing in your wallet. Please add Aquarius USDC trustline, then retry swap.',
+          };
+        }
+      }
+
       const tokenInContract = tokenInSymbol === 'XLM' ? XLM_CONTRACT : CONTRACT_ADDRESSES.AQUARIUS_USDC;
       const amountInStroops = BigInt(Math.round(amountIn * 1e7));
 
@@ -1197,10 +1327,16 @@ export class AquariusService {
       if (result.status === 'PENDING') {
         return { success: true, hash: result.hash };
       }
+      if (result.status === 'ERROR') {
+        return {
+          success: false,
+          error: AquariusService.formatAquariusSwapError(result.errorResult || 'Swap failed with ERROR status'),
+        };
+      }
       return { success: false, error: `Network rejected (status: ${result.status})` };
     } catch (error: any) {
       console.error('[AquariusService] aquariusSwap error:', error);
-      return { success: false, error: error?.message || 'Swap failed' };
+      return { success: false, error: AquariusService.formatAquariusSwapError(error?.message || error) };
     }
   }
 }

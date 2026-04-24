@@ -22,61 +22,54 @@ export const AmountBreakdownDialogue = (
   
   return (
     <motion.div
-      className={`flex flex-col gap-[16px] w-[448px] rounded-[24px] p-[24px] relative ${
+      className={`flex flex-col w-[360px] max-w-[92vw] max-h-[calc(100vh-160px)] rounded-[18px] relative overflow-hidden ${
         isDark ? "bg-[#111111]" : "bg-white"
       }`}
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
     >
-      <motion.div
-        className={`text-[20px] font-semibold text-center ${
-          isDark ? "text-white" : ""
-        }`}
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-      >
-        {props.heading}
-      </motion.div>
-
-      <motion.div
-        className={`flex justify-between items-center ${
-          isDark ? "text-white" : ""
-        }`}
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.3, delay: 0.15 }}
-      >
+      {/* Header — stays pinned when body scrolls */}
+      <div className="flex flex-col gap-[10px] px-[16px] pt-[16px] pb-[10px]">
         <motion.div
-          className="text-[15.5px] font-medium flex gap-[4px] items-center"
-          whileHover={{ scale: 1.05 }}
-          transition={{ duration: 0.2 }}
+          className={`text-[16px] font-semibold text-center ${
+            isDark ? "text-white" : ""
+          }`}
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
         >
-          <Image
-            src={iconPaths[props.asset]}
-            alt={props.asset}
-            width={20}
-            height={20}
-          />
-          {props.asset}
+          {props.heading}
         </motion.div>
+
         <motion.div
-          className="text-[16px] font-medium"
-          initial={{ opacity: 0, x: 20 }}
+          className={`flex justify-between items-center ${
+            isDark ? "text-white" : ""
+          }`}
+          initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.3, delay: 0.15 }}
         >
-          {props.totalDeposit} {props.asset}
+          <div className="text-[13px] font-medium flex gap-[6px] items-center">
+            <Image
+              src={iconPaths[props.asset]}
+              alt={props.asset}
+              width={18}
+              height={18}
+            />
+            {props.asset}
+          </div>
+          <div className="text-[13px] font-medium">
+            {props.totalDeposit} {props.asset}
+          </div>
         </motion.div>
-      </motion.div>
+      </div>
 
-      <div className="flex flex-col gap-[4px]">
+      {/* Body — scrolls when list is taller than remaining space */}
+      <div className="flex flex-col gap-[4px] px-[16px] pb-[12px] overflow-y-auto min-h-0 scrollbar-hide">
         <motion.div
-          className={`rounded-[12px] py-[12px] px-[12px] text-[14px] font-medium ${
-            isDark 
-              ? " text-[#919191]" 
-              : "bg-[#F6F6F6] text-[#131313A1]"
+          className={`rounded-[10px] py-[8px] px-[10px] text-[12px] font-medium ${
+            isDark ? " text-[#919191]" : "bg-[#F6F6F6] text-[#131313A1]"
           }`}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -88,46 +81,37 @@ export const AmountBreakdownDialogue = (
           return (
             <motion.div
               key={idx}
-              className={`flex justify-between items-center py-[20px] px-[12px] rounded-[12px] ${
+              className={`flex justify-between items-center py-[10px] px-[10px] rounded-[10px] ${
                 isDark ? "bg-[#222222] text-white" : "bg-[#FBFBFB]"
               }`}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3, delay: 0.25 + idx * 0.05 }}
-              whileHover={{ 
-                scale: 1.02, 
-                backgroundColor: isDark ? "#2A2A2A" : "#F0F0F0" 
+              whileHover={{
+                backgroundColor: isDark ? "#2A2A2A" : "#F0F0F0",
               }}
             >
-              <motion.div
-                className="w-full flex gap-[4px] items-center text-[12px]"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2, delay: 0.3 + idx * 0.05 }}
-              >
+              <div className="flex gap-[6px] items-center text-[12px]">
                 <Image
                   className="rounded-full"
                   src={iconPaths[item.name.toUpperCase()]}
                   alt={item.name}
-                  width={24}
-                  height={24}
+                  width={18}
+                  height={18}
                 />
                 {item.name}
-              </motion.div>
-              <motion.div
-                className="w-full text-[12px] font-medium flex flex-col justify-center items-start"
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 0.3 + idx * 0.05 }}
-              >
+              </div>
+              <div className="text-[12px] font-medium">
                 {item.value} {props.asset}
-              </motion.div>
+              </div>
             </motion.div>
           );
         })}
       </div>
 
+      {/* Footer — stays pinned */}
       <motion.div
+        className="px-[16px] pt-[8px] pb-[14px]"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{
@@ -138,7 +122,7 @@ export const AmountBreakdownDialogue = (
         <Button
           type="ghost"
           text="Close"
-          size="large"
+          size="small"
           onClick={props.onClose || (() => {})}
           disabled={false}
         />

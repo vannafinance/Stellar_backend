@@ -27,6 +27,7 @@ import {
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWallet } from "@/hooks/use-wallet";
+import toast from "react-hot-toast";
 
 type Modes = "Deposit" | "Borrow";
 
@@ -326,7 +327,7 @@ export const LeverageAssetsTab = () => {
         const depositAmountUsd = depositCollateral?.amountInUsd || 0;
         
         if (depositAmount <= 0) {
-          alert('Please enter a deposit amount greater than 0');
+          toast.error('Please enter a deposit amount greater than 0');
           setIsProcessing(false);
           return;
         }
@@ -334,23 +335,28 @@ export const LeverageAssetsTab = () => {
         let multiplier = leverage; // Use the leverage state as multiplier
         const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
 
-        // Cap requested borrow by current account health to avoid guaranteed
-        // RiskEngine rejections (applies to all supported collateral symbols).
+        // Pre-validate borrow against the Risk Engine's formula before submitting.
+        // Contract check: (collateral + borrow) / (existingDebt + borrow) > 1.1
+        // Rearranged for max borrow: borrow < (collateral - 1.1 * existingDebt) / (1.1 - 1)
         if (multiplier > 1) {
           const latestMarginState = useMarginAccountInfoStore.getState();
           const liveTotalBorrowedValue = latestMarginState.totalBorrowedValue;
           const liveTotalCollateralValue = latestMarginState.totalCollateralValue;
           const threshold = 1.1;
-          // Risk engine compares collateral/debt by value, so keep all math in USD.
           const projectedCollateralUsd = liveTotalCollateralValue + depositAmountUsd;
-          const maxDebtUsd = projectedCollateralUsd / threshold;
-          const maxAdditionalBorrowUsd = Math.max(0, maxDebtUsd - liveTotalBorrowedValue);
           const requestedBorrowUsd = depositAmountUsd * (multiplier - 1);
 
+          // Max borrow derived from contract formula:
+          // (projectedCollateral + borrow) / (existingDebt + borrow) > threshold
+          // => borrow < (projectedCollateral - threshold * existingDebt) / (threshold - 1)
+          const maxAdditionalBorrowUsd = Math.max(
+            0,
+            (projectedCollateralUsd - threshold * liveTotalBorrowedValue) / (threshold - 1)
+          );
+
           if (maxAdditionalBorrowUsd <= 0) {
-            alert(
-              'Borrow is blocked by Risk Engine: your current debt is already too high for your collateral. ' +
-              'Add more collateral or repay first.'
+            toast.error(
+              'Borrow is blocked by Risk Engine: your current debt is already too high for your collateral. Add more collateral or repay first.'
             );
             setIsProcessing(false);
             return;
@@ -358,12 +364,10 @@ export const LeverageAssetsTab = () => {
 
           if (requestedBorrowUsd > maxAdditionalBorrowUsd) {
             const maxSafeLeverage = depositAmountUsd > 0
-              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.9) / depositAmountUsd).toFixed(2))
+              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.95) / depositAmountUsd).toFixed(2))
               : 1;
-            alert(
-              `Selected leverage (${multiplier}x) exceeds your account's safe borrowing limit.\n\n` +
-              `Maximum safe leverage with current collateral: ~${maxSafeLeverage}x\n\n` +
-              `To borrow at ${multiplier}x, add more collateral or repay existing debt first.`
+            toast.error(
+              `Selected leverage (${multiplier}x) exceeds your account's safe borrowing limit. Max safe leverage: ~${maxSafeLeverage}x. Add more collateral or repay existing debt first.`
             );
             setIsProcessing(false);
             return;
@@ -404,37 +408,31 @@ export const LeverageAssetsTab = () => {
 
         if (result.success) {
           console.log('✅ Deposit and borrow successful:', result.hash);
-          alert('Deposit and borrow successful! Transaction hash: ' + result.hash);
+          toast.success('Deposit and borrow successful! Tx: ' + (result.hash ? result.hash.slice(0, 16) + '…' : ''));
         } else {
           console.error('❌ Deposit and borrow failed:', result.error);
           
-          // Check if it's a configuration error and suggest setup
           if (result.error?.includes('not allowed as collateral') || result.error?.includes('Max asset cap')) {
-            const setupResult = confirm(
-              `Contract configuration error: ${result.error}\n\nWould you like to setup the contract configuration first? (This requires admin privileges)`
-            );
-            
-            if (setupResult) {
-              try {
-                const configResult = await setupContractConfiguration();
-                if (configResult.success) {
-                  alert('Contract configuration setup successful! You can now try the deposit again.');
-                } else {
-                  alert('Contract setup failed: ' + configResult.error);
-                }
-              } catch (setupError) {
-                alert('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
+            toast.error(`Contract configuration error: ${result.error}`);
+            try {
+              const configResult = await setupContractConfiguration();
+              if (configResult.success) {
+                toast.success('Contract configuration setup successful! You can now try the deposit again.');
+              } else {
+                toast.error('Contract setup failed: ' + configResult.error);
               }
-              return;
+            } catch (setupError) {
+              toast.error('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
             }
+            return;
           }
           
-          alert('Deposit and borrow failed: ' + result.error);
+          toast.error('Deposit and borrow failed: ' + result.error);
         }
 
       } catch (error) {
         console.error('❌ Error in deposit and borrow:', error);
-        alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        toast.error('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
       } finally {
         setIsProcessing(false);
       }
@@ -455,13 +453,13 @@ export const LeverageAssetsTab = () => {
       if (created) {
         await checkUserMarginAccount(userAddress);
         setActiveDialogue("none");
-        alert("Margin account created successfully.");
+        toast.success("Margin account created successfully.");
       } else {
-        alert("Failed to create margin account. Please try again.");
+        toast.error("Failed to create margin account. Please try again.");
       }
     } catch (error) {
       console.error("Failed to create margin account:", error);
-      alert("Failed to create margin account. Please try again.");
+      toast.error("Failed to create margin account. Please try again.");
     }
   };
 
@@ -801,7 +799,7 @@ export const LeverageAssetsTab = () => {
       <AnimatePresence>
         {activeDialogue === "create-margin" && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566] "
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566] p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -809,6 +807,7 @@ export const LeverageAssetsTab = () => {
             onClick={() => setActiveDialogue("none")}
           >
             <motion.div
+              className="w-full max-w-[380px]"
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -837,7 +836,7 @@ export const LeverageAssetsTab = () => {
       <AnimatePresence>
         {activeDialogue === "sign-agreement" && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566] "
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566] p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -845,7 +844,7 @@ export const LeverageAssetsTab = () => {
             onClick={() => setActiveDialogue("none")}
           >
             <motion.div
-              className="w-full max-w-[891px]"
+              className="w-full max-w-[480px]"
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}

@@ -119,7 +119,7 @@ export const OneClickStrategy = () => {
   const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
 
   // ─── Pool selection ───
-  const [selectedPoolId, setSelectedPoolId] = useState(POOL_OPTIONS[0].id);
+  const [selectedPoolId, setSelectedPoolId] = useState("xlm-blend");
   const [poolDropdownOpen, setPoolDropdownOpen] = useState(false);
   const selectedPool = useMemo(
     () => POOL_OPTIONS.find((p) => p.id === selectedPoolId) || POOL_OPTIONS[0],
@@ -127,11 +127,11 @@ export const OneClickStrategy = () => {
   );
 
   // ─── Form state ───
-  const [collateralAsset, setCollateralAsset] = useState<TokenAsset>("USDC");
+  const [collateralAsset, setCollateralAsset] = useState<TokenAsset>("XLM");
   const [collateralAmount, setCollateralAmount] = useState("");
   const [leverage, setLeverage] = useState(1);
   const [scenario, setScenario] = useState<StrategyScenario>("same-asset");
-  const [prices, setPrices] = useState<Record<string, number>>({ XLM: 0.10, USDC: 1.0 });
+  const [prices, setPrices] = useState<Record<string, number>>({ XLM: 1.0, USDC: 1.0 });
   const [loading, setLoading] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [txModal, setTxModal] = useState<{

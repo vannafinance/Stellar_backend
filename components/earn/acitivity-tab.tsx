@@ -3,10 +3,18 @@
 import { useMemo } from "react";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
-import { useEarnPoolStore } from "@/store/earn-pool-store";
-import { usePoolData } from "@/hooks/use-earn";
+import { usePoolData, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
+
+type EarnTx = {
+  type: 'supply' | 'withdraw';
+  asset: string;
+  amount: string;
+  timestamp: number;
+  hash: string;
+  status: 'success';
+};
 
 const distributionHeadings = [
   { label: "User Id", id: "user-id" },
@@ -57,7 +65,7 @@ const TOKEN_PRICES: Record<string, number> = {
 
 export const ActivityTab = () => {
   const { isDark } = useTheme();
-  const recentTransactions = useEarnPoolStore((state) => state.recentTransactions);
+  const { transactions: recentTransactions } = useEarnTransactions();
   const { pools } = usePoolData();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const assetKey = toInternalAsset(selectedAsset);
@@ -110,7 +118,7 @@ export const ActivityTab = () => {
     }
 
     return {
-      rows: recentTransactions.map((tx) => ({
+      rows: recentTransactions.map((tx: EarnTx) => ({
         cell: [
           {
             title: new Date(tx.timestamp).toLocaleDateString(),

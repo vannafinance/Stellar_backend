@@ -43,6 +43,10 @@ const Spot = () => {
   const [spotMode, setSpotMode] = useState<SpotMode>("swap");
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
     if (!isTradingPairSelectorOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {

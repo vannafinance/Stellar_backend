@@ -313,29 +313,6 @@ export default function Home() {
               ]}
             />
 
-            {/* Margin Account Status */}
-            {userAddress && marginAccountAddress && (
-              <motion.div
-                className={`p-4 rounded-lg border ${
-                  isDark
-                    ? "bg-green-900/10 border-green-700/30"
-                    : "bg-green-50 border-green-200"
-                }`}
-                initial={{ opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.3, delay: 0.2 }}
-              >
-                <div className="text-xs space-y-1">
-                  <p className={`font-medium ${isDark ? "text-green-400" : "text-green-700"}`}>
-                    Active Margin Account
-                  </p>
-                  <p className={`font-mono ${isDark ? "text-green-300" : "text-green-600"}`}>
-                    {marginAccountAddress.slice(0, 8)}...{marginAccountAddress.slice(-6)}
-                  </p>
-                </div>
-              </motion.div>
-            )}
           </motion.aside>
         </div>
 

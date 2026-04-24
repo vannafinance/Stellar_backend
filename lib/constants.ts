@@ -4,15 +4,11 @@ export const navbarItems = [
   { title: "Margin", link: "/", group: "bordered" },
   { title: "Trade", link: "/trade" , group: "bordered"  },
   { title: "Farm", link: "/farm", group: "bordered" },
-  { title: "Analytics", link: "/analytics", group: "secondary" },
 ];
 
 export const tradeItems = [
-  {title: "Spot", link: "/trade/spot" },
-    { title: "Futures", link: "/trade/futures" },
-    { title: "Options", link: "/trade/options" },
-    {title:"Defi Greeks", link: "/trade/defi-greeks" },
-]
+  { title: "Spot", link: "/trade/spot" },
+];
 
 // Stellar blockchain supported assets
 export const DropdownOptions = [

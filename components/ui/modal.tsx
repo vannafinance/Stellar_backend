@@ -38,7 +38,7 @@ export const Modal = ({ open, onClose, children }: ModalProps) => {
       />
 
       {/* Content */}
-      <div className="relative z-1001">{children}</div>
+      <div className="relative z-1001 w-full max-w-[90vw] px-4 sm:px-0 sm:max-w-max">{children}</div>
     </div>,
     document.body
   );

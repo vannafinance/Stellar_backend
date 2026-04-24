@@ -864,8 +864,8 @@ export class BlendService {
         for (const ev of events ?? []) {
           try {
             const topics = ev.topic?.map((t: any) => StellarSdk.scValToNative(t));
-            // topics[2] is the "from" address — filter to only our margin account
-            const fromAddress = topics?.[2] as string;
+            // topics[2] or topics[1] may hold the "from" address depending on pool contract version
+            const fromAddress = (topics?.[2] ?? topics?.[1]) as string;
             if (fromAddress && fromAddress !== marginAccountAddress) continue;
             const data = ev.value ? StellarSdk.scValToNative(ev.value) : null;
             const tokenAddress = topics?.[1] as string;
