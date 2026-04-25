@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import Image from "next/image";
 import { useTheme } from "@/contexts/theme-context";
@@ -128,6 +128,19 @@ export const OneClickStrategy = () => {
 
   // ─── Form state ───
   const [collateralAsset, setCollateralAsset] = useState<TokenAsset>("XLM");
+  const [tokenDropdownOpen, setTokenDropdownOpen] = useState(false);
+  const tokenDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!tokenDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (tokenDropdownRef.current && !tokenDropdownRef.current.contains(e.target as Node)) {
+        setTokenDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [tokenDropdownOpen]);
   const [collateralAmount, setCollateralAmount] = useState("");
   const [leverage, setLeverage] = useState(1);
   const [scenario, setScenario] = useState<StrategyScenario>("same-asset");
@@ -546,22 +559,65 @@ export const OneClickStrategy = () => {
                   onChange={(e) => setCollateralAmount(e.target.value)}
                   className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] sm:text-[24px] font-bold leading-8 sm:leading-9 ${headingText} placeholder:${isDark ? "text-[#2C2C2C]" : "text-[#DFDFDF]"}`}
                 />
-                <div className="relative shrink-0">
-                  <select
-                    value={collateralAsset}
-                    onChange={(e) => { setCollateralAsset(e.target.value as TokenAsset); setCollateralAmount(""); }}
-                    className={`appearance-none cursor-pointer pl-[36px] pr-[28px] py-[8px] sm:py-[10px] rounded-[12px] text-[14px] font-semibold outline-none border-[1px] transition-colors ${
+                <div className="relative shrink-0" ref={tokenDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setTokenDropdownOpen(!tokenDropdownOpen)}
+                    className={`flex items-center gap-2 pl-[10px] pr-[10px] py-[8px] sm:py-[10px] rounded-[12px] text-[14px] font-semibold cursor-pointer outline-none border-[1px] transition-colors ${
                       isDark ? "bg-[#2C2C2C] text-white border-[#333] hover:border-[#444]" : "bg-[#EEEEEE] text-[#111] border-[#E5E7EB] hover:border-[#D1D5DB]"
                     }`}
+                    aria-haspopup="listbox"
+                    aria-expanded={tokenDropdownOpen}
                   >
-                    {TOKEN_LIST.map((t) => (
-                      <option key={t.asset} value={t.asset}>{t.label}</option>
-                    ))}
-                  </select>
-                  <div className="absolute left-[10px] top-1/2 -translate-y-1/2 pointer-events-none">
                     <PoolTokenBadge symbol={collateralAsset} size={20} />
-                  </div>
-                  <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#919191" : "#76737B"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                    <span>{collateralAsset}</span>
+                    <svg
+                      className={`shrink-0 transition-transform duration-200 ${tokenDropdownOpen ? "rotate-180" : ""}`}
+                      width="12" height="12" viewBox="0 0 24 24" fill="none"
+                      stroke={isDark ? "#919191" : "#76737B"}
+                      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                  <AnimatePresence>
+                    {tokenDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.15 }}
+                        className={`absolute right-0 top-full mt-1 z-50 rounded-xl border shadow-lg overflow-hidden min-w-[120px] ${
+                          isDark ? "bg-[#222222] border-[#333333]" : "bg-white border-[#E8E8E8]"
+                        }`}
+                        role="listbox"
+                      >
+                        {TOKEN_LIST.map((t) => (
+                          <button
+                            key={t.asset}
+                            type="button"
+                            onClick={() => {
+                              setCollateralAsset(t.asset as TokenAsset);
+                              setCollateralAmount("");
+                              setTokenDropdownOpen(false);
+                            }}
+                            className={`flex items-center gap-2 w-full px-4 py-2.5 text-[13px] font-medium transition-colors ${
+                              t.asset === collateralAsset
+                                ? "text-[#703AE6]"
+                                : isDark
+                                  ? "text-white hover:bg-[#333]"
+                                  : "text-[#111] hover:bg-[#F5F5F5]"
+                            }`}
+                            role="option"
+                            aria-selected={t.asset === collateralAsset}
+                          >
+                            <PoolTokenBadge symbol={t.asset} size={16} />
+                            {t.label}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
 

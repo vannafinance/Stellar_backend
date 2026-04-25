@@ -226,12 +226,16 @@ const applyFilters = (
       if (!isValid) return false;
     }
 
-    if (hasAllFilter && typeColumnIndex !== -1) {
-      const typeValue = row.cell[typeColumnIndex]?.title?.toUpperCase() || "";
+    if (hasAllFilter) {
+      const matchSource = (
+        typeColumnIndex !== -1
+          ? row.cell[typeColumnIndex]?.title
+          : row.cell[0]?.title
+      )?.toUpperCase() || "";
       const matches = filtersState.all.some((f) => {
         const filterUpper = f.toUpperCase();
         return (
-          typeValue.includes(filterUpper) || filterUpper.includes(typeValue)
+          matchSource.includes(filterUpper) || filterUpper.includes(matchSource)
         );
       });
       if (!matches) return false;

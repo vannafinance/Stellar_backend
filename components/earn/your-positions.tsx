@@ -264,7 +264,7 @@ export const YourPositions = memo(function YourPositions() {
             tableHeadings={activeTab === "current-positions" ? positionTableHeadings : historyTableHeadings}
             tableBody={activeTab === "current-positions" ? positionTableBody : historyTableBody}
             tableBodyBackground={isDark ? "bg-[#111111]" : "bg-white"}
-            filters={{ customizeDropdown: true, filters: ["All"] }}
+            filters={{ customizeDropdown: true }}
           />
         )}
       </article>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "@/contexts/theme-context";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useUserStore } from "@/store/user";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { MarginAccountService } from "@/lib/margin-utils";
@@ -281,6 +281,15 @@ export const SwapCard = ({
 
   const tokenInBalance = getBalance(tokenIn);
   const tokenOutBalance = getBalance(tokenOut);
+
+  const tokenListBalances = useMemo(() => {
+    const map: Record<string, string> = {};
+    tokenList.forEach((t) => {
+      const b = getBalance(t);
+      if (b !== null) map[t.id] = parseFloat(b).toFixed(4);
+    });
+    return map;
+  }, [tokenList, getBalance]);
 
   // Preset % state
   const [activePercent, setActivePercent] = useState<number | null>(null);
@@ -692,7 +701,7 @@ export const SwapCard = ({
         onSelect={handleTokenSelect}
         tokens={tokenList}
         popularTokens={tokenList.slice(0, 5)}
-        balances={{}}
+        balances={tokenListBalances}
       />
     </>
   );

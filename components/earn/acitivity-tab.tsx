@@ -210,7 +210,7 @@ export const ActivityTab = () => {
           filterDropdownPosition="right"
           tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
           heading={{ heading: "" }}
-          filters={{ filters: ["All", "Deposits", "Withdrawals"], customizeDropdown: true }}
+          filters={{ filters: ["Deposits", "Withdrawals"], customizeDropdown: true }}
           tableHeadings={transactionTableHeadings}
           tableBody={txTableBody}
         />

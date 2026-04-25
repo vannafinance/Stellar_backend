@@ -43,7 +43,7 @@ export const RepayLoanTab = () => {
   const [selectedRepayCurrency, setSelectedRepayCurrency] =
     useState<string>(DropdownOptions[0]);
   const [selectedRepayPercentage, setSelectedRepayPercentage] =
-    useState<number>(10);
+    useState<number>(0);
   const [repayAmount, setRepayAmount] = useState<number>(0);
   const [currentDebtWad, setCurrentDebtWad] = useState<string>('0');
   const [repayAmountInUsd] = useState<number>(0);
@@ -392,14 +392,14 @@ export const RepayLoanTab = () => {
               <input
                 id="repay-amount-input"
                 onChange={handleInputChange}
-                className={`w-full text-right text-[22px] sm:text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-30 ${
+                className={`w-full text-right text-[22px] sm:text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-20 ${
                   isDark
-                    ? "text-white placeholder:text-[#555555]"
-                    : "text-[#111111] placeholder:text-[#CCCCCC]"
+                    ? "text-white placeholder:text-white"
+                    : "text-[#111111] placeholder:text-[#111111]"
                 }`}
                 type="text"
                 placeholder="0"
-                value={repayAmount}
+                value={repayAmount === 0 ? "" : repayAmount}
               />
             </div>
           </div>
