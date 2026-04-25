@@ -155,11 +155,6 @@ export default function EarnPage({ params }: { params: Promise<{ id: string }> }
                 {vaultData.title}
               </h1>
               <div className="w-fit h-fit flex gap-1.5 items-center">
-                <span className={`text-[11px] sm:text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] ${
-                  isDark ? "bg-[#222222] text-white" : "bg-[#EEEEEE] text-[#0C0C0C]"
-                }`}>
-                  V3
-                </span>
                 <span className="text-[11px] sm:text-[13px] font-semibold text-center w-fit h-fit rounded-[4px] py-[2px] px-[6px] bg-[#703AE6] text-white">
                   {vaultData.tag}
                 </span>

@@ -205,7 +205,7 @@ export const SvgChart = ({
           <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
             {formatYAxisLabel(hp.value)}
           </div>
-          <div style={{ color: textColor, fontSize: 11, fontFamily: "inherit" }}>
+          <div style={{ color: "#A7A7A7", fontSize: 11, fontFamily: "inherit" }}>
             {new Date(hp.date).toLocaleDateString("en-US", {
               month: "short", day: "numeric", year: "numeric",
             })}
