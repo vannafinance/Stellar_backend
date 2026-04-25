@@ -16,6 +16,7 @@ interface BorrowBoxProps {
   setLeverage: (value: number) => void;
   totalDeposit: number;
   onBorrowItemsChange?: (items: BorrowInfo[]) => void;
+  onTokenChange?: (token: string) => void;
 }
 
 export const BorrowBox = ({
@@ -24,6 +25,7 @@ export const BorrowBox = ({
   setLeverage,
   totalDeposit,
   onBorrowItemsChange,
+  onTokenChange,
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
   const TOKEN_PRICES: Record<string, number> = {
@@ -68,6 +70,13 @@ export const BorrowBox = ({
   // totalDeposit is in USD, so divide by token price to get the token amount to display.
   const previewBorrowableUsd = Math.max(0, totalDeposit * (leverage - 1));
   const previewBorrowableAmount = selectedTokenPrice > 0 ? previewBorrowableUsd / selectedTokenPrice : 0;
+
+  // Notify parent when selected borrow token changes
+  useEffect(() => {
+    if (onTokenChange) {
+      onTokenChange(selectedOptions[0] || DropdownOptions[0]);
+    }
+  }, [selectedOptions[0], onTokenChange]);
 
   // Combined useEffect: Create BorrowInfo items and notify parent
   useEffect(() => {

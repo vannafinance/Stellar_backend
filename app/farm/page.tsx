@@ -18,7 +18,7 @@ import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
 
 function fmtNum(value: number, decimals = 2): string {
-  if (!Number.isFinite(value)) return '—';
+  if (!Number.isFinite(value)) return '0';
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(decimals)}B`;
   if (value >= 1_000_000)     return `${(value / 1_000_000).toFixed(decimals)}M`;
   if (value >= 1_000)         return `${(value / 1_000).toFixed(decimals)}K`;
@@ -51,18 +51,18 @@ export default function FarmPage() {
       const s = poolStats[symbol];
       const loading = statsLoading;
       const fmt = (v: string | undefined, suffix = '') =>
-        loading ? '...' : v ? `${v}${suffix}` : '—';
+        loading ? '...' : v ? `${v}${suffix}` : '0';
 
       return {
         cell: [
           { chain: symbol, title: symbol, tags: ['Blend', 'Supply'] },
           { title: 'Blend' },
-          { title: s ? `${fmtNum(parseFloat(s.totalSupply))} ${symbol}` : (loading ? '...' : '—') },
-          { title: s ? `${fmtNum(parseFloat(s.totalSupply))} ${symbol}` : (loading ? '...' : '—') },
-          { title: s ? fmt(s.supplyAPY, '%') : '—' },
-          { title: s ? fmt(s.borrowAPY, '%') : '—' },
-          { title: s ? fmt(s.utilizationRate, '%') : '—' },
-          { title: s ? fmt(s.bRate) : '—' },
+          { title: s ? `${fmtNum(parseFloat(s.totalSupply))} ${symbol}` : (loading ? '...' : '0') },
+          { title: s ? `${fmtNum(parseFloat(s.totalSupply))} ${symbol}` : (loading ? '...' : '0') },
+          { title: s ? fmt(s.supplyAPY, '%') : '0' },
+          { title: s ? fmt(s.borrowAPY, '%') : '0' },
+          { title: s ? fmt(s.utilizationRate, '%') : '0' },
+          { title: s ? fmt(s.bRate) : '0' },
         ],
       };
     });
@@ -84,10 +84,10 @@ export default function FarmPage() {
             { title: 'Blend' },
             { title: pos.underlyingValue ? `${pos.underlyingValue} ${sym}` : '0' },
             { title: pos.bTokenBalance ? `${pos.bTokenBalance} b${sym}` : '0' },
-            { title: poolStats[sym]?.supplyAPY ? `${poolStats[sym]!.supplyAPY}%` : '—' },
-            { title: '—' },
-            { title: '—' },
-            { title: poolStats[sym]?.bRate ?? '—' },
+            { title: poolStats[sym]?.supplyAPY ? `${poolStats[sym]!.supplyAPY}%` : '0' },
+            { title: '0' },
+            { title: '0' },
+            { title: poolStats[sym]?.bRate ?? '0' },
           ],
         });
       });
@@ -106,9 +106,9 @@ export default function FarmPage() {
           { title: `${mySSLpBalance.toFixed(4)} LP` },
           { title: `${xlmShare} XLM + ${usdcShare} USDC` },
           { title: ssStats?.feeFraction ?? '0.30%' },
-          { title: '—' },
-          { title: '—' },
-          { title: '—' },
+          { title: '0' },
+          { title: '0' },
+          { title: '0' },
         ],
       });
     }
@@ -131,9 +131,9 @@ export default function FarmPage() {
           { title: `${lpBal.toFixed(4)} LP` },
           { title: `${shareA} ${tokenA} + ${shareB} ${tokenB}` },
           { title: aqPoolStats?.feeFraction ?? '0.30%' },
-          { title: '—' },
-          { title: '—' },
-          { title: '—' },
+          { title: '0' },
+          { title: '0' },
+          { title: '0' },
         ],
       });
     });
@@ -148,12 +148,12 @@ export default function FarmPage() {
       const loading = isLoading;
       const tvlTitle = stats
         ? `${fmtNum(parseFloat(stats.reserveA))} ${tokenA}`
-        : loading ? '...' : '—';
+        : loading ? '...' : '0';
       const tvlDescription = stats
         ? `+ ${fmtNum(parseFloat(stats.reserveB))} ${tokenB}`
         : undefined;
-      const fee = stats ? stats.feeFraction : loading ? '...' : '—';
-      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '—';
+      const fee = stats ? stats.feeFraction : loading ? '...' : '0';
+      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '0';
       return {
         id: pool.id,
         cell: [
@@ -162,10 +162,10 @@ export default function FarmPage() {
           { title: shares },
           { title: tvlTitle, description: tvlDescription },
           { title: fee },
-          { title: '—' },
-          { title: '—' },
-          { title: '—' },
-          { title: '—' },
+          { title: '0' },
+          { title: '0' },
+          { title: '0' },
+          { title: '0' },
         ],
       };
     });
@@ -175,11 +175,11 @@ export default function FarmPage() {
       const loading = isLoading;
       const tvlTitle = stats
         ? `${fmtNum(parseFloat(stats.reserveXLM))} ${tokenA}`
-        : loading ? '...' : '—';
+        : loading ? '...' : '0';
       const tvlDescription = stats
         ? `+ ${fmtNum(parseFloat(stats.reserveUSDC))} ${tokenB}`
         : undefined;
-      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '—';
+      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '0';
       return {
         id: pool.id,
         cell: [
@@ -187,11 +187,11 @@ export default function FarmPage() {
           { title: 'Soroswap' },
           { title: shares },
           { title: tvlTitle, description: tvlDescription },
-          { title: loading ? '...' : stats ? `${pool.feeFraction / 100}%` : '—' },
-          { title: '—' },
-          { title: '—' },
-          { title: '—' },
-          { title: '—' },
+          { title: loading ? '...' : stats ? `${pool.feeFraction / 100}%` : '0' },
+          { title: '0' },
+          { title: '0' },
+          { title: '0' },
+          { title: '0' },
         ],
       };
     });
@@ -220,8 +220,10 @@ export default function FarmPage() {
 
     const total = blendXlm + blendUsdc + ssXlm + ssUsdc + aqValue;
     return {
-      depositTVL: total > 0 ? `${total.toFixed(4)} XLM` : '—',
-      earnings: '—',
+      depositTVL: total > 0 ? `${total.toFixed(4)} XLM` : '0',
+      earnings: '0',
+      netFarmApy: '0',
+      pendingRewards: '0',
     };
   }, [userPositions, mySSLpBalance, ssStats, aqLpPositions, aquariusPools]);
 
