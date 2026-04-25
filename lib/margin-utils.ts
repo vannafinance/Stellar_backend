@@ -2072,60 +2072,11 @@ export class MarginAccountService {
         );
         
         if (!borrowResult.success) {
-          const borrowError = borrowResult.error || '';
-          const isRiskRejected =
-            borrowError.includes('Borrow not allowed by Risk Engine') ||
-            borrowError.includes('Borrowing is not allowed for this user');
-
-          // Fallback: if risk engine rejects the target borrow amount, retry with reduced
-          // borrow sizes to find the highest amount that can pass on-chain checks.
-          if (isRiskRejected) {
-            const originalBorrowWad = BigInt(borrowAmountWad);
-            const reductionPercents = [90, 75, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-
-            for (const pct of reductionPercents) {
-              const candidateBorrowWad = (originalBorrowWad * BigInt(pct)) / BigInt(100);
-              if (candidateBorrowWad <= BigInt(0)) continue;
-
-              console.log(`🔁 Retrying borrow at ${pct}% of requested amount...`, {
-                requested: borrowAmountWad,
-                candidate: candidateBorrowWad.toString(),
-              });
-
-              const retry = await this.borrowTokens(
-                marginAccountAddress,
-                contractTokenSymbol,
-                candidateBorrowWad.toString()
-              );
-
-              if (retry.success) {
-                const borrowedHuman = Number(candidateBorrowWad) / 1e18;
-                return {
-                  success: true,
-                  hash: `Deposit: ${depositResult.hash}, Borrow: ${retry.hash} (auto-adjusted borrow=${borrowedHuman.toFixed(6)} ${contractTokenSymbol})`,
-                };
-              }
-            }
-          }
-
-          const collateralAfterDeposit = await this.getMarginCollateralBalanceWad(
-            marginAccountAddress,
-            contractTokenSymbol
-          );
-          const debtSnapshot = await this.getCurrentBorrowedBalances(marginAccountAddress);
-          const debtSummary = debtSnapshot.success && debtSnapshot.data
-            ? Object.entries(debtSnapshot.data)
-                .filter(([k, v]) => ['XLM', 'BLUSDC', 'AQUSDC', 'SOUSDC', 'USDC', 'EURC'].includes(k) && parseFloat(v.amount) > 0)
-                .map(([k, v]) => `${k}=${v.amount}`)
-                .join(', ')
-            : 'unavailable';
           return {
             success: false,
             error:
-              `Borrow failed: ${borrowResult.error}. ` +
               `Deposit was successful with hash: ${depositResult.hash}. ` +
-              `Observed on-chain collateral(${contractTokenSymbol})=${(Number(collateralAfterDeposit) / 1e18).toFixed(6)}. ` +
-              `Current on-chain debt snapshot: ${debtSummary}.`
+              `Borrow failed: ${borrowResult.error || 'Risk Engine rejected the borrow. Try reducing your leverage or adding more collateral.'}`,
           };
         }
         
