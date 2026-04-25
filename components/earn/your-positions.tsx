@@ -4,8 +4,7 @@ import { useState, useMemo, memo } from "react";
 import { Chart } from "./chart";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
-import { usePoolData } from "@/hooks/use-earn";
-import { useUserStore } from "@/store/user";
+import { usePoolData, useUserPositions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
 import { depositData } from "@/lib/constants/earn";
@@ -63,6 +62,7 @@ export const YourPositions = memo(function YourPositions() {
   const asset = toDisplayAsset(assetKey);
 
   const { pools } = usePoolData();
+  const { positions } = useUserPositions();
 
   const supplyAPY = useMemo(() => {
     const pool = pools[assetKey as keyof typeof pools];
@@ -74,13 +74,12 @@ export const YourPositions = memo(function YourPositions() {
     return parseFloat(pool?.exchangeRate || '1');
   }, [pools, assetKey]);
 
-  // Correct: look up deposited balance using the actual asset key
-  const depositedBalances = useUserStore((state) => state.depositedBalances);
-  const deposited = parseFloat(depositedBalances?.[assetKey as keyof typeof depositedBalances] || '0');
+  const userPosition = positions[assetKey as keyof typeof positions];
+  const deposited = parseFloat(userPosition?.deposited || '0');
   const hasPosition = deposited > 0;
 
   const price = TOKEN_PRICES[assetKey] ?? 1;
-  const vTokenBalance = exchangeRate > 0 ? deposited / exchangeRate : deposited;
+  const vTokenBalance = parseFloat(userPosition?.vTokenBalance || '0');
 
   // Generate scaled chart data for the user's current deposit
   const mySupplyChartData = useMemo(

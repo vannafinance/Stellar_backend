@@ -156,7 +156,7 @@ export const SwapCard = ({
   const [tokenModalTarget, setTokenModalTarget] = useState<"in" | "out" | null>(null);
 
   // Swap mode: wallet or margin account
-  const [swapMode, setSwapMode] = useState<"wallet" | "margin">("wallet");
+  const [swapMode, setSwapMode] = useState<"wallet" | "margin">("margin");
 
   // Wallet + margin account
   const userAddress = useUserStore((s) => s.address);

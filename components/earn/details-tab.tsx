@@ -78,10 +78,8 @@ export const Details = () => {
     return { inToken: borrowed, inUsd: borrowed * price };
   }, [selectedPool, selectedAssetKey]);
 
-  const suppliedPercent = totalSupplied.inToken > 0 ? 100 : 0;
-  const borrowedPercent = totalSupplied.inToken > 0
-    ? Math.min((totalBorrowed.inToken / totalSupplied.inToken) * 100, 100)
-    : 0;
+  const borrowedPercent = Math.min(Math.max(parseFloat(selectedPool?.utilizationRate || '0') || 0, 0), 100);
+  const suppliedPercent = totalSupplied.inToken > 0 ? (100 - borrowedPercent) : 0;
 
   const detailItems = useMemo(() => [
     {
