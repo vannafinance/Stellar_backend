@@ -107,8 +107,9 @@ export const useSoroswapEvents = (
       if (!pairAddress || !marginAccountAddress) return [];
       return SoroswapService.getSoroswapLpEvents(pairAddress, marginAccountAddress);
     },
-    staleTime: 30_000,
+    staleTime: 5_000,
     gcTime: 5 * 60_000,
+    refetchInterval: pairAddress && marginAccountAddress ? 10_000 : false,
     refetchOnWindowFocus: true,
   });
 

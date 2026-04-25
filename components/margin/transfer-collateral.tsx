@@ -22,6 +22,7 @@ export const TransferCollateral = () => {
           ? "SOUSDC"
           : symbol;
   const [selectedCurrency, setSelectedCurrency] = useState<string>("XLM");
+  const [selectedTransferType, setSelectedTransferType] = useState<"MB" | "WB">("MB");
   const [valueInput, setValueInput] = useState<string>("");
   const [valueInUsd, setValueInUsd] = useState<number>(0.0);
   const [percentage, setPercentage] = useState<number>(0);
@@ -32,6 +33,9 @@ export const TransferCollateral = () => {
   const [marginAccountBalance, setMarginAccountBalance] = useState<number>(0);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+
+  const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
+  const isOverSourceBalance = Number(valueInput || 0) > sourceBalance;
 
   const getSelectedWalletBalance = async (address: string, tokenSymbol: string): Promise<number> => {
     try {
@@ -101,8 +105,8 @@ export const TransferCollateral = () => {
 
   const handlePercentageClick = (item: number) => {
     setPercentage(item);
-    // Calculate amount based on percentage of wallet balance
-    const calculatedAmount = (walletBalance * item) / 100;
+    const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
+    const calculatedAmount = (sourceBalance * item) / 100;
     setValueInput(calculatedAmount.toFixed(7));
     setValueInUsd(calculatedAmount * 1); // Placeholder for price conversion
   };
@@ -114,8 +118,9 @@ export const TransferCollateral = () => {
   };
 
   const handleMaxValueClick = () => {
-    setValueInput(walletBalance.toFixed(7));
-    setValueInUsd(walletBalance);
+    const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
+    setValueInput(sourceBalance.toFixed(7));
+    setValueInUsd(sourceBalance);
   };
 
   const handleTransferClick = async () => {
@@ -124,18 +129,31 @@ export const TransferCollateral = () => {
       return;
     }
 
+    if (Number(valueInput) > sourceBalance) {
+      toast.error("Insufficient balance for selected transfer mode");
+      return;
+    }
+
     setIsLoading(true);
     try {
       const amountWad = (BigInt(Math.floor(Number(valueInput) * 1000000)) * BigInt(1000000000000)).toString();
-      
-      const result = await MarginAccountService.depositCollateralTokens(
-        marginAccount,
-        normalizeContractTokenSymbol(selectedCurrency),
-        amountWad
-      );
+
+      const result = selectedTransferType === "MB"
+        ? await MarginAccountService.depositCollateralTokens(
+            marginAccount,
+            normalizeContractTokenSymbol(selectedCurrency),
+            amountWad
+          )
+        : await MarginAccountService.withdrawCollateralBalance(
+            marginAccount,
+            normalizeContractTokenSymbol(selectedCurrency),
+            amountWad
+          );
 
       if (result.success) {
-        toast.success(`Transfer successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
+        toast.success(
+          `${selectedTransferType === "MB" ? "Transfer to margin successful" : "Transfer to wallet successful"}! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`
+        );
         await refreshTokenBalances(userAddress, marginAccount);
         setValueInput("");
         setValueInUsd(0);
@@ -260,7 +278,7 @@ export const TransferCollateral = () => {
                   isDark ? "text-white" : "text-[#111111]"
                 }`}
               >
-                Margin Account
+                {selectedTransferType === "MB" ? "Margin Account" : "Wallet"}
               </span>
             </span>
             <motion.button
@@ -283,7 +301,7 @@ export const TransferCollateral = () => {
                 isDark ? "text-white" : "text-[#111111]"
               }`}
             >
-              {walletBalance.toFixed(2)} {selectedCurrency}
+              {(selectedTransferType === "MB" ? walletBalance : marginAccountBalance).toFixed(2)} {selectedCurrency}
             </span>
             <motion.p
               className={`text-sm font-medium ${
@@ -297,6 +315,36 @@ export const TransferCollateral = () => {
             >
               ≈ {valueInUsd} USD
             </motion.p>
+          </div>
+        </div>
+
+        {/* Row 4: WB/MB toggle */}
+        <div className="flex items-center justify-start">
+          <div className={`rounded-[10px] p-[3px] flex gap-[3px] ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
+            {["WB", "MB"].map((mode) => {
+              const active = selectedTransferType === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    setSelectedTransferType(mode as "WB" | "MB");
+                    setPercentage(0);
+                    setValueInput("");
+                    setValueInUsd(0);
+                  }}
+                  className={`px-3 py-1 rounded-[8px] text-[12px] font-semibold transition-all ${
+                    active
+                      ? "bg-[#703AE6] text-white"
+                      : isDark
+                        ? "text-[#A7A7A7] hover:text-white"
+                        : "text-[#777777] hover:text-[#333333]"
+                  }`}
+                >
+                  {mode}
+                </button>
+              );
+            })}
           </div>
         </div>
       </motion.article>
@@ -314,8 +362,8 @@ export const TransferCollateral = () => {
               value: `${valueInput || "0"} ${selectedCurrency}`,
             },
             {
-              title: "Margin Account Balance",
-              value: `${marginAccountBalance.toFixed(7)} ${selectedCurrency}`,
+              title: selectedTransferType === "MB" ? "Margin Account Balance" : "Wallet Balance",
+              value: `${(selectedTransferType === "MB" ? marginAccountBalance : walletBalance).toFixed(7)} ${selectedCurrency}`,
             },
           ]}
         />
@@ -332,14 +380,14 @@ export const TransferCollateral = () => {
           text={isLoading ? "Processing..." : "Transfer"}
           size="large"
           type="gradient"
-          disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount)}
+          disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount && !isOverSourceBalance)}
           onClick={handleTransferClick}
         />
         <Button
           text="Flash Close"
           size="large"
           type="ghost"
-          disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount)}
+          disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount && !isOverSourceBalance)}
           onClick={handleTransferClick}
         />
       </motion.section>

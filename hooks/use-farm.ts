@@ -110,6 +110,9 @@ export const useBlendEvents = (tokenSymbol?: string) => {
       const all = await BlendService.getBlendEvents(marginAccountAddress);
       return tokenSymbol ? all.filter((e) => e.tokenSymbol === tokenSymbol) : all;
     },
+    refetchInterval: marginAccountAddress ? 10_000 : false,
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
   });
 
   return {
@@ -256,6 +259,9 @@ export const useAquariusEvents = (poolAddress: string | null, marginAccountAddre
       if (!poolAddress || !marginAccountAddress) return [];
       return AquariusService.getAquariusEvents(poolAddress, marginAccountAddress);
     },
+    refetchInterval: poolAddress && marginAccountAddress ? 10_000 : false,
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
   });
 
   return {

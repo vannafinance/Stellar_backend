@@ -324,6 +324,7 @@ const CellContent = ({
   hasHover?: boolean;
 }) => {
   const hasPercentage = cell.percentage !== undefined;
+  const hasLink = Boolean(cell.link);
   const showValueBlock =
     cell.title || cell.titles || (showPieChart && hasPercentage) || (showProgressBar && hasPercentage);
 
@@ -425,25 +426,53 @@ const CellContent = ({
 
             {(!showProgressBar || cell.title || cell.titles) && (
               <div className={`w-fit h-fit flex flex-row items-baseline gap-1.5 lg:flex-col lg:items-start lg:gap-1`}>
-                <span className={`whitespace-nowrap text-[14px] font-medium flex items-center gap-1.5 ${
-                  isDark ? "text-white" : "text-[#111111]"
-                }`}>
-                  {cell.titles ? (
-                    cell.titles.join(" / ")
-                  ) : (
-                    cell.title ?? (hasPercentage ? `${cell.percentage}%` : "")
-                  )}
-                  {/* Status tags inline on mobile */}
-                  {statusTags.length > 0 && (
-                    <span className="lg:hidden flex items-center gap-1">
-                      {statusTags.map((tag, i) => (
-                        <span key={i} className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-[#703AE6] text-white">
-                          {tag}
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </span>
+                {hasLink ? (
+                  <a
+                    href={cell.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className={`whitespace-nowrap text-[14px] font-medium flex items-center gap-1.5 hover:underline ${
+                      isDark ? "text-white" : "text-[#111111]"
+                    }`}
+                  >
+                    {cell.titles ? (
+                      cell.titles.join(" / ")
+                    ) : (
+                      cell.title ?? (hasPercentage ? `${cell.percentage}%` : "")
+                    )}
+                    {/* Status tags inline on mobile */}
+                    {statusTags.length > 0 && (
+                      <span className="lg:hidden flex items-center gap-1">
+                        {statusTags.map((tag, i) => (
+                          <span key={i} className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-[#703AE6] text-white">
+                            {tag}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </a>
+                ) : (
+                  <span className={`whitespace-nowrap text-[14px] font-medium flex items-center gap-1.5 ${
+                    isDark ? "text-white" : "text-[#111111]"
+                  }`}>
+                    {cell.titles ? (
+                      cell.titles.join(" / ")
+                    ) : (
+                      cell.title ?? (hasPercentage ? `${cell.percentage}%` : "")
+                    )}
+                    {/* Status tags inline on mobile */}
+                    {statusTags.length > 0 && (
+                      <span className="lg:hidden flex items-center gap-1">
+                        {statusTags.map((tag, i) => (
+                          <span key={i} className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-[#703AE6] text-white">
+                            {tag}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                )}
                 {cell.description && (
                   <span className={`text-[12px] font-medium ${
                     isDark ? "text-[#777777]" : "text-[#A7A7A7]"
@@ -455,21 +484,42 @@ const CellContent = ({
             )}
 
             {cell.clickable && (
-              <button
-                type="button"
-                className="cursor-pointer w-[20px] h-[20px] flex flex-col justify-center items-center"
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path
-                    d="M9.29169 4.95838L0.625 4.95838M9.29169 4.95838L4.95829 0.625M9.29169 4.95838L4.95829 9.29162"
-                    stroke="#434C53"
-                    strokeOpacity="0.95"
-                    strokeWidth="1.25"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+              hasLink ? (
+                <a
+                  href={cell.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="cursor-pointer w-[20px] h-[20px] flex flex-col justify-center items-center"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path
+                      d="M9.29169 4.95838L0.625 4.95838M9.29169 4.95838L4.95829 0.625M9.29169 4.95838L4.95829 9.29162"
+                      stroke="#434C53"
+                      strokeOpacity="0.95"
+                      strokeWidth="1.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  className="cursor-pointer w-[20px] h-[20px] flex flex-col justify-center items-center"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path
+                      d="M9.29169 4.95838L0.625 4.95838M9.29169 4.95838L4.95829 0.625M9.29169 4.95838L4.95829 9.29162"
+                      stroke="#434C53"
+                      strokeOpacity="0.95"
+                      strokeWidth="1.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              )
             )}
           </div>
         </div>
@@ -613,9 +663,21 @@ const TableRow = memo(
                       </span>
                       <div className="flex items-baseline gap-1.5 flex-wrap justify-end">
                         {/* Main value */}
-                        <span className={`text-[13px] font-medium ${isDark ? "text-white" : "text-[#111111]"}`}>
-                          {cell.title || cell.value || (cell.percentage !== undefined ? `${cell.percentage}%` : "")}
-                        </span>
+                        {cell.link ? (
+                          <a
+                            href={cell.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className={`text-[13px] font-medium hover:underline ${isDark ? "text-white" : "text-[#111111]"}`}
+                          >
+                            {cell.title || cell.value || (cell.percentage !== undefined ? `${cell.percentage}%` : "")}
+                          </a>
+                        ) : (
+                          <span className={`text-[13px] font-medium ${isDark ? "text-white" : "text-[#111111]"}`}>
+                            {cell.title || cell.value || (cell.percentage !== undefined ? `${cell.percentage}%` : "")}
+                          </span>
+                        )}
                         {/* Sub value inline */}
                         {cell.description && (
                           <span className={`text-[11px] font-medium ${isDark ? "text-[#666666]" : "text-[#AAAAAA]"}`}>

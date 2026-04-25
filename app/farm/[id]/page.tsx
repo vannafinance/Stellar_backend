@@ -15,7 +15,6 @@ import { Form } from "@/components/farm/form";
 import { singleAssetTableBody } from "@/lib/constants/farm";
 import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
 import { SOROSWAP_POOLS } from "@/lib/soroswap-utils";
-import type { SoroswapLpEvent } from "@/lib/soroswap-utils";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { items } from "@/components/earn/details-tab";
 import { StatsCard } from "@/components/ui/stats-card";
@@ -38,6 +37,8 @@ import {
 } from "@/hooks/use-farm";
 import { useSoroswapPoolStats, useSoroswapLpPosition, useSoroswapEvents } from "@/hooks/use-soroswap";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useBlendStore } from "@/store/blend-store";
+import { buildFarmPoolKey, getFarmHistory } from "@/lib/farm-history";
 
 const UI_TABS = [
   { id: "all-transactions", label: "All Transactions" },
@@ -143,6 +144,7 @@ export default function FarmDetailPage() {
   const { positions: userPositions, isLoading: posLoading } = useUserBlendPositions();
   const { events, isLoading: eventsLoading } = useBlendEvents(tokenSymbol ?? undefined);
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
+  const refreshKey = useBlendStore((s) => s.refreshKey);
 
   // Real data hooks — Aquarius (multi-asset)
   const { stats: aqStats, isLoading: aqStatsLoading } = useAquariusPoolStats(aquariusPoolAddress);
@@ -156,6 +158,36 @@ export default function FarmDetailPage() {
   const { events: ssEvents } = useSoroswapEvents(ssStats?.pairAddress, marginAccountAddress);
   const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
   const ssTokenB = matchedSoroswapPool?.tokens[1] ?? 'USDC';
+
+  const blendLocalHistory = useMemo(
+    () =>
+      getFarmHistory({
+        protocol: "blend",
+        poolKey: buildFarmPoolKey(tokenSymbol ?? "XLM"),
+        marginAccountAddress,
+      }),
+    [tokenSymbol, marginAccountAddress, refreshKey]
+  );
+
+  const aquariusLocalHistory = useMemo(
+    () =>
+      getFarmHistory({
+        protocol: "aquarius",
+        poolKey: buildFarmPoolKey(matchedPool?.tokens[0] ?? "XLM", matchedPool?.tokens[1] ?? "USDC"),
+        marginAccountAddress,
+      }),
+    [matchedPool, marginAccountAddress, refreshKey]
+  );
+
+  const soroswapLocalHistory = useMemo(
+    () =>
+      getFarmHistory({
+        protocol: "soroswap",
+        poolKey: buildFarmPoolKey(ssTokenA, ssTokenB),
+        marginAccountAddress,
+      }),
+    [ssTokenA, ssTokenB, marginAccountAddress, refreshKey]
+  );
 
   const reserveData = tokenSymbol ? poolStats[tokenSymbol] : null;
 
@@ -193,20 +225,44 @@ export default function FarmDetailPage() {
   }, [tokenSymbol, myPosition, myBTokens, reserveData]);
 
   // Position History table from blockchain events
+  const mergedBlendHistory = useMemo(() => {
+    const normalizedOnchain = events.map((ev) => ({
+      timestamp: ev.timestamp ?? 0,
+      action: ev.type === "supply" ? "add" : "remove",
+      amountDisplay: `${ev.underlyingAmount} ${ev.tokenSymbol}`,
+      txHash: ev.txHash ?? "",
+    }));
+
+    const onchainHashes = new Set(
+      normalizedOnchain.map((item) => item.txHash).filter((hash) => Boolean(hash))
+    );
+
+    const normalizedLocal = blendLocalHistory
+      .filter((item) => !item.txHash || !onchainHashes.has(item.txHash))
+      .map((item) => ({
+        timestamp: item.timestamp,
+        action: item.action,
+        amountDisplay: item.amountDisplay,
+        txHash: item.txHash,
+      }));
+
+    return [...normalizedOnchain, ...normalizedLocal].sort((a, b) => b.timestamp - a.timestamp);
+  }, [events, blendLocalHistory]);
+
   const positionHistoryBody = useMemo(() => {
-    if (events.length === 0) return { rows: [] };
+    if (mergedBlendHistory.length === 0) return { rows: [] };
     return {
-      rows: events.map((ev) => ({
+      rows: mergedBlendHistory.map((ev) => ({
         cell: [
           {
             title: ev.timestamp ? new Date(ev.timestamp).toLocaleDateString() : '—',
             description: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '',
           },
           {
-            title: ev.type === 'supply' ? 'Supply' : 'Withdraw',
-            badge: ev.type === 'supply' ? 'green' : 'orange',
+            title: ev.action === 'add' ? 'Supply' : 'Withdraw',
+            badge: ev.action === 'add' ? 'green' : 'orange',
           },
-          { title: `${ev.underlyingAmount} ${ev.tokenSymbol}` },
+          { title: ev.amountDisplay },
           { title: 'Success', badge: 'green' },
           ev.txHash
             ? {
@@ -218,7 +274,7 @@ export default function FarmDetailPage() {
         ],
       })),
     };
-  }, [events]);
+  }, [mergedBlendHistory]);
 
   // Analytics stats cards
   const analyticsItems = useMemo(() => {
@@ -298,20 +354,44 @@ export default function FarmDetailPage() {
   }, [myLpBalance, aqStats]);
 
   // Aquarius position history table
+  const mergedAquariusHistory = useMemo(() => {
+    const normalizedOnchain = aqEvents.map((ev) => ({
+      timestamp: ev.timestamp ?? 0,
+      action: ev.type === "deposit" ? "add" : "remove",
+      amountDisplay: `${ev.shareAmount} LP`,
+      txHash: ev.txHash ?? "",
+    }));
+
+    const onchainHashes = new Set(
+      normalizedOnchain.map((item) => item.txHash).filter((hash) => Boolean(hash))
+    );
+
+    const normalizedLocal = aquariusLocalHistory
+      .filter((item) => !item.txHash || !onchainHashes.has(item.txHash))
+      .map((item) => ({
+        timestamp: item.timestamp,
+        action: item.action,
+        amountDisplay: item.amountDisplay,
+        txHash: item.txHash,
+      }));
+
+    return [...normalizedOnchain, ...normalizedLocal].sort((a, b) => b.timestamp - a.timestamp);
+  }, [aqEvents, aquariusLocalHistory]);
+
   const aquariusHistoryBody = useMemo(() => {
-    if (aqEvents.length === 0) return { rows: [] };
+    if (mergedAquariusHistory.length === 0) return { rows: [] };
     return {
-      rows: aqEvents.map((ev) => ({
+      rows: mergedAquariusHistory.map((ev) => ({
         cell: [
           {
             title: ev.timestamp ? new Date(ev.timestamp).toLocaleDateString() : '—',
             description: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '',
           },
           {
-            title: ev.type === 'deposit' ? 'Add Liquidity' : 'Remove Liquidity',
-            badge: ev.type === 'deposit' ? 'green' : 'orange',
+            title: ev.action === 'add' ? 'Add Liquidity' : 'Remove Liquidity',
+            badge: ev.action === 'add' ? 'green' : 'orange',
           },
-          { title: `${ev.shareAmount} LP` },
+          { title: ev.amountDisplay },
           { title: 'Success', badge: 'green' },
           ev.txHash
             ? {
@@ -323,7 +403,7 @@ export default function FarmDetailPage() {
         ],
       })),
     };
-  }, [aqEvents]);
+  }, [mergedAquariusHistory]);
 
   // Aquarius analytics cards
   const aquariusAnalyticsItems = useMemo(() => [
@@ -367,20 +447,44 @@ export default function FarmDetailPage() {
   );
 
   // Soroswap position history table
+  const mergedSoroswapHistory = useMemo(() => {
+    const normalizedOnchain = ssEvents.map((ev) => ({
+      timestamp: ev.timestamp ?? 0,
+      action: ev.type === "deposit" ? "add" : "remove",
+      amountDisplay: `${ev.shareAmount} LP`,
+      txHash: ev.txHash ?? "",
+    }));
+
+    const onchainHashes = new Set(
+      normalizedOnchain.map((item) => item.txHash).filter((hash) => Boolean(hash))
+    );
+
+    const normalizedLocal = soroswapLocalHistory
+      .filter((item) => !item.txHash || !onchainHashes.has(item.txHash))
+      .map((item) => ({
+        timestamp: item.timestamp,
+        action: item.action,
+        amountDisplay: item.amountDisplay,
+        txHash: item.txHash,
+      }));
+
+    return [...normalizedOnchain, ...normalizedLocal].sort((a, b) => b.timestamp - a.timestamp);
+  }, [ssEvents, soroswapLocalHistory]);
+
   const soroswapHistoryBody = useMemo(() => {
-    if (ssEvents.length === 0) return { rows: [] };
+    if (mergedSoroswapHistory.length === 0) return { rows: [] };
     return {
-      rows: ssEvents.map((ev: SoroswapLpEvent) => ({
+      rows: mergedSoroswapHistory.map((ev) => ({
         cell: [
           {
             title: ev.timestamp ? new Date(ev.timestamp).toLocaleDateString() : '—',
             description: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '',
           },
           {
-            title: ev.type === 'deposit' ? 'Add Liquidity' : 'Remove Liquidity',
-            badge: ev.type === 'deposit' ? 'green' : 'orange',
+            title: ev.action === 'add' ? 'Add Liquidity' : 'Remove Liquidity',
+            badge: ev.action === 'add' ? 'green' : 'orange',
           },
-          { title: `${ev.shareAmount} LP` },
+          { title: ev.amountDisplay },
           { title: 'Success', badge: 'green' },
           ev.txHash
             ? {
@@ -392,7 +496,7 @@ export default function FarmDetailPage() {
         ],
       })),
     };
-  }, [ssEvents]);
+  }, [mergedSoroswapHistory]);
 
   // Soroswap position table headings
   const soroswapPositionHeadings = useMemo(() => [

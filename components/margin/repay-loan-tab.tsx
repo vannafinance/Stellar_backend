@@ -9,11 +9,14 @@ import { Dropdown } from "../ui/dropdown";
 import { Popup } from "@/components/ui/popup";
 import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
+import { appendMarginHistory } from "@/lib/margin-history";
 import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
+import { refreshBorrowedBalances as refreshMarginStoreBorrowedBalances } from "@/store/margin-account-info-store";
 import toast from "react-hot-toast";
 
 const REPAY_DUST_EPSILON = 1e-6;
+const WAD = BigInt("1000000000000000000");
 
 export const RepayLoanTab = () => {
   const { isDark } = useTheme();
@@ -52,6 +55,13 @@ export const RepayLoanTab = () => {
   const clampRepayDust = (value: number) => {
     if (!Number.isFinite(value)) return 0;
     return Math.abs(value) < REPAY_DUST_EPSILON ? 0 : value;
+  };
+
+  const wadToFixed7 = (wad: bigint) => {
+    const whole = wad / WAD;
+    const frac = wad % WAD;
+    const frac7 = (frac / BigInt("100000000000")).toString().padStart(7, "0");
+    return `${whole.toString()}.${frac7}`;
   };
 
   const formatStatValue = (value: number, key: string) => {
@@ -103,7 +113,7 @@ export const RepayLoanTab = () => {
             setMarginAccount(account.address);
             
             // Get borrowed balances
-            await refreshBorrowedBalances(account.address);
+            await refreshSelectedTokenDebt(account.address);
 
             // Get selected token wallet balance
             await refreshSelectedWalletBalance(address.address, selectedRepayCurrency);
@@ -118,7 +128,7 @@ export const RepayLoanTab = () => {
   }, []);
 
   // Refresh borrowed balances for selected currency
-  const refreshBorrowedBalances = async (marginAccountAddress: string) => {
+  const refreshSelectedTokenDebt = async (marginAccountAddress: string) => {
     try {
       const debtResult = await MarginAccountService.getBorrowedTokenDebtWad(
         marginAccountAddress,
@@ -147,7 +157,7 @@ export const RepayLoanTab = () => {
   // Refresh when currency changes
   useEffect(() => {
     if (marginAccount) {
-      refreshBorrowedBalances(marginAccount);
+      refreshSelectedTokenDebt(marginAccount);
     }
   }, [selectedRepayCurrency, marginAccount]);
 
@@ -211,15 +221,25 @@ export const RepayLoanTab = () => {
       );
 
       if (result.success) {
+        if (result.hash) {
+          appendMarginHistory({
+            marginAccountAddress: marginAccount,
+            type: "repay",
+            asset: normalizeContractTokenSymbol(selectedRepayCurrency),
+            amount: wadToFixed7(finalRepayWad),
+            hash: result.hash,
+          });
+        }
         toast.success(`Loan repayment successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
-        await refreshBorrowedBalances(marginAccount);
+        await refreshSelectedTokenDebt(marginAccount);
+        await refreshMarginStoreBorrowedBalances(marginAccount, true);
         await refreshSelectedWalletBalance(userAddress, selectedRepayCurrency);
         setRepayAmount(0);
       } else {
         toast.error(result.error || 'Loan repayment failed');
       }
-    } catch (error: any) {
-      toast.error(error?.message || 'Repay failed');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Repay failed');
     } finally {
       setIsLoading(false);
       setIsPayNowPopupOpen(false);

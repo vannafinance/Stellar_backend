@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useBlendPoolStats } from "@/hooks/use-farm";
 import { useBlendStore } from "@/store/blend-store";
+import { appendFarmHistory, buildFarmPoolKey } from "@/lib/farm-history";
 import toast from "react-hot-toast";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
@@ -89,6 +90,8 @@ export const AddLiquidity = memo(function AddLiquidity() {
   // Current Blend supply balance for the selected token
   const [blendBalance, setBlendBalance] = useState<string>("0");
   const [loadingBlendBalance, setLoadingBlendBalance] = useState(false);
+  const [marginTokenBalance, setMarginTokenBalance] = useState<string>("0");
+  const [loadingMarginTokenBalance, setLoadingMarginTokenBalance] = useState(false);
   const [marginXlmBalance, setMarginXlmBalance] = useState<string>("0");
   const [marginUsdcBalance, setMarginUsdcBalance] = useState<string>("0");
   const [loadingMarginBalances, setLoadingMarginBalances] = useState(false);
@@ -239,6 +242,19 @@ export const AddLiquidity = memo(function AddLiquidity() {
       .finally(() => setLoadingBlendBalance(false));
   }, [marginAccountAddress, selectedToken]);
 
+  useEffect(() => {
+    if (!marginAccountAddress) {
+      setMarginTokenBalance("0");
+      return;
+    }
+
+    setLoadingMarginTokenBalance(true);
+    BlendService.getMarginAccountTokenBalance(marginAccountAddress, selectedToken)
+      .then((balance) => setMarginTokenBalance(balance))
+      .catch(() => setMarginTokenBalance("0"))
+      .finally(() => setLoadingMarginTokenBalance(false));
+  }, [marginAccountAddress, selectedToken]);
+
 
   const handleMaxClick = () => {
     setValue(availableToDeployStr);
@@ -283,6 +299,14 @@ export const AddLiquidity = memo(function AddLiquidity() {
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
+      appendFarmHistory({
+        protocol: isSoroswapPool ? "soroswap" : "aquarius",
+        poolKey: buildFarmPoolKey(tokenA, tokenB),
+        marginAccountAddress,
+        action: "add",
+        amountDisplay: `${amtA.toFixed(4)} ${tokenA} + ${amtB.toFixed(4)} ${tokenB}`,
+        txHash: result.hash ?? "",
+      });
       toast.success(`Liquidity added! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       const nextXlm = Math.max(0, parseFloat(marginXlmBalance || "0") - amtA);
       const nextUsdc = Math.max(0, parseFloat(marginUsdcBalance || "0") - amtB);
@@ -331,6 +355,14 @@ export const AddLiquidity = memo(function AddLiquidity() {
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
+      appendFarmHistory({
+        protocol: "blend",
+        poolKey: buildFarmPoolKey(selectedToken),
+        marginAccountAddress,
+        action: "add",
+        amountDisplay: `${amount.toFixed(4)} ${selectedToken}`,
+        txHash: result.hash ?? "",
+      });
       toast.success(`Deposit successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       setValue("");
       refreshBorrowedBalances(marginAccountAddress);
@@ -354,10 +386,8 @@ export const AddLiquidity = memo(function AddLiquidity() {
   const iconPath = poolAsset?.iconPath ?? iconPaths[selectedToken] ?? "/icons/stellar.svg";
 
   const isInputValid = parseFloat(value) > 0 && !isNaN(parseFloat(value));
-  const totalBorrowed = parseFloat(borrowedBalances[selectedToken]?.amount ?? "0");
   const blendDeployed = parseFloat(blendBalance);
-  // Available to deploy = borrowed funds not yet sent to any protocol
-  const availableToDeployNum = Math.max(0, totalBorrowed - blendDeployed);
+  const availableToDeployNum = parseFloat(marginTokenBalance || "0");
   const availableToDeployStr = availableToDeployNum.toFixed(7);
   const isOverBalance = parseFloat(value) > availableToDeployNum;
   const isSubmitDisabled =
@@ -595,7 +625,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
             className={`text-[11px] font-medium underline cursor-pointer shrink-0 ${isDark ? "text-[#555555]" : "text-[#AAAAAA]"}`}
             onClick={handleMaxClick}
           >
-            Balance: {tokenBalance.toLocaleString()} {token}
+            Balance: {loadingMarginTokenBalance ? "..." : tokenBalance.toLocaleString()} {token}
           </span>
         </div>
       </div>

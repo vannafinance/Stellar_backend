@@ -1056,6 +1056,135 @@ export class MarginAccountService {
   }
 
   /**
+   * Withdraw collateral tokens from margin account back to trader wallet
+   */
+  static async withdrawCollateralBalance(
+    marginAccountAddress: string,
+    tokenSymbol: string,
+    amountWad: string
+  ): Promise<{ success: boolean; hash?: string; error?: string }> {
+    try {
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      console.log('🏦 Withdrawing collateral tokens:', { marginAccountAddress, tokenSymbol: contractTokenSymbol, amountWad });
+
+      // Pre-flight checks
+      console.log('🔍 Running pre-flight checks...');
+      
+      // Check: Is collateral allowed for this token?
+      const isCollateralAllowed = await this.isCollateralAllowed(contractTokenSymbol);
+      if (!isCollateralAllowed) {
+        return {
+          success: false,
+          error: `${contractTokenSymbol} is not allowed as collateral. Please ask the contract admin to enable this token first.`
+        };
+      }
+
+      const userAddress = await getAddress();
+      if (userAddress.error) {
+        return {
+          success: false,
+          error: 'Failed to get user address'
+        };
+      }
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(userAddress.address);
+      const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.ACCOUNT_MANAGER);
+
+      // Use 50x base fee - higher fee for complex operation
+      console.log('🔍 Building withdraw-collateral transaction...');
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: (parseInt(StellarSdk.BASE_FEE) * 50).toString(),
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          contract.call(
+            'withdraw_collateral_balance',
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' }),
+            StellarSdk.nativeToScVal(amountWad, { type: 'u256' })
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      console.log('🔍 Simulating withdraw-collateral transaction...');
+      const simulationResult = await server.simulateTransaction(transaction);
+
+      // Check if simulation failed with budget error - this is expected for complex operations
+      if ('error' in simulationResult && simulationResult.error) {
+        const simulationText = JSON.stringify(simulationResult.error);
+        const isBudgetLikeError =
+          simulationText.includes('Budget') ||
+          simulationText.includes('ExceededLimit') ||
+          simulationText.includes('resources') ||
+          simulationText.includes('resource');
+
+        if (!isBudgetLikeError) {
+          // Not a budget error - this is a real contract error
+          return {
+            success: false,
+            error: `Contract error: ${simulationResult.error}`
+          };
+        }
+
+        // Budget-like error is expected for complex withdrawals - attempt to prepare anyway
+        console.warn('⚠️ Withdraw simulation returned budget-like error; attempting transaction preparation anyway (this is normal for complex operations).');
+      }
+
+      console.log('🔍 Preparing withdraw-collateral transaction...');
+      let preparedTx: StellarSdk.Transaction;
+      try {
+        preparedTx = await server.prepareTransaction(transaction);
+      } catch (prepareError: any) {
+        // Prepare also failed - this is also somewhat normal for budget-constrained operations
+        console.warn('⚠️ Prepare transaction also encountered issues, but will attempt to send anyway');
+        // Just use the original transaction envelope
+        preparedTx = transaction;
+      }
+
+      const signResult = await signTransaction(preparedTx.toXDR(), {
+        networkPassphrase: NETWORK_PASSPHRASE,
+      });
+
+      const signedTx = StellarSdk.TransactionBuilder.fromXDR(
+        signResult.signedTxXdr,
+        NETWORK_PASSPHRASE
+      );
+
+      console.log('📤 Sending withdraw-collateral transaction...');
+      const result = await server.sendTransaction(signedTx as StellarSdk.Transaction);
+
+      if (result.status === 'PENDING') {
+        console.log('Withdraw transaction pending, polling for completion...');
+        const finalResult = await this.pollTransactionStatus(server, result.hash);
+        if (finalResult.status === 'SUCCESS') {
+          console.log('✅ Withdraw collateral transaction successful');
+          return {
+            success: true,
+            hash: result.hash
+          };
+        }
+        return {
+          success: false,
+          error: `Withdraw collateral failed with status: ${finalResult.status}`
+        };
+      }
+
+      return {
+        success: false,
+        error: `Withdraw collateral failed immediately with status: ${result.status}`
+      };
+    } catch (error: any) {
+      console.error('❌ Error withdrawing collateral tokens:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to withdraw collateral tokens'
+      };
+    }
+  }
+
+  /**
    * Borrow tokens from lending pool to margin account - SIMPLIFIED VERSION
    */
   static async borrowTokens(

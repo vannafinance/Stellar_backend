@@ -659,11 +659,21 @@ export class AquariusService {
 
       const parseEv = (ev: any, type: 'deposit' | 'withdraw'): AquariusLpEvent | null => {
         try {
-          if (userAddress && Array.isArray(ev.topic) && ev.topic[1]) {
-            try {
-              const depositor = StellarSdk.scValToNative(ev.topic[1]) as string;
-              if (depositor !== userAddress) return null;
-            } catch { /* if topics[1] isn't an address, fall through and keep event */ }
+          if (userAddress && Array.isArray(ev.topic)) {
+            // Topic index for depositor can vary by contract/version.
+            // Keep events if no decodable address topics are present, otherwise require a match.
+            const topicAddresses = ev.topic
+              .map((t: any) => {
+                try {
+                  return StellarSdk.scValToNative(t) as string;
+                } catch {
+                  return null;
+                }
+              })
+              .filter((v: string | null): v is string => typeof v === 'string' && v.length > 0);
+            if (topicAddresses.length > 0 && !topicAddresses.includes(userAddress)) {
+              return null;
+            }
           }
           // body: [share_amount, amountA, amountB]
           const body = ev.value ? (StellarSdk.scValToNative(ev.value) as any[]) : null;

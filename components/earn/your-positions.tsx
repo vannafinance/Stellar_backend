@@ -4,10 +4,11 @@ import { useState, useMemo, memo } from "react";
 import { Chart } from "./chart";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
-import { usePoolData, useUserPositions } from "@/hooks/use-earn";
+import { usePoolData, useUserPositions, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
 import { depositData } from "@/lib/constants/earn";
+import { getEarnHistoryByAsset } from "@/lib/earn-history";
 
 const tabs = [
   { id: "current-positions", label: "Current Position" },
@@ -26,6 +27,14 @@ const toDisplayAsset = (value: string) => {
   if (value === "SOROSWAP_USDC") return "SoUSDC";
   if (value === "USDC") return "BLUSDC";
   return value;
+};
+
+type EarnTxLike = {
+  asset?: string;
+  type?: string;
+  amount?: string | number;
+  timestamp?: string | number;
+  hash?: string;
 };
 
 // Scale a template series so its last point equals liveEndValue; empty array when value=0.
@@ -63,15 +72,11 @@ export const YourPositions = memo(function YourPositions() {
 
   const { pools } = usePoolData();
   const { positions } = useUserPositions();
+  const { transactions } = useEarnTransactions();
 
   const supplyAPY = useMemo(() => {
     const pool = pools[assetKey as keyof typeof pools];
     return parseFloat(pool?.supplyAPY || '0');
-  }, [pools, assetKey]);
-
-  const exchangeRate = useMemo(() => {
-    const pool = pools[assetKey as keyof typeof pools];
-    return parseFloat(pool?.exchangeRate || '1');
   }, [pools, assetKey]);
 
   const userPosition = positions[assetKey as keyof typeof positions];
@@ -115,6 +120,74 @@ export const YourPositions = memo(function YourPositions() {
       }
     : { rows: [] };
 
+  const historyTableHeadings = [
+    { label: "Date", id: "date" },
+    { label: "Type", id: "type" },
+    { label: "Amount", id: "amount" },
+    { label: "Status", id: "status" },
+    { label: "Tx Hash", id: "txHash" },
+  ];
+
+  const mergedHistory = useMemo(() => {
+    const normalize = (value: string) => toInternalAsset(value);
+
+    const onchain = (transactions ?? [])
+      .filter((tx: EarnTxLike) => normalize(tx.asset || "") === normalize(assetKey))
+      .map((tx: EarnTxLike) => ({
+        timestamp: Number(tx.timestamp ?? 0),
+        type: tx.type === "withdraw" ? "withdraw" : "supply",
+        amount: String(tx.amount ?? "0"),
+        hash: String(tx.hash ?? ""),
+        status: "success",
+      }));
+
+    const onchainHashes = new Set(onchain.map((tx) => tx.hash).filter(Boolean));
+    const local = getEarnHistoryByAsset(assetKey)
+      .filter((tx) => !tx.hash || !onchainHashes.has(tx.hash))
+      .map((tx) => ({
+        timestamp: tx.timestamp,
+        type: tx.type,
+        amount: tx.amount,
+        hash: tx.hash,
+        status: tx.status,
+      }));
+
+    return [...onchain, ...local].sort((a, b) => b.timestamp - a.timestamp);
+  }, [transactions, assetKey]);
+
+  const historyTableBody = useMemo(() => {
+    if (mergedHistory.length === 0) return { rows: [] };
+    return {
+      rows: mergedHistory.map((tx) => ({
+        cell: [
+          {
+            title: tx.timestamp ? new Date(tx.timestamp).toLocaleDateString() : "—",
+            description: tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString() : "",
+          },
+          {
+            title: tx.type === "supply" ? "Supply" : "Withdraw",
+            badge: tx.type === "supply" ? "green" : "orange",
+          },
+          {
+            icon: iconPaths[asset] || "/icons/stellar.svg",
+            title: `${tx.amount} ${asset}`,
+            description: `$${((parseFloat(tx.amount) || 0) * price).toFixed(2)}`,
+          },
+          { title: "Success", badge: "green" },
+          tx.hash
+            ? {
+                title: `${tx.hash.slice(0, 8)}...${tx.hash.slice(-4)}`,
+                clickable: "link",
+                link: `https://stellar.expert/explorer/testnet/tx/${tx.hash}`,
+              }
+            : { title: "—" },
+        ],
+      })),
+    };
+  }, [mergedHistory, asset, price]);
+
+  const hasAnyHistory = mergedHistory.length > 0;
+
   return (
     <section
       className={`w-full h-full flex flex-col gap-[16px] rounded-[16px] border-[1px] p-[16px] ${
@@ -135,7 +208,7 @@ export const YourPositions = memo(function YourPositions() {
 
       {/* Position table or empty state */}
       <article aria-label="My Position">
-        {!hasPosition ? (
+        {!hasPosition && !hasAnyHistory ? (
           <div className={`w-full rounded-2xl border p-6 flex flex-col items-center justify-center gap-4 text-center ${
             isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
           }`}>
@@ -188,8 +261,8 @@ export const YourPositions = memo(function YourPositions() {
             }}
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            tableHeadings={activeTab === "current-positions" ? positionTableHeadings : []}
-            tableBody={activeTab === "current-positions" ? positionTableBody : { rows: [] }}
+            tableHeadings={activeTab === "current-positions" ? positionTableHeadings : historyTableHeadings}
+            tableBody={activeTab === "current-positions" ? positionTableBody : historyTableBody}
             tableBodyBackground={isDark ? "bg-[#111111]" : "bg-white"}
             filters={{ customizeDropdown: true, filters: ["All"] }}
           />

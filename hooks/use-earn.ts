@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { WalletService, ContractService, AssetType, ASSET_TYPES } from '@/lib/stellar-utils';
 import { useUserStore } from '@/store/user';
 import { useEarnPoolStore, addTransaction } from '@/store/earn-pool-store';
+import { appendEarnHistory } from '@/lib/earn-history';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pool data
@@ -273,6 +274,13 @@ export const useSupplyLiquidity = () => {
 
         if (result.hash) {
           addTransaction('supply', assetType, amount.toString(), result.hash, 'success');
+          appendEarnHistory({
+            asset: assetType,
+            type: 'supply',
+            amount: amount.toString(),
+            hash: result.hash,
+            status: 'success',
+          });
         }
 
         await refreshAllBalances();
@@ -390,6 +398,13 @@ export const useWithdrawLiquidity = () => {
 
         if (result.hash) {
           addTransaction('withdraw', assetType, amount.toString(), result.hash, 'success');
+          appendEarnHistory({
+            asset: assetType,
+            type: 'withdraw',
+            amount: amount.toString(),
+            hash: result.hash,
+            status: 'success',
+          });
         }
 
         await refreshAllBalances();
@@ -437,6 +452,7 @@ export const useEarnTransactions = () => {
     },
     staleTime: 30_000,
     gcTime: 5 * 60_000,
+    refetchInterval: address && isConnected ? 10_000 : false,
     refetchOnWindowFocus: true,
   });
 

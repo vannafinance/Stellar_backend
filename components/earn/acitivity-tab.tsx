@@ -6,6 +6,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { usePoolData, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
+import { getEarnHistoryByAsset } from "@/lib/earn-history";
 
 type EarnTx = {
   type: 'supply' | 'withdraw';
@@ -13,7 +14,7 @@ type EarnTx = {
   amount: string;
   timestamp: number;
   hash: string;
-  status: 'success';
+  status?: 'success' | 'pending' | 'failed';
 };
 
 const distributionHeadings = [
@@ -55,6 +56,7 @@ const DISPLAY_SYMBOL: Record<string, string> = {
 const toInternalAsset = (value: string): string => {
   if (value === "AqUSDC" || value === "AQUARIUS_USDC") return "AQUARIUS_USDC";
   if (value === "SoUSDC" || value === "SOROSWAP_USDC") return "SOROSWAP_USDC";
+  if (value === "BLEND_USDC") return "USDC";
   if (value === "BLUSDC") return "USDC";
   return value.toUpperCase();
 };
@@ -70,6 +72,35 @@ export const ActivityTab = () => {
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const assetKey = toInternalAsset(selectedAsset);
   const displaySymbol = DISPLAY_SYMBOL[assetKey] ?? assetKey;
+
+  const filteredTransactions = useMemo(() => {
+    const normalizeAsset = (value: string) => toInternalAsset(value || "");
+
+    const onchain = (recentTransactions ?? [])
+      .filter((tx: EarnTx) => normalizeAsset(tx.asset) === assetKey)
+      .map((tx: EarnTx) => ({
+        type: tx.type === "withdraw" ? "withdraw" : "supply",
+        asset: assetKey,
+        amount: String(tx.amount ?? "0"),
+        timestamp: Number(tx.timestamp ?? 0),
+        hash: String(tx.hash ?? ""),
+        status: tx.status ?? "success",
+      }));
+
+    const onchainHashes = new Set(onchain.map((tx) => tx.hash).filter(Boolean));
+    const local = getEarnHistoryByAsset(assetKey)
+      .filter((tx) => !tx.hash || !onchainHashes.has(tx.hash))
+      .map((tx) => ({
+        type: tx.type,
+        asset: assetKey,
+        amount: tx.amount,
+        timestamp: tx.timestamp,
+        hash: tx.hash,
+        status: tx.status,
+      }));
+
+    return [...onchain, ...local].sort((a, b) => b.timestamp - a.timestamp);
+  }, [recentTransactions, assetKey]);
 
   // Pool distribution for the currently viewed pool
   const userDistributionBody = useMemo(() => {
@@ -101,7 +132,7 @@ export const ActivityTab = () => {
 
   // Format transactions for table
   const txTableBody = useMemo(() => {
-    if (recentTransactions.length === 0) {
+    if (filteredTransactions.length === 0) {
       return {
         rows: [
           {
@@ -118,7 +149,7 @@ export const ActivityTab = () => {
     }
 
     return {
-      rows: recentTransactions.map((tx: EarnTx) => ({
+      rows: filteredTransactions.map((tx) => ({
         cell: [
           {
             title: new Date(tx.timestamp).toLocaleDateString(),
@@ -129,23 +160,23 @@ export const ActivityTab = () => {
             badge: tx.type === 'supply' ? 'green' : 'orange',
           },
           {
-            icon: iconPaths[tx.asset] || `/icons/usdc-icon.svg`,
-            title: `${tx.amount} ${DISPLAY_SYMBOL[tx.asset] ?? tx.asset}`,
-            description: `$${(parseFloat(tx.amount) * (TOKEN_PRICES[tx.asset] ?? 1)).toFixed(2)}`,
+            icon: iconPaths[DISPLAY_SYMBOL[assetKey] ?? assetKey] || iconPaths[assetKey] || `/icons/usdc-icon.svg`,
+            title: `${tx.amount} ${DISPLAY_SYMBOL[assetKey] ?? assetKey}`,
+            description: `$${(parseFloat(tx.amount) * (TOKEN_PRICES[assetKey] ?? 1)).toFixed(2)}`,
           },
           {
-            title: tx.status,
-            badge: tx.status === 'success' ? 'green' : tx.status === 'pending' ? 'yellow' : 'red',
+            title: tx.status ?? 'success',
+            badge: (tx.status ?? 'success') === 'success' ? 'green' : (tx.status ?? 'success') === 'pending' ? 'yellow' : 'red',
           },
           {
-            title: `${tx.hash.slice(0, 8)}...${tx.hash.slice(-4)}`,
-            clickable: "link",
-            link: `https://stellar.expert/explorer/testnet/tx/${tx.hash}`,
+            title: tx.hash ? `${tx.hash.slice(0, 8)}...${tx.hash.slice(-4)}` : "—",
+            clickable: tx.hash ? "link" : undefined,
+            link: tx.hash ? `https://stellar.expert/explorer/testnet/tx/${tx.hash}` : undefined,
           },
         ],
       })),
     };
-  }, [recentTransactions]);
+  }, [filteredTransactions, assetKey]);
 
   return (
     <section
@@ -172,7 +203,7 @@ export const ActivityTab = () => {
             Recent Transactions
           </h3>
           <span className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-            {recentTransactions.length} transactions
+            {filteredTransactions.length} transactions
           </span>
         </div>
         <Table

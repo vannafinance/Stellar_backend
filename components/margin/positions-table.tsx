@@ -15,6 +15,15 @@ interface PositionstableProps {
 }
 
 const ITEMS_PER_PAGE = 5;
+const BORROW_DUST_EPSILON = 1e-6;
+
+const canonicalToken = (token: string): string => {
+  const normalized = token.toUpperCase();
+  if (normalized === 'BLEND_USDC' || normalized === 'USDC') return 'BLUSDC';
+  if (normalized === 'AQUIRESUSDC' || normalized === 'AQUARIUS_USDC') return 'AQUSDC';
+  if (normalized === 'SOROSWAPUSDC' || normalized === 'SOROSWAP_USDC') return 'SOUSDC';
+  return normalized;
+};
 
 const getTokenIcon = (asset: string): string => {
   return (
@@ -57,13 +66,28 @@ export const Positionstable = ({
     if (collateralEntries.length === 0) return [];
 
     const borrowedEntries = Object.entries(borrowedBalances) as [string, BorrowedBalance][];
+    const dedupedBorrowed = new Map<string, { token: string; balance: BorrowedBalance }>();
 
-    const totalBorrowUsd = borrowedEntries.reduce(
+    for (const [token, bal] of borrowedEntries) {
+      const amount = parseFloat(bal.amount || '0');
+      if (!(amount > BORROW_DUST_EPSILON)) continue;
+
+      const canonical = canonicalToken(token);
+      const existing = dedupedBorrowed.get(canonical);
+      if (!existing || amount > parseFloat(existing.balance.amount || '0')) {
+        dedupedBorrowed.set(canonical, { token, balance: bal });
+      }
+    }
+
+    const borrowedEntriesClean: [string, BorrowedBalance][] = Array.from(dedupedBorrowed.values()).map(
+      ({ token, balance }) => [token, balance]
+    );
+
+    const totalBorrowUsd = borrowedEntriesClean.reduce(
       (sum: number, [, bal]: [string, BorrowedBalance]) => sum + parseFloat(bal.usdValue || '0'), 0
     );
 
-    const borrowedArray: Position['borrowed'] = borrowedEntries
-      .filter(([, bal]) => parseFloat(bal.amount) > 0)
+    const borrowedArray: Position['borrowed'] = borrowedEntriesClean
       .map(([token, bal]) => ({
         assetData: { asset: token, amount: parseFloat(bal.amount).toFixed(4) },
         percentage: totalBorrowUsd > 0
@@ -78,16 +102,24 @@ export const Positionstable = ({
         ? parseFloat((totalCollateralValue / equity).toFixed(2))
         : 1;
 
-    return collateralEntries.map(([token, bal], idx) => ({
-      positionId: idx + 1,
-      collateral: { asset: token, amount: parseFloat(bal.amount).toFixed(4) },
-      collateralUsdValue: parseFloat(bal.usdValue),
-      borrowed: borrowedArray,
-      leverage,
-      interestAccrued: 0,
-      isOpen: true,
-      user: '',
-    }));
+    return collateralEntries.map(([token, bal], idx) => {
+      const collateralCanonical = canonicalToken(token);
+      const positionBorrowed = borrowedArray.filter(
+        (b) => canonicalToken(b.assetData.asset) === collateralCanonical
+      );
+      const hasDebt = positionBorrowed.length > 0;
+
+      return {
+        positionId: idx + 1,
+        collateral: { asset: token, amount: parseFloat(bal.amount).toFixed(4) },
+        collateralUsdValue: parseFloat(bal.usdValue),
+        borrowed: positionBorrowed,
+        leverage,
+        interestAccrued: 0,
+        isOpen: hasDebt,
+        user: '',
+      };
+    });
   }, [collateralBalances, borrowedBalances, totalCollateralValue, totalBorrowedValue]);
 
   const { history } = useMarginHistory();
@@ -99,9 +131,9 @@ export const Positionstable = ({
   // Filter positions based on active tab
   const filteredPositions = useMemo(() => {
     if (activeTab === "currentPositions") {
-      return positions.filter((pos: Position) => pos.isOpen === true);
+      return positions.filter((pos: Position) => pos.borrowed.length > 0);
     } else {
-      return positions.filter((pos: Position) => pos.isOpen === false);
+      return positions.filter((pos: Position) => pos.borrowed.length === 0);
     }
   }, [positions, activeTab]);
 
@@ -399,15 +431,21 @@ export const Positionstable = ({
         viewport={{ once: true }}
         transition={{ duration: 0.3, delay: idx * 0.08 + 0.3 }}
       >
-        <div className="w-fit">
-          <Button
-            size="small"
-            type="gradient"
-            disabled={!item.isOpen}
-            text={item.isOpen ? "Repay" : "Repaid"}
-            onClick={item.isOpen && onRepayClick ? onRepayClick : undefined}
-          />
-        </div>
+        {item.isOpen && item.borrowed.length > 0 ? (
+          <div className="w-fit">
+            <Button
+              size="small"
+              type="gradient"
+              disabled={false}
+              text="Repay"
+              onClick={onRepayClick}
+            />
+          </div>
+        ) : (
+          <span className={`text-[12px] font-medium ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>
+            Repaid
+          </span>
+        )}
       </motion.div>
     </motion.article>
   );
@@ -502,13 +540,19 @@ export const Positionstable = ({
 
         {/* Action */}
         <div className="flex justify-end">
-          <Button
-            size="small"
-            type="gradient"
-            disabled={!item.isOpen}
-            text={item.isOpen ? "Repay" : "Repaid"}
-            onClick={item.isOpen && onRepayClick ? onRepayClick : undefined}
-          />
+          {item.isOpen && item.borrowed.length > 0 ? (
+            <Button
+              size="small"
+              type="gradient"
+              disabled={false}
+              text="Repay"
+              onClick={onRepayClick}
+            />
+          ) : (
+            <span className={`text-[12px] font-medium ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>
+              Repaid
+            </span>
+          )}
         </div>
       </motion.div>
     );

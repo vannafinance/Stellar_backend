@@ -26,6 +26,7 @@ import {
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWallet } from "@/hooks/use-wallet";
+import { appendMarginHistory } from "@/lib/margin-history";
 import toast from "react-hot-toast";
 
 type Modes = "Deposit" | "Borrow";
@@ -305,7 +306,7 @@ export const LeverageAssetsTab = () => {
           return;
         }
 
-        let multiplier = leverage; // Use the leverage state as multiplier
+        const multiplier = leverage; // Use the leverage state as multiplier
         const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
 
         // Pre-validate borrow against the Risk Engine's formula before submitting.
@@ -380,6 +381,16 @@ export const LeverageAssetsTab = () => {
         }
 
         if (result.success) {
+          if (result.hash && marginAccountAddress && multiplier > 1) {
+            const borrowedAmount = depositAmount * (multiplier - 1);
+            appendMarginHistory({
+              marginAccountAddress,
+              type: "borrow",
+              asset: tokenSymbol,
+              amount: borrowedAmount.toFixed(7),
+              hash: result.hash,
+            });
+          }
           console.log('✅ Deposit and borrow successful:', result.hash);
           toast.success('Deposit and borrow successful! Tx: ' + (result.hash ? result.hash.slice(0, 16) + '…' : ''));
         } else {

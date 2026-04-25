@@ -433,7 +433,7 @@ export class SoroswapService {
         try {
           const resp = await (server as any).getEvents({
             startLedger,
-            filters: [{ contractIds: [resolvedPair], topics: [[topic]] }],
+            filters: [{ type: 'contract', contractIds: [resolvedPair], topics: [[topic]] }],
             limit: 200,
           });
           if (resp?.error) return [];
@@ -448,9 +448,21 @@ export class SoroswapService {
 
       const parseEv = (ev: any, type: 'deposit' | 'withdraw'): SoroswapLpEvent | null => {
         try {
-          if (userAddress && Array.isArray(ev.topic) && ev.topic[1]) {
-            const depositor = StellarSdk.scValToNative(ev.topic[1]) as string;
-            if (depositor !== userAddress) return null;
+          if (userAddress && Array.isArray(ev.topic)) {
+            // Some deployments emit depositor/caller at different topic indexes.
+            // Match against any decodable address topic instead of assuming topic[1].
+            const topicAddresses = ev.topic
+              .map((t: any) => {
+                try {
+                  return StellarSdk.scValToNative(t) as string;
+                } catch {
+                  return null;
+                }
+              })
+              .filter((v: string | null): v is string => typeof v === 'string' && v.length > 0);
+            if (topicAddresses.length > 0 && !topicAddresses.includes(userAddress)) {
+              return null;
+            }
           }
           const body = ev.value ? (StellarSdk.scValToNative(ev.value) as any[]) : null;
           if (!Array.isArray(body) || body.length < 3) return null;

@@ -478,6 +478,47 @@ export class BlendService {
   }
 
   /**
+   * Get the actual token balance held by a margin account for Blend-supported assets.
+   * Uses token.balance(marginAccountAddress) on Blend asset contracts directly.
+   */
+  static async getMarginAccountTokenBalance(
+    marginAccountAddress: string,
+    token: 'XLM' | 'USDC'
+  ): Promise<string> {
+    try {
+      const tokenContractId = token === 'XLM'
+        ? CONTRACT_ADDRESSES.BLEND_XLM
+        : CONTRACT_ADDRESSES.BLEND_USDC;
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      const tokenContract = new StellarSdk.Contract(tokenContractId);
+
+      const tx = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          tokenContract.call(
+            'balance',
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+      if ('error' in sim || !('result' in sim) || !sim.result) return '0';
+
+      const raw = StellarSdk.scValToNative(sim.result.retval) as bigint;
+      return (Number(raw) / 1e7).toFixed(7);
+    } catch {
+      return '0';
+    }
+  }
+
+  /**
    * Fetch the tracking token contract address from the Registry.
    * This is the contract that stores b-token balances for margin accounts.
    * Users can add this token contract to their wallet to monitor their Blend positions.

@@ -15,6 +15,7 @@ import { iconPaths } from "@/lib/constants";
 import { PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBlendStore } from "@/store/blend-store";
+import { appendFarmHistory, buildFarmPoolKey } from "@/lib/farm-history";
 import toast from "react-hot-toast";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
@@ -167,6 +168,14 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
     if (result.success) {
       setTxStatus("success");
       setTxHash(result.hash ?? "");
+      appendFarmHistory({
+        protocol: "blend",
+        poolKey: buildFarmPoolKey(selectedToken),
+        marginAccountAddress,
+        action: "remove",
+        amountDisplay: `${amount.toFixed(4)} ${selectedToken}`,
+        txHash: result.hash ?? "",
+      });
       toast.success(`Withdrawal successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       setValue("");
       setSelectedPercentage(0);
@@ -246,6 +255,14 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
       if (result.success) {
         setTxStatus("success");
         setTxHash(result.hash ?? "");
+        appendFarmHistory({
+          protocol: isSoroswapPool ? "soroswap" : "aquarius",
+          poolKey: buildFarmPoolKey(tokenA, tokenB),
+          marginAccountAddress,
+          action: "remove",
+          amountDisplay: `${amount.toFixed(4)} LP`,
+          txHash: result.hash ?? "",
+        });
         toast.success(`Liquidity removed! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
         setValue("");
         setSelectedPercentage(0);
