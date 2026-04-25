@@ -10,7 +10,7 @@ import { Popup } from "@/components/ui/popup";
 import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
-import { WalletService } from "@/lib/stellar-utils";
+import { ContractService } from "@/lib/stellar-utils";
 import toast from "react-hot-toast";
 
 const REPAY_DUST_EPSILON = 1e-6;
@@ -65,6 +65,30 @@ export const RepayLoanTab = () => {
     });
   };
 
+  const getSelectedWalletBalance = async (address: string, selectedToken: string): Promise<number> => {
+    try {
+      const balances = await ContractService.getAllTokenBalances(address);
+      const token = normalizeContractTokenSymbol(selectedToken);
+
+      if (token === "BLUSDC") return parseFloat(balances.BLEND_USDC) || 0;
+      if (token === "AQUSDC") return parseFloat(balances.AQUARIUS_USDC) || 0;
+      if (token === "SOUSDC") return parseFloat(balances.SOROSWAP_USDC) || 0;
+
+      return parseFloat(balances.XLM) || 0;
+    } catch (error) {
+      console.error("Error fetching selected wallet balance:", error);
+      return 0;
+    }
+  };
+
+  const refreshSelectedWalletBalance = async (address: string, selectedToken: string) => {
+    const walletBalance = await getSelectedWalletBalance(address, selectedToken);
+    setRepayStats(prev => ({
+      ...prev,
+      availableBalance: walletBalance,
+    }));
+  };
+
   // Load user data and borrowed balances on mount
   useEffect(() => {
     const loadUserData = async () => {
@@ -80,13 +104,9 @@ export const RepayLoanTab = () => {
             
             // Get borrowed balances
             await refreshBorrowedBalances(account.address);
-            
-            // Get wallet balance
-            const balance = await WalletService.getBalance(address.address);
-            setRepayStats(prev => ({
-              ...prev,
-              availableBalance: parseFloat(balance) || 0
-            }));
+
+            // Get selected token wallet balance
+            await refreshSelectedWalletBalance(address.address, selectedRepayCurrency);
           }
         }
       } catch (error) {
@@ -130,6 +150,12 @@ export const RepayLoanTab = () => {
       refreshBorrowedBalances(marginAccount);
     }
   }, [selectedRepayCurrency, marginAccount]);
+
+  useEffect(() => {
+    if (userAddress) {
+      refreshSelectedWalletBalance(userAddress, selectedRepayCurrency);
+    }
+  }, [selectedRepayCurrency, userAddress]);
 
   // Handler for percentage click
   const handlePercentageClick = (item: number) => {
@@ -187,6 +213,7 @@ export const RepayLoanTab = () => {
       if (result.success) {
         toast.success(`Loan repayment successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
         await refreshBorrowedBalances(marginAccount);
+        await refreshSelectedWalletBalance(userAddress, selectedRepayCurrency);
         setRepayAmount(0);
       } else {
         toast.error(result.error || 'Loan repayment failed');

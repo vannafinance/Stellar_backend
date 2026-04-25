@@ -29,13 +29,13 @@ export function formatValue(
   const {
     type,
     decimals = 2,
-    showZeroAsDash = true,
+    showZeroAsDash = false,
     useLargeFormat = false,
   } = options;
 
   // Handle null, undefined, or zero values
   if (value === null || value === undefined || (value === 0 && showZeroAsDash)) {
-    return "--";
+    return "0";
   }
 
   const numValue = value;
@@ -127,7 +127,7 @@ export const formatNumber = (
   value: number | null | undefined,
   decimals: number = 2,
   useLargeFormat: boolean = false,
-  showZeroAsDash: boolean = true
+  showZeroAsDash: boolean = false
 ) => formatValue(value, {
   type: "number",
   decimals,

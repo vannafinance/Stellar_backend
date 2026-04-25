@@ -24,6 +24,15 @@ const calculateBorrowAPY = (utilizationRate: string) => {
   return (4.0 + utilization * 15).toFixed(2);
 };
 
+const calculateExchangeRateFromPool = (availableLiquidity: string, vTokenSupply: string) => {
+  const liquidity = parseFloat(availableLiquidity) || 0;
+  const supply = parseFloat(vTokenSupply) || 0;
+
+  // Mirror contract bootstrap behavior: if pool or vToken supply is zero, use 1:1.
+  if (liquidity <= 0 || supply <= 0) return '1';
+  return (liquidity / supply).toFixed(7);
+};
+
 export const usePoolData = () => {
   const storePools = useEarnPoolStore((s) => s.pools);
   const lastUpdated = useEarnPoolStore((s) => s.lastUpdated);
@@ -45,33 +54,25 @@ export const usePoolData = () => {
           ...xlmStats,
           supplyAPY: calculateSupplyAPY(xlmStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(xlmStats.utilizationRate),
-          exchangeRate: xlmStats.vTokenSupply !== '0'
-            ? (parseFloat(xlmStats.totalSupply) / parseFloat(xlmStats.vTokenSupply)).toFixed(7)
-            : '1',
+          exchangeRate: calculateExchangeRateFromPool(xlmStats.availableLiquidity, xlmStats.vTokenSupply),
         },
         USDC: {
           ...usdcStats,
           supplyAPY: calculateSupplyAPY(usdcStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(usdcStats.utilizationRate),
-          exchangeRate: usdcStats.vTokenSupply !== '0'
-            ? (parseFloat(usdcStats.totalSupply) / parseFloat(usdcStats.vTokenSupply)).toFixed(7)
-            : '1',
+          exchangeRate: calculateExchangeRateFromPool(usdcStats.availableLiquidity, usdcStats.vTokenSupply),
         },
         AQUARIUS_USDC: {
           ...aquiresUsdcStats,
           supplyAPY: calculateSupplyAPY(aquiresUsdcStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(aquiresUsdcStats.utilizationRate),
-          exchangeRate: aquiresUsdcStats.vTokenSupply !== '0'
-            ? (parseFloat(aquiresUsdcStats.totalSupply) / parseFloat(aquiresUsdcStats.vTokenSupply)).toFixed(7)
-            : '1',
+          exchangeRate: calculateExchangeRateFromPool(aquiresUsdcStats.availableLiquidity, aquiresUsdcStats.vTokenSupply),
         },
         SOROSWAP_USDC: {
           ...soroswapUsdcStats,
           supplyAPY: calculateSupplyAPY(soroswapUsdcStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(soroswapUsdcStats.utilizationRate),
-          exchangeRate: soroswapUsdcStats.vTokenSupply !== '0'
-            ? (parseFloat(soroswapUsdcStats.totalSupply) / parseFloat(soroswapUsdcStats.vTokenSupply)).toFixed(7)
-            : '1',
+          exchangeRate: calculateExchangeRateFromPool(soroswapUsdcStats.availableLiquidity, soroswapUsdcStats.vTokenSupply),
         },
       };
 
@@ -147,6 +148,28 @@ export const useUserPositions = () => {
         ContractService.getDepositedBalance(address, ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
+      const [xlmStats, usdcStats, aquiresUsdcStats, soroswapUsdcStats] = await Promise.all([
+        ContractService.getPoolStats(ASSET_TYPES.XLM),
+        ContractService.getPoolStats(ASSET_TYPES.USDC),
+        ContractService.getPoolStats(ASSET_TYPES.AQUARIUS_USDC),
+        ContractService.getPoolStats(ASSET_TYPES.SOROSWAP_USDC),
+      ]);
+
+      const xlmExchangeRate = parseFloat(calculateExchangeRateFromPool(xlmStats.availableLiquidity, xlmStats.vTokenSupply));
+      const usdcExchangeRate = parseFloat(calculateExchangeRateFromPool(usdcStats.availableLiquidity, usdcStats.vTokenSupply));
+      const aquiresUsdcExchangeRate = parseFloat(calculateExchangeRateFromPool(aquiresUsdcStats.availableLiquidity, aquiresUsdcStats.vTokenSupply));
+      const soroswapUsdcExchangeRate = parseFloat(calculateExchangeRateFromPool(soroswapUsdcStats.availableLiquidity, soroswapUsdcStats.vTokenSupply));
+
+      const xlmVBalanceNum = parseFloat(xlmVBalance) || 0;
+      const usdcVBalanceNum = parseFloat(usdcVBalance) || 0;
+      const aquiresUsdcVBalanceNum = parseFloat(aquiresUsdcVBalance) || 0;
+      const soroswapUsdcVBalanceNum = parseFloat(soroswapUsdcVBalance) || 0;
+
+      const xlmDeposited = (xlmVBalanceNum * xlmExchangeRate).toFixed(7);
+      const usdcDeposited = (usdcVBalanceNum * usdcExchangeRate).toFixed(7);
+      const aquiresUsdcDeposited = (aquiresUsdcVBalanceNum * aquiresUsdcExchangeRate).toFixed(7);
+      const soroswapUsdcDeposited = (soroswapUsdcVBalanceNum * soroswapUsdcExchangeRate).toFixed(7);
+
       const [xlmBorrow, usdcBorrow, aquiresUsdcBorrow, soroswapUsdcBorrow] = await Promise.all([
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.XLM),
         ContractService.getUserBorrowBalance(address, ASSET_TYPES.USDC),
@@ -155,10 +178,10 @@ export const useUserPositions = () => {
       ]);
 
       const positions = {
-        XLM: { deposited: xlmVBalance, vTokenBalance: xlmVBalance, borrowed: xlmBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-        USDC: { deposited: usdcVBalance, vTokenBalance: usdcVBalance, borrowed: usdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-        AQUARIUS_USDC: { deposited: aquiresUsdcVBalance, vTokenBalance: aquiresUsdcVBalance, borrowed: aquiresUsdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
-        SOROSWAP_USDC: { deposited: soroswapUsdcVBalance, vTokenBalance: soroswapUsdcVBalance, borrowed: soroswapUsdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+        XLM: { deposited: xlmDeposited, vTokenBalance: xlmVBalance, borrowed: xlmBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+        USDC: { deposited: usdcDeposited, vTokenBalance: usdcVBalance, borrowed: usdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+        AQUARIUS_USDC: { deposited: aquiresUsdcDeposited, vTokenBalance: aquiresUsdcVBalance, borrowed: aquiresUsdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
+        SOROSWAP_USDC: { deposited: soroswapUsdcDeposited, vTokenBalance: soroswapUsdcVBalance, borrowed: soroswapUsdcBorrow, borrowShares: '0', earnedInterest: '0', accruedDebt: '0' },
       };
 
       useEarnPoolStore.getState().set({
@@ -304,12 +327,34 @@ export const useWithdrawLiquidity = () => {
         },
       });
 
+      const poolRates = useEarnPoolStore.getState().pools;
+      const xlmRate = parseFloat(poolRates.XLM.exchangeRate || '1') || 1;
+      const usdcRate = parseFloat(poolRates.USDC.exchangeRate || '1') || 1;
+      const aquiresUsdcRate = parseFloat(poolRates.AQUARIUS_USDC.exchangeRate || '1') || 1;
+      const soroswapUsdcRate = parseFloat(poolRates.SOROSWAP_USDC.exchangeRate || '1') || 1;
+
       useEarnPoolStore.getState().set({
         userPositions: {
-          XLM: { ...useEarnPoolStore.getState().userPositions.XLM, vTokenBalance: xlmDeposited, deposited: xlmDeposited },
-          USDC: { ...useEarnPoolStore.getState().userPositions.USDC, vTokenBalance: usdcDeposited, deposited: usdcDeposited },
-          AQUARIUS_USDC: { ...useEarnPoolStore.getState().userPositions.AQUARIUS_USDC, vTokenBalance: aquiresUsdcDeposited, deposited: aquiresUsdcDeposited },
-          SOROSWAP_USDC: { ...useEarnPoolStore.getState().userPositions.SOROSWAP_USDC, vTokenBalance: soroswapUsdcDeposited, deposited: soroswapUsdcDeposited },
+          XLM: {
+            ...useEarnPoolStore.getState().userPositions.XLM,
+            vTokenBalance: xlmDeposited,
+            deposited: ((parseFloat(xlmDeposited) || 0) * xlmRate).toFixed(7),
+          },
+          USDC: {
+            ...useEarnPoolStore.getState().userPositions.USDC,
+            vTokenBalance: usdcDeposited,
+            deposited: ((parseFloat(usdcDeposited) || 0) * usdcRate).toFixed(7),
+          },
+          AQUARIUS_USDC: {
+            ...useEarnPoolStore.getState().userPositions.AQUARIUS_USDC,
+            vTokenBalance: aquiresUsdcDeposited,
+            deposited: ((parseFloat(aquiresUsdcDeposited) || 0) * aquiresUsdcRate).toFixed(7),
+          },
+          SOROSWAP_USDC: {
+            ...useEarnPoolStore.getState().userPositions.SOROSWAP_USDC,
+            vTokenBalance: soroswapUsdcDeposited,
+            deposited: ((parseFloat(soroswapUsdcDeposited) || 0) * soroswapUsdcRate).toFixed(7),
+          },
         },
       });
     } catch (error) {
