@@ -12,11 +12,13 @@ import { useTheme } from "@/contexts/theme-context";
 interface LeverageCollateralProps {
   switchToRepayTab?: boolean;
   onTabSwitched?: () => void;
+  prefilledRepayAsset?: string;
 }
 
 export const LeverageCollateral = ({
   switchToRepayTab,
   onTabSwitched,
+  prefilledRepayAsset,
 }: LeverageCollateralProps = {}) => {
   const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState<string>("leverage-assets");
@@ -45,7 +47,7 @@ export const LeverageCollateral = ({
       case "leverage-assets":
         return <LeverageAssetsTab />;
       case "repay-loan":
-        return <RepayLoanTab />;
+        return <RepayLoanTab prefilledAsset={prefilledRepayAsset} />;
       case "transfer-collateral":
         return <TransferCollateral />;
       default:

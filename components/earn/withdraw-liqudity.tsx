@@ -256,8 +256,8 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
         </div>
 
         {/* Balance / preview row + % pills */}
-        <div className="flex items-center justify-between px-4 pb-3">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between flex-wrap gap-x-2 gap-y-1.5 px-4 pb-3">
+          <div className="flex items-center gap-1 flex-wrap">
             {DEPOSIT_PERCENTAGES.map((pct) => (
               <motion.button
                 key={pct}
@@ -279,7 +279,7 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
               </motion.button>
             ))}
           </div>
-          <span className={`text-[11px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+          <span className={`text-[11px] font-medium whitespace-nowrap ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
             Balance: {userAddress ? `${vTokenBalance.toFixed(4)} v${selectedOption}` : `-- v${selectedOption}`}
           </span>
         </div>

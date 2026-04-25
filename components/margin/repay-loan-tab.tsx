@@ -18,7 +18,21 @@ import toast from "react-hot-toast";
 const REPAY_DUST_EPSILON = 1e-6;
 const WAD = BigInt("1000000000000000000");
 
-export const RepayLoanTab = () => {
+interface RepayLoanTabProps {
+  prefilledAsset?: string;
+}
+
+const toDropdownAsset = (raw: string | undefined): string | null => {
+  if (!raw) return null;
+  const cleaned = raw.replace(/^0x/i, "").toUpperCase();
+  if (cleaned === "XLM") return "XLM";
+  if (cleaned === "USDC" || cleaned === "BLUSDC" || cleaned === "BLEND_USDC") return "BLUSDC";
+  if (cleaned === "AQUSDC" || cleaned === "AQUIRESUSDC" || cleaned === "AQUARIUS_USDC") return "AqUSDC";
+  if (cleaned === "SOUSDC" || cleaned === "SOROSWAPUSDC" || cleaned === "SOROSWAP_USDC") return "SoUSDC";
+  return null;
+};
+
+export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
   const { isDark } = useTheme();
   const normalizeContractTokenSymbol = (symbol: string) =>
     symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
@@ -41,10 +55,20 @@ export const RepayLoanTab = () => {
     frozenBalance: 0,
   });
   const [selectedRepayCurrency, setSelectedRepayCurrency] =
-    useState<string>(DropdownOptions[0]);
+    useState<string>(() => toDropdownAsset(prefilledAsset) ?? DropdownOptions[0]);
   const [selectedRepayPercentage, setSelectedRepayPercentage] =
     useState<number>(0);
   const [repayAmount, setRepayAmount] = useState<number>(0);
+
+  // Sync currency when caller asks to prefill (e.g. row-level Repay click)
+  useEffect(() => {
+    const mapped = toDropdownAsset(prefilledAsset);
+    if (mapped) {
+      setSelectedRepayCurrency(mapped);
+      setRepayAmount(0);
+      setSelectedRepayPercentage(0);
+    }
+  }, [prefilledAsset]);
   const [currentDebtWad, setCurrentDebtWad] = useState<string>('0');
   const [repayAmountInUsd] = useState<number>(0);
 

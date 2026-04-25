@@ -170,7 +170,7 @@ export const YourPositions = memo(function YourPositions() {
           },
           {
             icon: iconPaths[asset] || "/icons/stellar.svg",
-            title: `${tx.amount} ${asset}`,
+            title: `${(parseFloat(tx.amount) || 0).toFixed(4)} ${asset}`,
             description: `$${((parseFloat(tx.amount) || 0) * price).toFixed(2)}`,
           },
           { title: "Success", badge: "green" },

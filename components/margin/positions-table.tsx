@@ -10,7 +10,7 @@ import { useShallow } from "zustand/shallow";
 import { useMarginHistory } from "@/hooks/use-margin";
 
 interface PositionstableProps {
-  onRepayClick?: () => void;
+  onRepayClick?: (asset?: string) => void;
   onOpenPositionClick?: () => void;
 }
 
@@ -438,7 +438,7 @@ export const Positionstable = ({
               type="gradient"
               disabled={false}
               text="Repay"
-              onClick={onRepayClick}
+              onClick={() => onRepayClick?.(item.borrowed[0]?.assetData.asset)}
             />
           </div>
         ) : (
@@ -546,7 +546,7 @@ export const Positionstable = ({
               type="gradient"
               disabled={false}
               text="Repay"
-              onClick={onRepayClick}
+              onClick={() => onRepayClick?.(item.borrowed[0]?.assetData.asset)}
             />
           ) : (
             <span className={`text-[12px] font-medium ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>

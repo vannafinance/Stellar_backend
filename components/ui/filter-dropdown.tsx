@@ -141,8 +141,8 @@ const DropdownOption = memo(
 
 DropdownOption.displayName = "DropdownOption";
 
-// Static pool icons - show Base chain icon (Base-only for now)
-const CHAIN_ICONS: [string, string][] = [["BASE", "/icons/base-icon.svg"]];
+// Static pool icons - show Stellar chain icon (Stellar-only for now)
+const CHAIN_ICONS: [string, string][] = [["STELLAR", "/icons/stellar.svg"]];
 
 export const FilterDropdown = memo((props: FilterDropdownProps) => {
   const { isDark } = useTheme();

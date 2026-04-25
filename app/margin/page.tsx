@@ -31,6 +31,7 @@ const Margin = () => {
 
   // State to trigger tab switch to Repay Loan
   const [switchToRepayTab, setSwitchToRepayTab] = useState(false);
+  const [prefilledRepayAsset, setPrefilledRepayAsset] = useState<string | undefined>(undefined);
   const [marginError, setMarginError] = useState<string | null>(null);
   const [isLoadingMargin, setIsLoadingMargin] = useState(false);
 
@@ -242,7 +243,10 @@ const Margin = () => {
 
   // Stable handlers for memoized children.
   const handleTabSwitched = useCallback(() => setSwitchToRepayTab(false), []);
-  const handleRepayClick = useCallback(() => setSwitchToRepayTab(true), []);
+  const handleRepayClick = useCallback((asset?: string) => {
+    setPrefilledRepayAsset(asset);
+    setSwitchToRepayTab(true);
+  }, []);
 
   // Format account stats value
   const formatAccountStatValue = (itemId: string, value: number) => {
@@ -458,6 +462,7 @@ const Margin = () => {
             <LeverageCollateral
               switchToRepayTab={switchToRepayTab}
               onTabSwitched={handleTabSwitched}
+              prefilledRepayAsset={prefilledRepayAsset}
             />
           </div>
 

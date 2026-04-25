@@ -3,6 +3,7 @@ import { Checkbox } from "./Checkbox";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useTheme } from "@/contexts/theme-context";
+import { useViewportScale } from "@/lib/hooks/useViewportScale";
 
 interface Dialogue {
   description?: string;
@@ -22,12 +23,14 @@ interface Dialogue {
 export const Dialogue = (props: Dialogue) => {
   const { isDark } = useTheme();
   const [isChecked, setIsChecked] = useState(false);
-  
+  const zoom = useViewportScale(1440);
+
   return (
     <motion.div
-      className={`shadow-md flex flex-col w-full max-h-[calc(100vh-160px)] rounded-[18px] overflow-hidden ${
+      className={`shadow-md flex flex-col w-full rounded-[18px] overflow-hidden ${
         isDark ? "bg-[#111111]" : "bg-[#F7F7F7]"
       }`}
+      style={{ maxHeight: `calc(100vh / ${zoom} - 80px)` }}
       initial={{ opacity: 0, scale: 0.95, y: 20 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
