@@ -30,6 +30,7 @@ export default function Home() {
 
   // State to trigger tab switch to Repay Loan
   const [switchToRepayTab, setSwitchToRepayTab] = useState(false);
+  const [prefilledRepayAsset, setPrefilledRepayAsset] = useState<string | undefined>(undefined);
 
   // Ref for scrolling to LeverageCollateral component
   const leverageCollateralRef = useRef<HTMLDivElement>(null);
@@ -246,6 +247,7 @@ export default function Home() {
             <LeverageCollateral
               switchToRepayTab={switchToRepayTab}
               onTabSwitched={() => setSwitchToRepayTab(false)}
+              prefilledRepayAsset={prefilledRepayAsset}
             />
           </div>
 
@@ -326,7 +328,10 @@ export default function Home() {
             transition={{ duration: 0.5, ease: "easeOut" }}
           >
             <Positionstable
-              onRepayClick={() => setSwitchToRepayTab(true)}
+              onRepayClick={(asset) => {
+                setPrefilledRepayAsset(asset);
+                setSwitchToRepayTab(true);
+              }}
               onOpenPositionClick={scrollToLeverageSection}
             />
           </motion.section>

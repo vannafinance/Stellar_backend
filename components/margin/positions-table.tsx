@@ -138,13 +138,15 @@ export const Positionstable = ({
   }, [positions, activeTab]);
 
   // Calculate pagination
-  const totalPages = Math.ceil(filteredPositions.length / ITEMS_PER_PAGE);
+  const activeList = activeTab === "positionsHistory" ? history : filteredPositions;
+  const totalPages = Math.max(1, Math.ceil(activeList.length / ITEMS_PER_PAGE));
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
   const paginatedPositions: Position[] = filteredPositions.slice(
     startIndex,
     endIndex,
   );
+  const paginatedHistory = history.slice(startIndex, endIndex);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -626,8 +628,44 @@ export const Positionstable = ({
                 ref={scrollContainerRef}
                 className="flex flex-col gap-2 max-h-[520px] overflow-y-auto pr-1 thin-scrollbar"
               >
-                {history.map((item, idx) => renderHistoryRow(item, idx))}
+                {paginatedHistory.map((item, idx) => renderHistoryRow(item, idx))}
               </section>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <motion.div
+                  className="flex items-center justify-center gap-4 py-4"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <button
+                    type="button"
+                    onClick={handlePreviousPage}
+                    disabled={currentPage === 1}
+                    className={`flex items-center justify-center w-8 h-8 transition-colors ${currentPage === 1 ? "cursor-not-allowed opacity-30" : "cursor-pointer hover:opacity-70"} ${isDark ? "text-white" : "text-[#111111]"}`}
+                    aria-label="Previous page"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M7.5 9L4.5 6L7.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  <span className="px-5 py-1.5 rounded-full bg-[#F1EBFD] text-[#703AE6] text-[13px] font-semibold">
+                    {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                    className={`flex items-center justify-center w-8 h-8 transition-colors ${currentPage === totalPages ? "cursor-not-allowed opacity-30" : "cursor-pointer hover:opacity-70"} ${isDark ? "text-white" : "text-[#111111]"}`}
+                    aria-label="Next page"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M4.5 9L7.5 6L4.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </motion.div>
+              )}
             </section>
           </div>
         ) : (
