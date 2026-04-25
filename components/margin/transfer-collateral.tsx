@@ -11,6 +11,9 @@ import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
 import toast from "react-hot-toast";
 
+const XLM_WALLET_RESERVE = 1;
+const XLM_TRANSFER_EPSILON = 1e-7;
+
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
   const normalizeContractTokenSymbol = (symbol: string) =>
@@ -35,7 +38,37 @@ export const TransferCollateral = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
+  const maxTransferableBalance = computeMaxTransferableBalance(
+    selectedTransferType,
+    normalizeContractTokenSymbol(selectedCurrency),
+    sourceBalance
+  );
   const isOverSourceBalance = Number(valueInput || 0) > sourceBalance;
+
+  function computeMaxTransferableBalance(
+    transferType: "MB" | "WB",
+    tokenSymbol: string,
+    balance: number
+  ) {
+    if (transferType === "MB" && tokenSymbol === "XLM") {
+      return Math.max(0, balance - XLM_WALLET_RESERVE);
+    }
+    return Math.max(0, balance);
+  }
+
+  const getFriendlyTransferError = (rawError?: string) => {
+    const text = (rawError || "").toLowerCase();
+    if (
+      text.includes("error(contract, #10)") ||
+      text.includes("resulting balance is not within the allowed range")
+    ) {
+      return "You cannot transfer all your wallet balance. Please keep at least 1 XLM in your wallet.";
+    }
+    if (text.includes("insufficient")) {
+      return "Insufficient balance for this transfer.";
+    }
+    return rawError || "Transfer failed. Please try again.";
+  };
 
   const getSelectedWalletBalance = async (address: string, tokenSymbol: string): Promise<number> => {
     try {
@@ -105,8 +138,7 @@ export const TransferCollateral = () => {
 
   const handlePercentageClick = (item: number) => {
     setPercentage(item);
-    const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
-    const calculatedAmount = (sourceBalance * item) / 100;
+    const calculatedAmount = (maxTransferableBalance * item) / 100;
     setValueInput(calculatedAmount.toFixed(7));
     setValueInUsd(calculatedAmount * 1); // Placeholder for price conversion
   };
@@ -118,9 +150,8 @@ export const TransferCollateral = () => {
   };
 
   const handleMaxValueClick = () => {
-    const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
-    setValueInput(sourceBalance.toFixed(7));
-    setValueInUsd(sourceBalance);
+    setValueInput(maxTransferableBalance.toFixed(7));
+    setValueInUsd(maxTransferableBalance);
   };
 
   const handleTransferClick = async () => {
@@ -131,6 +162,18 @@ export const TransferCollateral = () => {
 
     if (Number(valueInput) > sourceBalance) {
       toast.error("Insufficient balance for selected transfer mode");
+      return;
+    }
+    if (
+      selectedTransferType === "MB" &&
+      normalizeContractTokenSymbol(selectedCurrency) === "XLM" &&
+      Number(valueInput) >= sourceBalance - XLM_TRANSFER_EPSILON
+    ) {
+      toast.error("You cannot transfer all your wallet balance. Please keep at least 1 XLM in your wallet.");
+      return;
+    }
+    if (Number(valueInput) > maxTransferableBalance + XLM_TRANSFER_EPSILON) {
+      toast.error("You cannot transfer all your wallet balance. Please keep at least 1 XLM in your wallet.");
       return;
     }
 
@@ -158,10 +201,11 @@ export const TransferCollateral = () => {
         setValueInput("");
         setValueInUsd(0);
       } else {
-        toast.error(`Transfer failed: ${result.error}`);
+        toast.error(getFriendlyTransferError(result.error));
       }
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Transfer failed";
+      toast.error(getFriendlyTransferError(message));
     } finally {
       setIsLoading(false);
     }
@@ -394,4 +438,3 @@ export const TransferCollateral = () => {
     </motion.section>
   );
 };
-
