@@ -429,7 +429,7 @@ const CellContent = ({
             ) : null}
 
             {(!showProgressBar || cell.title || cell.titles) && (
-              <div className={`w-fit h-fit flex flex-row items-baseline gap-1.5 lg:flex-col lg:items-start lg:gap-1`}>
+              <div className={`w-fit h-fit flex flex-row items-baseline gap-1.5 xl:flex-col xl:items-start xl:gap-1`}>
                 {hasLink ? (
                   <a
                     href={cell.link}
@@ -447,7 +447,7 @@ const CellContent = ({
                     )}
                     {/* Status tags inline on mobile */}
                     {statusTags.length > 0 && (
-                      <span className="lg:hidden flex items-center gap-1">
+                      <span className="xl:hidden flex items-center gap-1">
                         {statusTags.map((tag, i) => (
                           <span key={i} className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-[#703AE6] text-white">
                             {tag}
@@ -467,7 +467,7 @@ const CellContent = ({
                     )}
                     {/* Status tags inline on mobile */}
                     {statusTags.length > 0 && (
-                      <span className="lg:hidden flex items-center gap-1">
+                      <span className="xl:hidden flex items-center gap-1">
                         {statusTags.map((tag, i) => (
                           <span key={i} className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-[#703AE6] text-white">
                             {tag}
@@ -531,7 +531,7 @@ const CellContent = ({
 
       {/* Status tags: hidden on mobile (shown inline with title), visible on desktop */}
       {statusTags.length > 0 && !cell.onlyIcons && (
-        <div className="hidden lg:flex flex-wrap gap-1 mt-0.5">
+        <div className="hidden xl:flex flex-wrap gap-1 mt-0.5">
           {statusTags.map((tag, idx) => (
             <div key={idx} className="w-fit h-fit rounded-md px-1.5 py-0.5 text-[11px] font-semibold bg-[#703AE6] text-white">
               {tag}
@@ -599,7 +599,7 @@ const TableRow = memo(
         {/* Desktop: horizontal row */}
         <td
           onClick={onRowClick ? handleClick : undefined}
-          className={`hidden lg:flex gap-4 items-center w-full px-4 py-3 ${onRowClick ? "cursor-pointer" : ""}`}
+          className={`hidden xl:flex gap-4 items-center w-full px-4 py-3 ${onRowClick ? "cursor-pointer" : ""}`}
         >
           {visibleCells.map((cell: any, idx: number) => (
             <div
@@ -618,7 +618,7 @@ const TableRow = memo(
         </td>
 
         {/* Mobile: accordion */}
-        <td className="flex flex-col lg:hidden">
+        <td className="flex flex-col xl:hidden">
           {/* Header — always visible, tappable */}
           <div
             className="flex items-center justify-between px-4 py-3 cursor-pointer"
@@ -972,13 +972,13 @@ export const Table = memo((props: TableProps) => {
   return (
     <section className="w-full h-fit flex flex-col gap-4" aria-label={props.heading.heading || "Data Table"}>
       {hasHeadingTitle && !showAllChainDropdown && (
-        <header className="flex flex-col lg:flex-row justify-between items-center gap-3">
-          <h2 className={`text-[16px] font-semibold text-center lg:text-left ${
+        <header className="flex flex-col xl:flex-row justify-between items-center gap-3">
+          <h2 className={`text-[16px] font-semibold text-center xl:text-left ${
             isDark ? "text-white" : "text-[#111111]"
           }`}>
             {props.heading.heading}
           </h2>
-          <div className="flex items-center gap-3 flex-wrap justify-center lg:justify-end" role="toolbar" aria-label="Table Filters">
+          <div className="flex items-center gap-3 flex-wrap justify-center xl:justify-end" role="toolbar" aria-label="Table Filters">
             {hasCollateral && (
               <FilterDropdown
                 dropdownOptions={FILTER_OPTIONS.collateral}
@@ -1066,7 +1066,7 @@ export const Table = memo((props: TableProps) => {
 
       {/* Tabs row + filters row stacked */}
       {(hasTabs || showAllChainDropdown) && (
-        <div className={`flex flex-col gap-3 relative z-10 lg:static lg:bg-transparent lg:py-0 sticky top-0 py-3 -mx-4 px-4 sm:-mx-10 sm:px-10 lg:mx-0 lg:px-0 ${isDark ? "bg-[#111111]" : "bg-white"}`}>
+        <div className={`flex flex-col gap-3 relative z-10 xl:static xl:bg-transparent xl:py-0 sticky top-0 py-3 -mx-4 px-4 sm:-mx-10 sm:px-10 xl:mx-0 xl:px-0 ${isDark ? "bg-[#111111]" : "bg-white"}`}>
           {/* Row 1: main tabs left + filter-type tabs right */}
           {(hasTabs || (showFilterTabType && props.filterTabTypeOptions)) && (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
@@ -1079,7 +1079,7 @@ export const Table = memo((props: TableProps) => {
                         key={tab.id}
                         type="button"
                         onClick={() => handleTabChange(tab.id)}
-                        className={`flex-1 lg:flex-none text-center px-3 py-1.5 rounded-lg text-[14px] whitespace-nowrap transition-colors cursor-pointer ${
+                        className={`flex-1 xl:flex-none text-center px-3 py-1.5 rounded-lg text-[14px] whitespace-nowrap transition-colors cursor-pointer ${
                           isActive
                             ? "bg-[#703AE6] text-white font-semibold"
                             : isDark
@@ -1102,7 +1102,7 @@ export const Table = memo((props: TableProps) => {
                         key={tab.id}
                         type="button"
                         onClick={() => props.onFilterTabTypeChange?.(tab.id)}
-                        className={`flex-1 lg:flex-none text-center px-3 py-1.5 rounded-lg text-[14px] whitespace-nowrap transition-colors cursor-pointer ${
+                        className={`flex-1 xl:flex-none text-center px-3 py-1.5 rounded-lg text-[14px] whitespace-nowrap transition-colors cursor-pointer ${
                           isActive
                             ? "bg-[#703AE6] text-white font-semibold"
                             : isDark
@@ -1122,7 +1122,7 @@ export const Table = memo((props: TableProps) => {
           {showAllChainDropdown && (
             <>
             {/* Mobile: search + filter button */}
-            <div className="flex lg:hidden items-center gap-2">
+            <div className="flex xl:hidden items-center gap-2">
               <div className="flex-1">
                 <SearchBar
                   placeholder="Search pools..."
@@ -1152,7 +1152,7 @@ export const Table = memo((props: TableProps) => {
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="lg:hidden"
+                  className="xl:hidden"
                 >
                   <div className={`flex flex-col gap-2 p-3 rounded-xl border ${isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
                     <div className="w-full ">
@@ -1182,7 +1182,7 @@ export const Table = memo((props: TableProps) => {
               )}
             </AnimatePresence>
             {/* Desktop: original inline filters */}
-            <div className="hidden lg:flex items-center gap-x-2.5 flex-wrap gap-y-2">
+            <div className="hidden xl:flex items-center gap-x-2.5 flex-wrap gap-y-2">
               <div className="shrink-0">
                 <FilterDropdown
                   dropdownOptions={FILTER_OPTIONS.allChains}
@@ -1327,7 +1327,7 @@ export const Table = memo((props: TableProps) => {
       {hasData ? (
         <div className="w-full">
           <table className="w-full h-fit flex flex-col gap-1">
-            <thead className="hidden lg:block">
+            <thead className="hidden xl:block">
               <tr className={`w-full h-fit px-4 py-3 flex gap-4`}>
                 {visibleHeadings.map((item, idx) => {
                   const isLast = visibleHeadings.length - 1 === idx;

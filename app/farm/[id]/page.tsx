@@ -338,13 +338,13 @@ export default function FarmDetailPage() {
     // Estimate underlying assets proportional to LP share
     const totalSharesNum = parseFloat(aqStats?.totalShares ?? '0');
     const ratio = totalSharesNum > 0 ? myLpBalance / totalSharesNum : 0;
-    const xlmShare = (parseFloat(aqStats?.reserveA ?? '0') * ratio).toFixed(4);
-    const usdcShare = (parseFloat(aqStats?.reserveB ?? '0') * ratio).toFixed(4);
+    const xlmShare = (parseFloat(aqStats?.reserveA ?? '0') * ratio).toFixed(2);
+    const usdcShare = (parseFloat(aqStats?.reserveB ?? '0') * ratio).toFixed(2);
     return {
       rows: [{
         cell: [
           { chain: poolTokenA, title: `${poolTokenA} / ${poolTokenB}`, tags: ['Aquarius', 'LP'] },
-          { title: `${myLpBalance.toFixed(4)} LP` },
+          { title: `${myLpBalance.toFixed(2)} LP` },
           { title: `${xlmShare} ${poolTokenA}` },
           { title: `${usdcShare} ${poolTokenB}` },
           { title: aqStats?.feeFraction ?? '—' },
@@ -512,13 +512,13 @@ export default function FarmDetailPage() {
     if (mySSLpBalance <= 0) return { rows: [] };
     const totalSharesNum = parseFloat(ssStats?.totalShares ?? '0');
     const ratio = totalSharesNum > 0 ? mySSLpBalance / totalSharesNum : 0;
-    const xlmShare = (parseFloat(ssStats?.reserveXLM ?? '0') * ratio).toFixed(4);
-    const usdcShare = (parseFloat(ssStats?.reserveUSDC ?? '0') * ratio).toFixed(4);
+    const xlmShare = (parseFloat(ssStats?.reserveXLM ?? '0') * ratio).toFixed(2);
+    const usdcShare = (parseFloat(ssStats?.reserveUSDC ?? '0') * ratio).toFixed(2);
     return {
       rows: [{
         cell: [
           { chain: ssTokenA, title: `${ssTokenA} / ${ssTokenB}`, tags: ['Soroswap', 'LP'] },
-          { title: `${mySSLpBalance.toFixed(4)} LP` },
+          { title: `${mySSLpBalance.toFixed(2)} LP` },
           { title: `${xlmShare} ${ssTokenA}` },
           { title: `${usdcShare} ${ssTokenB}` },
           { title: ssStats?.feeFraction ?? '—' },

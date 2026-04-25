@@ -96,14 +96,14 @@ export default function FarmPage() {
     if (mySSLpBalance > 0) {
       const totalShares = parseFloat(ssStats?.totalShares ?? '0');
       const ratio = totalShares > 0 ? mySSLpBalance / totalShares : 0;
-      const xlmShare = (ratio * parseFloat(ssStats?.reserveXLM ?? '0')).toFixed(4);
-      const usdcShare = (ratio * parseFloat(ssStats?.reserveUSDC ?? '0')).toFixed(6);
+      const xlmShare = (ratio * parseFloat(ssStats?.reserveXLM ?? '0')).toFixed(2);
+      const usdcShare = (ratio * parseFloat(ssStats?.reserveUSDC ?? '0')).toFixed(2);
       rows.push({
         id: 'soroswap-xlm-usdc',
         cell: [
           { chain: 'XLM', titles: ['XLM', 'USDC'], tags: ['Soroswap', 'LP'] },
           { title: 'Soroswap' },
-          { title: `${mySSLpBalance.toFixed(4)} LP` },
+          { title: `${mySSLpBalance.toFixed(2)} LP` },
           { title: `${xlmShare} XLM + ${usdcShare} USDC` },
           { title: ssStats?.feeFraction ?? '0.30%' },
           { title: '0' },
@@ -120,15 +120,15 @@ export default function FarmPage() {
       const aqPoolStats = aquariusPools.find((p) => p.pool.id === pool.id)?.stats ?? null;
       const totalShares = parseFloat(aqPoolStats?.totalShares ?? '0');
       const ratio = totalShares > 0 ? lpBal / totalShares : 0;
-      const shareA = (ratio * parseFloat(aqPoolStats?.reserveA ?? '0')).toFixed(4);
-      const shareB = (ratio * parseFloat(aqPoolStats?.reserveB ?? '0')).toFixed(4);
+      const shareA = (ratio * parseFloat(aqPoolStats?.reserveA ?? '0')).toFixed(2);
+      const shareB = (ratio * parseFloat(aqPoolStats?.reserveB ?? '0')).toFixed(2);
       const [tokenA, tokenB] = pool.tokens;
       rows.push({
         id: pool.id,
         cell: [
           { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius', 'LP'] },
           { title: 'Aquarius' },
-          { title: `${lpBal.toFixed(4)} LP` },
+          { title: `${lpBal.toFixed(2)} LP` },
           { title: `${shareA} ${tokenA} + ${shareB} ${tokenB}` },
           { title: aqPoolStats?.feeFraction ?? '0.30%' },
           { title: '0' },

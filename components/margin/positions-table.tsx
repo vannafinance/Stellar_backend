@@ -89,7 +89,7 @@ export const Positionstable = ({
 
     const borrowedArray: Position['borrowed'] = borrowedEntriesClean
       .map(([token, bal]) => ({
-        assetData: { asset: token, amount: parseFloat(bal.amount).toFixed(4) },
+        assetData: { asset: token, amount: parseFloat(bal.amount).toFixed(2) },
         percentage: totalBorrowUsd > 0
           ? Math.round((parseFloat(bal.usdValue) / totalBorrowUsd) * 100)
           : 0,
@@ -111,7 +111,7 @@ export const Positionstable = ({
 
       return {
         positionId: idx + 1,
-        collateral: { asset: token, amount: parseFloat(bal.amount).toFixed(4) },
+        collateral: { asset: token, amount: parseFloat(bal.amount).toFixed(2) },
         collateralUsdValue: parseFloat(bal.usdValue),
         borrowed: positionBorrowed,
         leverage,
@@ -603,7 +603,7 @@ export const Positionstable = ({
 
       {activeTab === "positionsHistory" ? (
         history.length > 0 ? (
-          <div className="w-full overflow-x-auto no-scrollbar hidden md:block">
+          <div className="w-full overflow-x-auto no-scrollbar hidden xl:block">
             <section className="rounded-xl min-w-[700px]">
               {/* History table headers */}
               <ul className="flex" role="row">
@@ -674,7 +674,7 @@ export const Positionstable = ({
       ) : hasMarginAccount && filteredPositions.length > 0 ? (
         <>
           {/* Desktop table */}
-          <div className="w-full overflow-x-auto no-scrollbar hidden md:block">
+          <div className="w-full overflow-x-auto no-scrollbar hidden xl:block">
             <section className="rounded-xl min-w-[700px]">
               {/* Table headers */}
               <ul className="flex" role="row">
@@ -751,7 +751,7 @@ export const Positionstable = ({
           </div>
 
           {/* Mobile cards */}
-          <div className={`md:hidden p-2 rounded-lg border flex flex-col gap-2 ${isDark ? "border-[#333333] bg-[#222222]" : "border-[#E2E2E2] bg-[#F7F7F7]"}`}>
+          <div className={`xl:hidden p-2 rounded-lg border flex flex-col gap-2 ${isDark ? "border-[#333333] bg-[#222222]" : "border-[#E2E2E2] bg-[#F7F7F7]"}`}>
             {paginatedPositions.map((item, idx) => renderMobilePositionCard(item, idx))}
             {totalPages > 1 && (
               <div className="flex items-center justify-center gap-4 py-3">

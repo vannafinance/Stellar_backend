@@ -44,7 +44,7 @@ const formatTokenAmount = (amount: number): string => {
   if (amount <= 0) return "0";
   if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M`;
   if (amount >= 1_000) return `${(amount / 1_000).toFixed(2)}K`;
-  return amount.toFixed(4);
+  return amount.toFixed(2);
 };
 
 // Build a single pool table row from live on-chain pool stats
@@ -71,7 +71,7 @@ const buildPoolRow = (
       { chain: assetSymbol, title: assetSymbol, tag: "Active" },
       {
         title: `${formatTokenAmount(totalSupply)} ${assetSymbol}`,
-        tag: `${totalSupply.toFixed(4)} ${assetSymbol}`,
+        tag: `${totalSupply.toFixed(2)} ${assetSymbol}`,
       },
       {
         title: `${supplyAPY.toFixed(2)}%`,
@@ -79,7 +79,7 @@ const buildPoolRow = (
       },
       {
         title: `${formatTokenAmount(totalBorrowed)} ${assetSymbol}`,
-        tag: `${totalBorrowed.toFixed(4)} ${assetSymbol}`,
+        tag: `${totalBorrowed.toFixed(2)} ${assetSymbol}`,
       },
       {
         title: `${borrowAPY.toFixed(2)}%`,
@@ -125,7 +125,7 @@ const buildPositionRow = (
       { chain: assetSymbol, title: assetSymbol, tag: "Active" },
       {
         title: `${formatTokenAmount(deposited)} ${assetSymbol}`,
-        tag: `${deposited.toFixed(4)} ${assetSymbol}`,
+        tag: `${deposited.toFixed(2)} ${assetSymbol}`,
       },
       {
         title: `${supplyAPY.toFixed(2)}%`,
@@ -133,7 +133,7 @@ const buildPositionRow = (
       },
       {
         title: `${formatTokenAmount(borrowed)} ${assetSymbol}`,
-        tag: `${borrowed.toFixed(4)} ${assetSymbol}`,
+        tag: `${borrowed.toFixed(2)} ${assetSymbol}`,
       },
       {
         title: `${borrowAPY.toFixed(2)}%`,

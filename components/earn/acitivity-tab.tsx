@@ -120,7 +120,7 @@ export const ActivityTab = () => {
             },
             {
               icon: iconPaths[displaySymbol] || "/icons/usdc-icon.svg",
-              title: `${totalSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${displaySymbol}`,
+              title: `${totalSupply.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${displaySymbol}`,
               description: `$${usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
             },
             { percentage: 100 },
@@ -161,7 +161,7 @@ export const ActivityTab = () => {
           },
           {
             icon: iconPaths[DISPLAY_SYMBOL[assetKey] ?? assetKey] || iconPaths[assetKey] || `/icons/usdc-icon.svg`,
-            title: `${tx.amount} ${DISPLAY_SYMBOL[assetKey] ?? assetKey}`,
+            title: `${(parseFloat(tx.amount) || 0).toFixed(2)} ${DISPLAY_SYMBOL[assetKey] ?? assetKey}`,
             description: `$${(parseFloat(tx.amount) * (TOKEN_PRICES[assetKey] ?? 1)).toFixed(2)}`,
           },
           {
