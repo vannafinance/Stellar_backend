@@ -2,7 +2,6 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import ToggleButton from "@/components/ui/toggle";
 import { Collaterals, BorrowInfo } from "@/lib/types";
 import {
   DropdownOptions,
@@ -58,7 +57,7 @@ export const LeverageAssetsTab = () => {
   const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
   const isCreatingAccount = useMarginAccountInfoStore((state) => state.isCreatingAccount);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [mode, setMode] = useState<Modes>("Deposit");
+  const mode: Modes = "Deposit";
   const [borrowItems, setBorrowItems] = useState<BorrowInfo[]>([]);
   const [leverage, setLeverage] = useState(2);
   const feesCurrency = "USDT";
@@ -146,7 +145,6 @@ export const LeverageAssetsTab = () => {
   // Memoized callbacks
   const handleAddCollateral = useCallback(() => {
     if (editingId !== null) return;
-    if (mode === "Borrow" && collaterals.size >= 1) return;
 
     const newId = generateCollateralId();
     const newCollateral: Collaterals = {
@@ -163,7 +161,7 @@ export const LeverageAssetsTab = () => {
       return next;
     });
     setEditingId(newId);
-  }, [editingId, mode, collaterals.size]);
+  }, [editingId]);
 
   const handleEditCollateral = (id: string) => {
     if (editingId !== null && editingId !== id) return;
@@ -237,31 +235,6 @@ export const LeverageAssetsTab = () => {
       return next;
     });
   }, [editingId]); // Remove collaterals from deps - use functional update
-
-  const handleModeToggle = () => {
-    setMode((prev) => {
-      const newMode = prev === "Borrow" ? "Deposit" : "Borrow";
-      
-      // When switching to Borrow mode, limit to 1 collateral
-      if (newMode === "Borrow") {
-        setCollaterals((currentCollaterals) => {
-          if (currentCollaterals.size > 1) {
-            const firstEntry = Array.from(currentCollaterals.entries())[0];
-            if (firstEntry && firstEntry[0]) {
-              // Clear editing if not the first collateral
-              if (editingId !== null && editingId !== firstEntry[0]) {
-                setEditingId(null);
-              }
-              return new Map([firstEntry]);
-            }
-          }
-          return currentCollaterals;
-        });
-      }
-      
-      return newMode;
-    });
-  };
 
   const handleBalanceTypeChange = useCallback((id: string, balanceType: string) => {
     const normalized = balanceType.toLowerCase();
@@ -489,20 +462,6 @@ export const LeverageAssetsTab = () => {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, delay: 0.1 }}
       >
-        {/* Mode toggle: Deposit / Borrow */}
-        <motion.header
-          className={`w-full flex justify-end text-[13px] font-medium gap-2 items-center ${
-            isDark ? "text-white" : ""
-          }`}
-          initial={{ opacity: 0, x: 20 }}
-          whileInView={{ opacity: 1, x: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.3 }}
-        >
-          Multi Deposit{" "}
-          <ToggleButton size="small" onToggle={handleModeToggle} /> Dual Borrow
-        </motion.header>
-
         {/* Deposit section */}
         <motion.section
           className="w-full min-w-0 flex flex-col gap-1.5"
@@ -642,25 +601,13 @@ export const LeverageAssetsTab = () => {
           <motion.button
             type="button"
             onClick={handleAddCollateral}
-            disabled={
-              editingId !== null ||
-              (mode === "Borrow" && collaterals.size >= 1) ||
-              isMBMode
-            }
+            disabled={editingId !== null || isMBMode}
             className={`w-fit py-[11px] px-[10px] rounded-[8px] flex gap-[4px] text-[14px] font-medium text-[#703AE6] items-center ${
-              editingId !== null ||
-              (mode === "Borrow" && collaterals.size >= 1) ||
-              isMBMode
+              editingId !== null || isMBMode
                 ? "opacity-50 cursor-not-allowed"
                 : "hover:cursor-pointer hover:bg-[#F1EBFD]"
             }`}
-            whileHover={
-              editingId === null &&
-              !(mode === "Borrow" && collaterals.size >= 1) &&
-              !isMBMode
-                ? { x: 5 }
-                : {}
-            }
+            whileHover={editingId === null && !isMBMode ? { x: 5 } : {}}
             transition={{ duration: 0.2 }}
             aria-label="Add new collateral"
           >

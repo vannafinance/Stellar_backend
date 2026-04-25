@@ -447,22 +447,22 @@ export const FARM_STATS_ITEMS = [
   {
     id: "depositTVL",
     name: "Your Deposit TVL",
-    icon: "/icons/bnb-icon.png",
+    icon: "/margin/bag.png",
   },
   {
     id: "earnings",
     name: "Your Earnings",
-    icon: "/icons/bnb-icon.png",
+    icon: "/margin/dollar.png",
   },
   {
     id: "netFarmApy",
     name: "Net Farm APY",
-    icon: "/icons/bnb-icon.png",
+    icon: "/margin/health.png",
   },
   {
     id: "pendingRewards",
     name: "Pending Rewards",
-    icon: "/icons/bnb-icon.png",
+    icon: "/margin/retry.png",
   },
 ];
 

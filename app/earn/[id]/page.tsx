@@ -63,12 +63,14 @@ const tabs = [
 const toInternalAsset = (value: string): AssetType => {
   if (value === "AqUSDC" || value === "AquiresUSDC" || value === "AQUARIUS_USDC") return "AQUARIUS_USDC";
   if (value === "SoUSDC" || value === "SoroswapUSDC" || value === "SOROSWAP_USDC") return "SOROSWAP_USDC";
+  if (value === "BLUSDC" || value === "USDC") return "USDC";
   return value.toUpperCase() as AssetType;
 };
 
 const toDisplayAsset = (value: string) => {
   if (value === "AQUARIUS_USDC" || value === "AquiresUSDC") return "AqUSDC";
   if (value === "SOROSWAP_USDC" || value === "SoroswapUSDC") return "SoUSDC";
+  if (value === "USDC") return "BLUSDC";
   return value;
 };
 

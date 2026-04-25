@@ -1,19 +1,22 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, memo } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Image from "next/image";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { iconPaths } from "@/lib/constants";
 import { InfoCard } from "../margin/info-card";
 import { Button } from "../ui/button";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useSupplyLiquidity, usePoolData } from "@/hooks/use-earn";
 import { AssetType } from "@/lib/stellar-utils";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
+
+const POOL_OPTIONS = ["XLM", "BLUSDC", "AqUSDC", "SoUSDC"] as const;
 
 const toInternalAsset = (value: string) => {
   if (value === 'BLUSDC' || value === 'USDC') return 'USDC';
@@ -31,12 +34,26 @@ const toDisplayAsset = (value: string) => {
 
 export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
   const { isDark } = useTheme();
+  const router = useRouter();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const selectedOption = toDisplayAsset(selectedAsset);
   const normalizedAsset = toInternalAsset(selectedOption);
 
   const [amount, setAmount] = useState<string>("");
   const [selectedPercentage, setSelectedPercentage] = useState<number>(0);
+  const [poolDropdownOpen, setPoolDropdownOpen] = useState(false);
+  const poolDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!poolDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (poolDropdownRef.current && !poolDropdownRef.current.contains(e.target as Node)) {
+        setPoolDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [poolDropdownOpen]);
 
   const userAddress = useUserStore((state) => state.address);
   const balance = useUserStore((state) => state.balance);
@@ -160,20 +177,82 @@ export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
         isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
       }`}>
         <div className="flex items-center justify-between px-4 pt-4 pb-2 gap-3">
-          {/* Token pill */}
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full shrink-0 ${
-            isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"
-          }`}>
-            <Image
-              src={iconPaths[selectedOption] || iconPaths[normalizedAsset] || "/icons/stellar.svg"}
-              alt={selectedOption}
-              width={20}
-              height={20}
-              className="rounded-full w-5 h-5 flex-none"
-            />
-            <span className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
-              {selectedOption}
-            </span>
+          {/* Token dropdown */}
+          <div className="relative shrink-0" ref={poolDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setPoolDropdownOpen(!poolDropdownOpen)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors ${
+                isDark ? "bg-[#2A2A2A] hover:bg-[#333333]" : "bg-[#F0F0F0] hover:bg-[#E2E2E2]"
+              }`}
+              aria-haspopup="listbox"
+              aria-expanded={poolDropdownOpen}
+            >
+              <Image
+                src={iconPaths[selectedOption] || iconPaths[normalizedAsset] || "/icons/stellar.svg"}
+                alt={selectedOption}
+                width={20}
+                height={20}
+                className="rounded-full w-5 h-5 flex-none"
+              />
+              <span className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
+                {selectedOption}
+              </span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className={`shrink-0 w-3.5 h-3.5 transition-transform duration-200 ${isDark ? "text-[#AAA]" : "text-[#555]"} ${poolDropdownOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            <AnimatePresence>
+              {poolDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15 }}
+                  className={`absolute left-0 top-full mt-1 z-50 rounded-xl border shadow-lg overflow-hidden min-w-[140px] ${
+                    isDark ? "bg-[#222222] border-[#333333]" : "bg-white border-[#E8E8E8]"
+                  }`}
+                  role="listbox"
+                >
+                  {POOL_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => {
+                        setPoolDropdownOpen(false);
+                        if (opt !== selectedOption) router.push(`/earn/${opt}`);
+                      }}
+                      className={`flex items-center gap-2 w-full px-4 py-2.5 text-[13px] font-medium transition-colors ${
+                        opt === selectedOption
+                          ? "text-[#703AE6]"
+                          : isDark
+                            ? "text-white hover:bg-[#333]"
+                            : "text-[#111] hover:bg-[#F5F5F5]"
+                      }`}
+                      role="option"
+                      aria-selected={opt === selectedOption}
+                    >
+                      <Image
+                        src={iconPaths[opt] ?? "/icons/stellar.svg"}
+                        alt={opt}
+                        width={16}
+                        height={16}
+                        className="rounded-full"
+                      />
+                      {opt}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           {/* Amount input */}
           <div className="flex-1 min-w-0">

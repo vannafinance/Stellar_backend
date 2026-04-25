@@ -228,9 +228,9 @@ export const BorrowBox = ({
             <p
               className={`flex-1 min-w-0 text-[22px] sm:text-[28px] font-semibold text-right ${
                 isDark ? "text-white" : "text-[#111111]"
-              }`}
+              } ${previewBorrowableAmount <= 0 ? "opacity-20" : ""}`}
             >
-              {previewBorrowableAmount.toFixed(4)}
+              {previewBorrowableAmount > 0 ? previewBorrowableAmount.toFixed(4) : "0"}
             </p>
           </div>
 
@@ -373,10 +373,10 @@ export const BorrowBox = ({
                         placeholder="0"
                         value={inputValues[idx] !== undefined ? inputValues[idx].toString() : ""}
                         onChange={handleInputChange(idx)}
-                        className={`flex-1 min-w-0 text-[22px] sm:text-[28px] font-semibold bg-transparent text-right outline-none placeholder:opacity-40 ${
+                        className={`flex-1 min-w-0 text-[22px] sm:text-[28px] font-semibold bg-transparent text-right outline-none placeholder:opacity-20 ${
                           isDark
-                            ? "text-white placeholder:text-[#555555]"
-                            : "text-[#111111] placeholder:text-[#CCCCCC]"
+                            ? "text-white placeholder:text-white"
+                            : "text-[#111111] placeholder:text-[#111111]"
                         }`}
                       />
                     </div>

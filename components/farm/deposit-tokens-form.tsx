@@ -67,7 +67,7 @@ export const DepositTokensForm = ({ assets }: { assets: string[] }) => {
                     type="text"
                     placeholder="0"
                     inputMode="decimal"
-                    className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:text-[#555555] ${isDark ? "text-white" : "text-[#111111]"}`}
+                    className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:opacity-20 ${isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"}`}
                 />
                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full shrink-0 ${isDark ? "bg-[#1A1A1A] border border-[#2A2A2A]" : "bg-[#F7F7F7] border border-[#E8E8E8]"}`}>
                     {iconPaths[asset] && <Image src={iconPaths[asset]} alt={asset} width={20} height={20} className="rounded-full w-5 h-5 flex-none" />}

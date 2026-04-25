@@ -433,12 +433,12 @@ export const AddLiquidity = memo(function AddLiquidity() {
               >
                 <input
                   type="number"
-                  placeholder="0.00"
+                  placeholder="0"
                   value={idx === 0 ? amountA : amountB}
                   onChange={(e) => idx === 0 ? handleAmountAChange(e.target.value) : handleAmountBChange(e.target.value)}
                   min="0"
-                  className={`w-full bg-transparent outline-none border-none text-[18px] font-semibold placeholder:text-[#CCCCCC] ${
-                    isDark ? "text-white" : "text-black"
+                  className={`w-full bg-transparent outline-none border-none text-[18px] font-semibold placeholder:opacity-20 ${
+                    isDark ? "text-white placeholder:text-white" : "text-black placeholder:text-black"
                   } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
                 />
                 <div className="flex flex-col items-end gap-[6px]">
@@ -535,7 +535,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             disabled={txStatus === "loading"}
-            className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:text-[#555555] ${isDark ? "text-white" : "text-[#111111]"}`}
+            className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:opacity-20 ${isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"}`}
           />
           {/* Token dropdown pill */}
           <div className="relative shrink-0" ref={tokenDropdownRef}>

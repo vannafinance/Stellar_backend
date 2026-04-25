@@ -11,7 +11,6 @@ import { AmountBreakdownDialogue } from "../ui/amount-breakdown-dialogue";
 import {
   DEPOSIT_PERCENTAGES,
   PERCENTAGE_COLORS,
-  DEPOSIT_AMOUNT_BREAKDOWN_DATA,
   UNIFIED_BALANCE_BREAKDOWN_DATA,
   BALANCE_TYPE_OPTIONS,
 } from "@/lib/constants/margin";
@@ -51,32 +50,32 @@ const CollateralComponent = (props: Collateral) => {
   const [selectedCurrency, setSelectedCurrency] = useState<string>(
     props.collaterals?.asset || DropdownOptions[0]
   );
-  const [valueInput, setValueInput] = useState<string>(
-    props.collaterals?.amount.toString() || "0.0"
-  );
-  const [valueInUsd, setValueInUsd] = useState<string>(
-    props.collaterals?.amountInUsd.toString() || "0.0"
-  );
-  const [percentage, setPercentage] = useState(10);
+  const [valueInput, setValueInput] = useState<string>(() => {
+    const amount = props.collaterals?.amount;
+    return amount && amount > 0 ? amount.toString() : "";
+  });
+  const [valueInUsd, setValueInUsd] = useState<string>(() => {
+    const amountInUsd = props.collaterals?.amountInUsd;
+    return amountInUsd && amountInUsd > 0 ? amountInUsd.toString() : "0.0000";
+  });
+  const [percentage, setPercentage] = useState(0);
   const [selectedBalanceType, setSelectedBalanceType] = useState<string>(
     props.collaterals?.balanceType.toUpperCase() || BALANCE_TYPE_OPTIONS[0]
   );
 
   // Dialogue visibility states
-  const [isViewSourcesOpen, setIsViewSourcesOpen] = useState(false);
   const [isUnifiedBalanceOpen, setIsUnifiedBalanceOpen] = useState(false);
 
   // Extract collateral data for conditional rendering
   const collateral = props.collaterals;
   const hasCollateral = collateral !== null;
   const showDeleteButton = isStandard && hasCollateral && props.index !== 0;
-  const isWBSelected = selectedBalanceType === "WB";
 
   // Only sync when switching between edit/view modes or when collateral changes
   useEffect(() => {
     if (isEditing && props.collaterals) {
-      const newAmount = props.collaterals.amount.toString();
-      const newAmountInUsd = props.collaterals.amountInUsd.toString();
+      const newAmount = props.collaterals.amount > 0 ? props.collaterals.amount.toString() : "";
+      const newAmountInUsd = props.collaterals.amountInUsd > 0 ? props.collaterals.amountInUsd.toString() : "0.0000";
       const newCurrency = props.collaterals.asset;
       const newBalanceType = props.collaterals.balanceType.toUpperCase();
 
@@ -130,16 +129,8 @@ const CollateralComponent = (props: Collateral) => {
     setValueInput(calculatedAmount.toString());
   };
 
-  const handleViewSourcesClick = () => {
-    setIsViewSourcesOpen(true);
-  };
-
   const handleUnifiedBalanceClick = () => {
     setIsUnifiedBalanceOpen(true);
-  };
-
-  const handleCloseViewSources = () => {
-    setIsViewSourcesOpen(false);
   };
 
   const handleCloseUnifiedBalance = () => {
@@ -258,10 +249,10 @@ const CollateralComponent = (props: Collateral) => {
                 <input
                   id={`collateral-amount-input-${props.index}`}
                   onChange={handleInputChange}
-                  className={`w-full text-right text-[22px] sm:text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-30 ${
+                  className={`w-full text-right text-[22px] sm:text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-20 ${
                     isDark
-                      ? "text-white placeholder:text-[#555555]"
-                      : "text-[#111111] placeholder:text-[#CCCCCC]"
+                      ? "text-white placeholder:text-white"
+                      : "text-[#111111] placeholder:text-[#111111]"
                   }`}
                   type="text"
                   placeholder="0"
@@ -321,23 +312,6 @@ const CollateralComponent = (props: Collateral) => {
                 >
                   Balance: {String(liveBalance)} {selectedCurrency}
                 </motion.button>
-
-                {/* View Sources (WB only) */}
-                {isWBSelected && (
-                  <motion.button
-                    type="button"
-                    onClick={handleViewSourcesClick}
-                    className={`text-[12px] font-medium cursor-pointer hover:underline shrink-0 ${
-                      isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                    }`}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ duration: 0.1 }}
-                    aria-label="View sources breakdown"
-                  >
-                    · View Sources
-                  </motion.button>
-                )}
 
                 <span
                   className={`text-[12px] font-medium shrink-0 ${
@@ -532,36 +506,6 @@ const CollateralComponent = (props: Collateral) => {
               </div>
             )}
           </motion.section>
-        )}
-      </AnimatePresence>
-
-      {/* View Sources dialogue */}
-      <AnimatePresence>
-        {isViewSourcesOpen && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566] p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            onClick={handleCloseViewSources}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ duration: 0.3 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <AmountBreakdownDialogue
-                heading={DEPOSIT_AMOUNT_BREAKDOWN_DATA.heading}
-                asset={DEPOSIT_AMOUNT_BREAKDOWN_DATA.asset}
-                totalDeposit={DEPOSIT_AMOUNT_BREAKDOWN_DATA.totalDeposit}
-                breakdown={[...DEPOSIT_AMOUNT_BREAKDOWN_DATA.breakdown]}
-                onClose={handleCloseViewSources}
-              />
-            </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
 

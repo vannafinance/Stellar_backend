@@ -66,9 +66,9 @@ export const Dropdown = (props: Dropdown) => {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         type="button"
-        className={`w-[80px] rounded-[8px] ${props.classname} cursor-pointer flex justify-center items-center ${
-          isDark ? "text-white bg-transparent" : ""
-        }`}
+        className={`w-fit rounded-[8px] cursor-pointer flex justify-center items-center ${
+          isDark ? "text-white" : ""
+        } ${props.classname}`}
         aria-label={`Selected: ${props.selectedOption}. Click to change option`}
         aria-expanded={isHover}
         aria-haspopup="listbox"
@@ -85,9 +85,9 @@ export const Dropdown = (props: Dropdown) => {
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
-          strokeWidth={1.5}
+          strokeWidth={2}
           stroke="currentColor"
-          className={props.arrowClassname || "size-5"}
+          className={`shrink-0 ${props.arrowClassname || "size-4"}`}
           aria-hidden="true"
           animate={{ rotate: isHover ? 180 : 0 }}
           transition={{ duration: 0.3, ease: "easeInOut" }}

@@ -304,9 +304,9 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
             <div className="flex flex-col gap-[6px]">
               <input
                 type="number"
-                placeholder="0.00"
-                className={`w-full h-fit text-[20px] font-semibold placeholder:text-[#CCCCCC] outline-none border-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-                  isDark ? "text-white" : "text-[#111111]"
+                placeholder="0"
+                className={`w-full h-fit text-[20px] font-semibold placeholder:opacity-20 outline-none border-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                  isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"
                 }`}
                 value={value}
                 onChange={(e) => {
@@ -386,7 +386,7 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
           <input
             type="text"
             placeholder="0"
-            className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:text-[#555555] ${isDark ? "text-white" : "text-[#111111]"}`}
+            className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:opacity-20 ${isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"}`}
             value={value}
             onChange={(e) => { setValue(e.target.value); setSelectedPercentage(0); }}
             disabled={txStatus === "loading"}

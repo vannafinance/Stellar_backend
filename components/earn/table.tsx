@@ -162,8 +162,9 @@ const applyFilters = (
     }
 
     if (hasAllChainsFilter) {
-      const poolTitle = row.cell[0]?.title;
-      if (!poolTitle || !filtersState.allChains.includes(poolTitle)) return false;
+      const poolTitle = row.cell[0]?.title?.toUpperCase() || "";
+      if (!poolTitle || !filtersState.allChains.some((c) => poolTitle.includes(c.toUpperCase())))
+        return false;
     }
 
     if (hasDepositFilter) {

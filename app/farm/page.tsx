@@ -335,9 +335,7 @@ export default function FarmPage() {
           allChainDropdown: true,
           filters: activeTab === "positions"
             ? []
-            : (activeFilterTab === "lending-single-assets"
-              ? ["Protocol", "Vaults", "Curator"]
-              : ["Protocol", "Vaults", "Curator", "Provider"]),
+            : ["Vaults"],
           supplyApyTab: activeTab === "positions" ? false : true,
           supplyApyLabel: activeFilterTab === "lending-single-assets" ? "Provider TVL" : "Vanna TVL",
           filterTabType: activeTab === "positions" ? "solid" : "ghost"
