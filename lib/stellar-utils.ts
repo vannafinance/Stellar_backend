@@ -143,6 +143,44 @@ export class WalletService {
 
 // Contract interaction utilities
 export class ContractService {
+  private static tokenDecimalsCache: Record<string, number> = {};
+
+  private static async getTokenDecimals(tokenContract: string): Promise<number> {
+    if (typeof this.tokenDecimalsCache[tokenContract] === 'number') {
+      return this.tokenDecimalsCache[tokenContract];
+    }
+
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      const token = new StellarSdk.Contract(tokenContract);
+
+      const tx = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(token.call('decimals'))
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+      if (StellarSdk.rpc.Api.isSimulationSuccess(sim) && sim.result?.retval) {
+        const decimalsNative = StellarSdk.scValToNative(sim.result.retval);
+        const decimals = Number(decimalsNative);
+        if (Number.isFinite(decimals) && decimals >= 0) {
+          this.tokenDecimalsCache[tokenContract] = decimals;
+          return decimals;
+        }
+      }
+    } catch (error) {
+      console.warn(`[getTokenDecimals] Falling back to 7 for ${tokenContract}:`, error);
+    }
+
+    this.tokenDecimalsCache[tokenContract] = 7;
+    return 7;
+  }
+
   private static async getSorobanTokenWalletBalance(tokenContract: string, walletAddress: string): Promise<string> {
     try {
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
@@ -166,7 +204,8 @@ export class ContractService {
       if (!StellarSdk.rpc.Api.isSimulationSuccess(sim) || !sim.result?.retval) return '0';
 
       const raw = StellarSdk.scValToNative(sim.result.retval) as bigint;
-      return (Number(raw) / 1e7).toFixed(7);
+      const decimals = await this.getTokenDecimals(tokenContract);
+      return (Number(raw) / 10 ** decimals).toFixed(7);
     } catch {
       return '0';
     }
@@ -397,9 +436,8 @@ export class ContractService {
         const result = simulationResponse.result;
         if (result && result.retval) {
           const balance = StellarSdk.scValToNative(result.retval);
-          // Convert from token decimals to regular decimal
-          // vTokens typically have 7 decimals for Stellar
-          const balanceDecimal = Number(balance) / 1e7;
+          const decimals = await this.getTokenDecimals(contractAddress);
+          const balanceDecimal = Number(balance) / 10 ** decimals;
           return balanceDecimal.toFixed(7);
         } else {
           return '0';
@@ -653,8 +691,8 @@ export class ContractService {
         const result = simulationResponse.result;
         if (result && result.retval) {
           const supply = StellarSdk.scValToNative(result.retval);
-          // vTokens have 7 decimals
-          const supplyDecimal = Number(supply) / 1e7;
+          const decimals = await this.getTokenDecimals(contractAddress);
+          const supplyDecimal = Number(supply) / 10 ** decimals;
           return supplyDecimal.toFixed(7);
         }
       }

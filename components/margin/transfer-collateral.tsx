@@ -8,7 +8,7 @@ import { Button } from "../ui/button";
 import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
-import { WalletService } from "@/lib/stellar-utils";
+import { ContractService } from "@/lib/stellar-utils";
 import toast from "react-hot-toast";
 
 export const TransferCollateral = () => {
@@ -33,6 +33,40 @@ export const TransferCollateral = () => {
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
 
+  const getSelectedWalletBalance = async (address: string, tokenSymbol: string): Promise<number> => {
+    try {
+      const balances = await ContractService.getAllTokenBalances(address);
+      const contractTokenSymbol = normalizeContractTokenSymbol(tokenSymbol);
+
+      if (contractTokenSymbol === "BLUSDC") return parseFloat(balances.BLEND_USDC) || 0;
+      if (contractTokenSymbol === "AQUSDC") return parseFloat(balances.AQUARIUS_USDC) || 0;
+      if (contractTokenSymbol === "SOUSDC") return parseFloat(balances.SOROSWAP_USDC) || 0;
+
+      return parseFloat(balances.XLM) || 0;
+    } catch (error) {
+      console.error("Error fetching selected wallet balance:", error);
+      return 0;
+    }
+  };
+
+  const refreshTokenBalances = async (address: string, marginAccountAddress?: string) => {
+    const selectedWalletBalance = await getSelectedWalletBalance(address, selectedCurrency);
+    setWalletBalance(selectedWalletBalance);
+
+    const accountAddress = marginAccountAddress ?? marginAccount;
+    if (!accountAddress) return;
+
+    try {
+      const result = await MarginAccountService.getCollateralBalances(accountAddress);
+      if (result.success && result.data) {
+        const tokenData = result.data[normalizeContractTokenSymbol(selectedCurrency)];
+        setMarginAccountBalance(tokenData ? parseFloat(tokenData.amount) || 0 : 0);
+      }
+    } catch (error) {
+      console.error("Error refreshing margin account balance:", error);
+    }
+  };
+
   // Load user data on mount
   useEffect(() => {
     const loadUserData = async () => {
@@ -45,14 +79,10 @@ export const TransferCollateral = () => {
           const account = MarginAccountService.getStoredMarginAccount(address.address);
           if (account && account.isActive) {
             setMarginAccount(account.address);
-            
-            // Get margin account balance
-            await refreshMarginAccountBalance(account.address);
+            await refreshTokenBalances(address.address, account.address);
+          } else {
+            await refreshTokenBalances(address.address);
           }
-          
-          // Get wallet balance
-          const balance = await WalletService.getBalance(address.address);
-          setWalletBalance(parseFloat(balance) || 0);
         }
       } catch (error) {
         console.error("Error loading user data:", error);
@@ -62,27 +92,12 @@ export const TransferCollateral = () => {
     loadUserData();
   }, []);
 
-  // Refresh margin account balance
-  const refreshMarginAccountBalance = async (marginAccountAddress: string) => {
-    try {
-      const result = await MarginAccountService.getCollateralBalances(marginAccountAddress);
-      if (result.success && result.data) {
-        const tokenData = result.data[normalizeContractTokenSymbol(selectedCurrency)];
-        if (tokenData) {
-          setMarginAccountBalance(parseFloat(tokenData.amount) || 0);
-        }
-      }
-    } catch (error) {
-      console.error("Error refreshing margin account balance:", error);
-    }
-  };
-
   // Refresh when currency changes
   useEffect(() => {
-    if (marginAccount) {
-      refreshMarginAccountBalance(marginAccount);
+    if (userAddress) {
+      refreshTokenBalances(userAddress, marginAccount);
     }
-  }, [selectedCurrency, marginAccount]);
+  }, [selectedCurrency, marginAccount, userAddress]);
 
   const handlePercentageClick = (item: number) => {
     setPercentage(item);
@@ -121,9 +136,7 @@ export const TransferCollateral = () => {
 
       if (result.success) {
         toast.success(`Transfer successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
-        await refreshMarginAccountBalance(marginAccount);
-        const balance = await WalletService.getBalance(userAddress);
-        setWalletBalance(parseFloat(balance) || 0);
+        await refreshTokenBalances(userAddress, marginAccount);
         setValueInput("");
         setValueInUsd(0);
       } else {
