@@ -14,7 +14,6 @@ import { usePoolData, useUserPositions } from "@/hooks/use-earn";
 
 // USD prices for testnet tokens
 const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0 };
-const HISTORY_SAMPLE_MIN_GAP_MS = 30_000;
 const HISTORY_MAX_ITEMS = 3000;
 const ALL_ASSETS = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
 
@@ -39,7 +38,7 @@ const readOverviewHistory = (address: string): EarnOverviewSnapshot[] => {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    const normalized = parsed
       .map((item) => ({
         timestamp: normalizeTimestamp(item?.timestamp),
         totalDepositedUSD: Number(item?.totalDepositedUSD ?? 0),
@@ -51,6 +50,18 @@ const readOverviewHistory = (address: string): EarnOverviewSnapshot[] => {
         Number.isFinite(item.annualEarningsUSD)
       )
       .sort((a, b) => a.timestamp - b.timestamp);
+
+    // Remove transient refresh spikes: 0 sandwiched between two similar non-zero values.
+    return normalized.filter((item, idx, arr) => {
+      if (item.totalDepositedUSD !== 0 || idx === 0 || idx === arr.length - 1) return true;
+      const prev = arr[idx - 1];
+      const next = arr[idx + 1];
+      const closeByTime =
+        item.timestamp - prev.timestamp <= 5 * 60_000 &&
+        next.timestamp - item.timestamp <= 5 * 60_000;
+      const similarNeighbors = Math.abs(next.totalDepositedUSD - prev.totalDepositedUSD) <= 0.5;
+      return !(prev.totalDepositedUSD > 0 && next.totalDepositedUSD > 0 && closeByTime && similarNeighbors);
+    });
   } catch {
     return [];
   }
@@ -211,8 +222,8 @@ export default function Earn() {
   const [activeTab, setActiveTab] = useState("vaults");
 
   // Live data from on-chain contracts (auto-refreshes every 30s)
-  const { pools } = usePoolData();
-  const { positions: userPositions } = useUserPositions();
+  const { pools, isLoading: poolsLoading } = usePoolData();
+  const { positions: userPositions, isLoading: positionsLoading } = useUserPositions();
   const [overviewHistory, setOverviewHistory] = useState<EarnOverviewSnapshot[]>([]);
 
   // Set default pool selection on mount
@@ -258,17 +269,20 @@ export default function Earn() {
 
   useEffect(() => {
     if (!userAddress) return;
+    if (poolsLoading || positionsLoading) return;
     if (!Number.isFinite(totalDepositedUSD) || !Number.isFinite(annualEarnings)) return;
 
     queueMicrotask(() => {
       setOverviewHistory((prev) => {
         const now = Date.now();
+        const roundedDeposited = parseFloat(totalDepositedUSD.toFixed(2));
+        const roundedAnnual = parseFloat(annualEarnings.toFixed(2));
         const last = prev[prev.length - 1];
-        const depositedChanged = !last || Math.abs(last.totalDepositedUSD - totalDepositedUSD) >= 0.01;
-        const earningsChanged = !last || Math.abs(last.annualEarningsUSD - annualEarnings) >= 0.01;
-        const enoughTimePassed = !last || now - last.timestamp >= HISTORY_SAMPLE_MIN_GAP_MS;
+        const depositedChanged = !last || Math.abs(last.totalDepositedUSD - roundedDeposited) >= 0.01;
+        const earningsChanged = !last || Math.abs(last.annualEarningsUSD - roundedAnnual) >= 0.01;
 
-        if (!depositedChanged && !earningsChanged && !enoughTimePassed) {
+        // Update only when actual value changes; never just because page refreshed.
+        if (!depositedChanged && !earningsChanged) {
           return prev;
         }
 
@@ -276,8 +290,8 @@ export default function Earn() {
           ...prev,
           {
             timestamp: now,
-            totalDepositedUSD,
-            annualEarningsUSD: annualEarnings,
+            totalDepositedUSD: roundedDeposited,
+            annualEarningsUSD: roundedAnnual,
           },
         ].slice(-HISTORY_MAX_ITEMS);
 
@@ -285,7 +299,7 @@ export default function Earn() {
         return next;
       });
     });
-  }, [userAddress, totalDepositedUSD, annualEarnings]);
+  }, [userAddress, totalDepositedUSD, annualEarnings, poolsLoading, positionsLoading]);
 
   const liveDepositData = useMemo(
     () => toChartData(overviewHistory, "totalDepositedUSD"),

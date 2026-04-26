@@ -63,6 +63,8 @@ const extractDepositHash = (result: { success: boolean; hash?: string; error?: s
 
 
 export const LeverageAssetsTab = () => {
+  const XLM_WALLET_RESERVE = 1;
+  const XLM_DEPOSIT_EPSILON = 1e-7;
   const { isDark } = useTheme();
   const { refreshBalances } = useWallet();
   const normalizeContractTokenSymbol = (symbol: string) => {
@@ -93,6 +95,29 @@ export const LeverageAssetsTab = () => {
   const [mbEditAmounts, setMbEditAmounts] = useState<Record<string, string>>({});
 
   const userAddress = useUserStore((state) => state.address);
+  const tokenBalances = useUserStore((state) => state.tokenBalances);
+
+  const getFriendlyDepositError = useCallback((rawError?: string) => {
+    const compact = (rawError || "").split("\nEvent log")[0]?.trim() || "";
+    const text = compact.toLowerCase();
+
+    if (
+      text.includes("error(contract, #10)") ||
+      text.includes("resulting balance is not within the allowed range")
+    ) {
+      return "You cannot deposit 100% of your wallet balance. Please keep at least 1 XLM in your wallet.";
+    }
+
+    if (text.includes("insufficient")) {
+      return "Insufficient wallet balance for this deposit.";
+    }
+
+    if (text.includes("hosterror")) {
+      return "Deposit failed on-chain. Please retry with a slightly smaller amount.";
+    }
+
+    return compact || "Deposit and borrow failed. Please try again.";
+  }, []);
 
   useEffect(() => {
     if (!userAddress) return;
@@ -471,6 +496,18 @@ export const LeverageAssetsTab = () => {
 
         const multiplier = leverage; // Use the leverage state as multiplier
         const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
+        const isXlmDeposit = tokenSymbol === "XLM";
+        const walletXlmBalance = parseFloat(tokenBalances.XLM || "0") || 0;
+        const maxXlmDeposit = Math.max(0, walletXlmBalance - XLM_WALLET_RESERVE);
+
+        if (
+          isXlmDeposit &&
+          depositAmount > maxXlmDeposit + XLM_DEPOSIT_EPSILON
+        ) {
+          toast.error("You cannot deposit 100% of your wallet balance. Please keep at least 1 XLM in your wallet.");
+          setIsProcessing(false);
+          return;
+        }
 
         // Pre-validate borrow against the Risk Engine's formula before submitting.
         // Contract check: (collateral + borrow) / (existingDebt + borrow) > 1.1
@@ -585,12 +622,13 @@ export const LeverageAssetsTab = () => {
             return;
           }
           
-          toast.error('Deposit and borrow failed: ' + result.error);
+          toast.error(getFriendlyDepositError(result.error));
         }
 
       } catch (error) {
         console.error('❌ Error in deposit and borrow:', error);
-        toast.error('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        toast.error(getFriendlyDepositError(errorMessage));
       } finally {
         setIsProcessing(false);
       }
