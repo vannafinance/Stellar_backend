@@ -9,6 +9,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
+import { appendMarginHistory } from "@/lib/margin-history";
 import toast from "react-hot-toast";
 
 const XLM_WALLET_RESERVE = 1;
@@ -57,17 +58,28 @@ export const TransferCollateral = () => {
   }
 
   const getFriendlyTransferError = (rawError?: string) => {
-    const text = (rawError || "").toLowerCase();
+    const compact = (rawError || "").split("\nEvent log")[0]?.trim() || "";
+    const text = compact.toLowerCase();
     if (
       text.includes("error(contract, #10)") ||
       text.includes("resulting balance is not within the allowed range")
     ) {
       return "You cannot transfer all your wallet balance. Please keep at least 1 XLM in your wallet.";
     }
+    if (
+      text.includes("invalidaction") ||
+      text.includes("is_withdraw_allowed") ||
+      text.includes("unreachablecodereached")
+    ) {
+      return "Withdrawal blocked by Risk Engine. Repay some debt first or use a smaller transfer amount.";
+    }
     if (text.includes("insufficient")) {
       return "Insufficient balance for this transfer.";
     }
-    return rawError || "Transfer failed. Please try again.";
+    if (text.includes("hosterror")) {
+      return "Transfer failed on-chain. Please retry in a moment.";
+    }
+    return compact || "Transfer failed. Please try again.";
   };
 
   const getSelectedWalletBalance = async (address: string, tokenSymbol: string): Promise<number> => {
@@ -194,6 +206,14 @@ export const TransferCollateral = () => {
           );
 
       if (result.success) {
+        appendMarginHistory({
+          marginAccountAddress: marginAccount,
+          type: selectedTransferType === "MB" ? "transfer-in" : "transfer-out",
+          asset: normalizeContractTokenSymbol(selectedCurrency),
+          amount: Number(valueInput).toFixed(7),
+          hash: result.hash ?? "",
+        });
+
         toast.success(
           `${selectedTransferType === "MB" ? "Transfer to margin successful" : "Transfer to wallet successful"}! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`
         );

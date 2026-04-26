@@ -277,17 +277,13 @@ const Margin = () => {
         }
 
         if (!accountStats) {
-          acc[item.id] = "-";
+          acc[item.id] = formatAccountStatValue(item.id, 0);
           return acc;
         }
 
         const value = accountStats[item.id as keyof typeof accountStats] ?? 0;
 
-        if (value === 0 && item.id === "netProfitAndLoss") {
-          acc[item.id] = "-";
-        } else {
-          acc[item.id] = formatAccountStatValue(item.id, value);
-        }
+        acc[item.id] = formatAccountStatValue(item.id, value);
 
         return acc;
       },

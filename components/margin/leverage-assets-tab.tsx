@@ -43,6 +43,23 @@ const ensureCollateralId = (collateral: Collaterals): Collaterals => {
   return collateral;
 };
 
+const extractDepositHash = (result: { success: boolean; hash?: string; error?: string }): string => {
+  if (result.hash) {
+    if (result.hash.includes("Deposit:")) {
+      const depositPart = result.hash.split(",")[0] ?? result.hash;
+      return depositPart.replace("Deposit:", "").trim();
+    }
+    return result.hash.trim();
+  }
+
+  if (result.error) {
+    const match = result.error.match(/Deposit was successful(?: with hash:)?\s*([A-Z0-9]{20,})/i);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  return "";
+};
+
 
 
 export const LeverageAssetsTab = () => {
@@ -499,6 +516,17 @@ export const LeverageAssetsTab = () => {
 
         const didDepositSucceed =
           result.success || result.error?.includes("Deposit was successful with hash");
+
+        if (didDepositSucceed && marginAccountAddress) {
+          const depositHash = extractDepositHash(result);
+          appendMarginHistory({
+            marginAccountAddress,
+            type: "deposit",
+            asset: tokenSymbol,
+            amount: depositAmount.toFixed(7),
+            hash: depositHash,
+          });
+        }
 
         // Always refresh wallet + margin balances after a successful deposit phase,
         // even when borrow fails due to risk-engine limits.
@@ -972,7 +1000,7 @@ export const LeverageAssetsTab = () => {
               isProcessing ? "Processing..." :
               !userAddress ? "Login" :
               hasMarginAccount  && !isMBMode
-                ? "Deposit & Borrow"
+                ? leverage <= 1 ? "Deposit" : "Deposit & Borrow"
                 : hasMarginAccount && isMBMode
                 ? "Borrow"
                 :  "Create your Margin Account"

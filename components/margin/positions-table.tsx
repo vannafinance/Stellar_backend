@@ -200,18 +200,23 @@ export const Positionstable = ({
   const HISTORY_HEADINGS = ["Date", "Type", "Asset", "Amount", "Tx Hash"];
 
   const renderHistoryRow = (
-    item: { type: 'borrow' | 'repay'; asset: string; amount: string; timestamp: number; hash: string },
+    item: { type: 'deposit' | 'borrow' | 'repay' | 'transfer-in' | 'transfer-out'; asset: string; amount: string; timestamp: number; hash: string },
     idx: number
   ) => {
     const date = item.timestamp
       ? new Date(item.timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
       : '—';
 
-    const isBorrow = item.type === 'borrow';
-    const badgeClass = isBorrow
-      ? 'bg-red-100 text-red-600'
-      : 'bg-green-100 text-green-600';
-    const badgeLabel = isBorrow ? 'Borrow' : 'Repay';
+    const badgeConfig =
+      item.type === 'borrow'
+        ? { className: 'bg-red-100 text-red-600', label: 'Borrow' }
+        : item.type === 'repay'
+          ? { className: 'bg-green-100 text-green-600', label: 'Repay' }
+          : item.type === 'transfer-in'
+            ? { className: 'bg-violet-100 text-violet-700', label: 'Transfer In' }
+            : item.type === 'transfer-out'
+              ? { className: 'bg-amber-100 text-amber-700', label: 'Transfer Out' }
+              : { className: 'bg-blue-100 text-blue-600', label: 'Deposit' };
 
     const shortHash = item.hash
       ? `${item.hash.slice(0, 8)}...${item.hash.slice(-4)}`
@@ -233,8 +238,8 @@ export const Positionstable = ({
 
         {/* Type badge */}
         <div className="w-full flex items-center py-[16px] px-[12px]">
-          <span className={`rounded-[4px] py-[2px] px-[8px] text-[11px] font-semibold ${badgeClass}`}>
-            {badgeLabel}
+          <span className={`rounded-[4px] py-[2px] px-[8px] text-[11px] font-semibold ${badgeConfig.className}`}>
+            {badgeConfig.label}
           </span>
         </div>
 

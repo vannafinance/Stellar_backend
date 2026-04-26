@@ -1,6 +1,7 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { getAddress, signTransaction } from '@stellar/freighter-api';
 import { CONTRACT_ADDRESSES, NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from './stellar-utils';
+import { BlendService } from './blend-utils';
 
 // Types
 export interface MarginAccount {
@@ -72,7 +73,7 @@ export class MarginAccountService {
     return `Borrow failed for ${tokenSymbol}. Please check collateral, existing debt, and risk limits, then retry.`;
   }
 
-  private static formatUserFacingContractError(raw: any, action: 'repay' | 'borrow' | 'generic' = 'generic'): string {
+  private static formatUserFacingContractError(raw: any, action: 'repay' | 'borrow' | 'withdraw' | 'generic' = 'generic'): string {
     const text = typeof raw === 'string' ? raw : JSON.stringify(raw ?? {});
     const compact = text.split('\nEvent log')[0]?.trim() || text;
 
@@ -88,6 +89,27 @@ export class MarginAccountService {
 
       if (compact.includes('HostError')) {
         return 'Repay transaction failed on-chain. Please refresh debt value and retry.';
+      }
+    }
+
+    if (action === 'withdraw') {
+      if (
+        compact.includes('is_withdraw_allowed') ||
+        compact.includes('InvalidAction') ||
+        compact.includes('UnreachableCodeReached')
+      ) {
+        return 'Withdraw is blocked by Risk Engine. You likely have active debt, and this transfer would make your account unsafe. Repay some debt or withdraw a smaller amount.';
+      }
+
+      if (
+        compact.toLowerCase().includes('insufficient') ||
+        compact.toLowerCase().includes('balance')
+      ) {
+        return 'Insufficient collateral balance for this withdrawal.';
+      }
+
+      if (compact.includes('HostError')) {
+        return 'Withdraw transaction failed on-chain. Please retry with a smaller amount.';
       }
     }
 
@@ -1124,7 +1146,7 @@ export class MarginAccountService {
           // Not a budget error - this is a real contract error
           return {
             success: false,
-            error: `Contract error: ${simulationResult.error}`
+            error: this.formatUserFacingContractError(simulationResult.error, 'withdraw')
           };
         }
 
@@ -1179,7 +1201,7 @@ export class MarginAccountService {
       console.error('❌ Error withdrawing collateral tokens:', error);
       return {
         success: false,
-        error: error?.message || 'Failed to withdraw collateral tokens'
+        error: this.formatUserFacingContractError(error?.message || error, 'withdraw')
       };
     }
   }
@@ -1970,6 +1992,138 @@ export class MarginAccountService {
     } catch (err: any) {
       console.warn('[MarginAccountService] getMarginTransactionHistory error:', err?.message ?? err);
       return [];
+    }
+  }
+
+  /**
+   * Atomic one-click flow for Blend single-asset pools:
+   * deposit collateral + optional borrow + deploy to Blend in one wallet signature.
+   */
+  static async depositBorrowAndDeployBlendAtomic(
+    marginAccountAddress: string,
+    collateralAmount: number,
+    borrowAmount: number,
+    tokenSymbol: string = 'XLM'
+  ): Promise<{ success: boolean; hash?: string; error?: string }> {
+    try {
+      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+
+      if (!collateralAmount || collateralAmount <= 0) {
+        return { success: false, error: 'Please enter a valid collateral amount' };
+      }
+
+      const userAddress = await getAddress();
+      if (userAddress.error || !userAddress.address) {
+        return { success: false, error: 'Failed to get user address' };
+      }
+
+      const isCollateralAllowed = await this.isCollateralAllowed(contractTokenSymbol);
+      if (!isCollateralAllowed) {
+        return {
+          success: false,
+          error: `${contractTokenSymbol} is not allowed as collateral. Please ask the contract admin to enable this token first.`,
+        };
+      }
+
+      const blendPoolAddress = await BlendService.getBlendPoolAddressFromRegistry();
+      if (!blendPoolAddress) {
+        return {
+          success: false,
+          error:
+            'Blend pool is not configured in the Registry. Ask the admin to run set_blend_pool_address before deploying.',
+        };
+      }
+
+      const depositAmountWad = (
+        BigInt(Math.floor(collateralAmount * 1_000_000)) * BigInt(1_000_000_000_000)
+      ).toString();
+      const borrowAmountWadBigInt =
+        borrowAmount > 0
+          ? BigInt(Math.floor(borrowAmount * 1_000_000)) * BigInt(1_000_000_000_000)
+          : BigInt(0);
+      const totalDeployAmount = collateralAmount + Math.max(0, borrowAmount);
+      const totalDeployAmountWad =
+        BigInt(Math.floor(totalDeployAmount * 1_000_000)) * BigInt(1_000_000_000_000);
+
+      const callBytes = BlendService.buildExternalProtocolCallBytes(
+        blendPoolAddress,
+        'Deposit',
+        contractTokenSymbol,
+        totalDeployAmountWad,
+        marginAccountAddress
+      );
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(userAddress.address);
+      const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.ACCOUNT_MANAGER);
+
+      let txBuilder = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: (parseInt(StellarSdk.BASE_FEE) * 120).toString(),
+        networkPassphrase: NETWORK_PASSPHRASE,
+      }).addOperation(
+        contract.call(
+          'deposit_collateral_tokens',
+          StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+          StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' }),
+          StellarSdk.nativeToScVal(depositAmountWad, { type: 'u256' })
+        )
+      );
+
+      if (borrowAmountWadBigInt > BigInt(0)) {
+        txBuilder = txBuilder.addOperation(
+          contract.call(
+            'borrow',
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+            StellarSdk.nativeToScVal(borrowAmountWadBigInt.toString(), { type: 'u256' }),
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' })
+          )
+        );
+      }
+
+      const transaction = txBuilder
+        .addOperation(
+          contract.call(
+            'execute',
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+            StellarSdk.xdr.ScVal.scvBytes(callBytes)
+          )
+        )
+        .setTimeout(90)
+        .build();
+
+      const preparedTx = await server.prepareTransaction(transaction);
+      const signResult = await signTransaction(preparedTx.toXDR(), {
+        networkPassphrase: NETWORK_PASSPHRASE,
+      });
+
+      const signedTx = StellarSdk.TransactionBuilder.fromXDR(
+        signResult.signedTxXdr,
+        NETWORK_PASSPHRASE
+      );
+
+      const result = await server.sendTransaction(signedTx as StellarSdk.Transaction);
+      if (result.status !== 'PENDING') {
+        return {
+          success: false,
+          error: `Atomic strategy transaction failed immediately with status: ${result.status}`,
+        };
+      }
+
+      const finalResult = await this.pollTransactionStatus(server, result.hash);
+      if (finalResult.status === 'SUCCESS') {
+        return { success: true, hash: result.hash };
+      }
+
+      return {
+        success: false,
+        error: `Atomic strategy failed with status: ${finalResult.status}`,
+      };
+    } catch (error: any) {
+      console.error('❌ Atomic Blend open-position error:', error);
+      return {
+        success: false,
+        error: this.formatUserFacingContractError(error, 'generic'),
+      };
     }
   }
 
