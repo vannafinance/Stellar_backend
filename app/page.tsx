@@ -21,9 +21,6 @@ import { useTheme } from "@/contexts/theme-context";
 import { useAppModeStore } from "@/store/app-mode-store";
 import { LiteHome } from "@/components/lite-mode/lite-home";
 
-// Liquidation threshold from RiskEngine contract (BALANCE_TO_BORROW_THRESHOLD = 1.1)
-const LIQUIDATION_THRESHOLD = 1.1;
-
 export default function Home() {
   const { isDark } = useTheme();
   const appMode = useAppModeStore((s) => s.mode);
@@ -68,6 +65,12 @@ export default function Home() {
   const totalValue = useMarginAccountInfoStore((state) => state.totalValue);
   const avgHealthFactor = useMarginAccountInfoStore(
     (state) => state.avgHealthFactor
+  );
+  const collateralLeftBeforeLiquidation = useMarginAccountInfoStore(
+    (state) => state.collateralLeftBeforeLiquidation
+  );
+  const netAvailableCollateral = useMarginAccountInfoStore(
+    (state) => state.netAvailableCollateral
   );
   const timeToLiquidation = useMarginAccountInfoStore(
     (state) => state.timeToLiquidation
@@ -116,30 +119,22 @@ export default function Home() {
   }, [isConnected, hasMarginAccount, marginAccountAddress]);
 
 
-  // ── Live account stats derived from on-chain data ───────────────────────────
+  // ── Live account stats derived from store (contract-aligned formulas) ──────
   const accountStats = useMemo(() => {
-    const netHealthFactor =
-      totalBorrowedValue > 0
-        ? totalCollateralValue / totalBorrowedValue
-        : totalCollateralValue > 0
-        ? 999
-        : 0;
-
-    const collateralLeftBeforeLiquidation = Math.max(
-      0,
-      totalCollateralValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
-    );
-
-    const netAvailableCollateral = Math.max(0, totalCollateralValue - totalBorrowedValue);
-
     return {
-      netHealthFactor,
+      netHealthFactor: avgHealthFactor,
       collateralLeftBeforeLiquidation,
       netAvailableCollateral,
       netAmountBorrowed: totalBorrowedValue,
-      netProfitAndLoss: 0,
+      netProfitAndLoss: totalValue,
     };
-  }, [totalCollateralValue, totalBorrowedValue]);
+  }, [
+    avgHealthFactor,
+    collateralLeftBeforeLiquidation,
+    netAvailableCollateral,
+    totalBorrowedValue,
+    totalValue,
+  ]);
 
   // Format data for InfoCard component
   const marginAccountInfo = {
@@ -159,6 +154,9 @@ export default function Home() {
   // Format account stats value - defined outside rendering
   const formatAccountStatValue = (itemId: string, value: number) => {
     if (itemId === "netHealthFactor") {
+      if (value === Infinity || !isFinite(value) || value >= 999) {
+        return "∞";
+      }
       return formatValue(value, { type: "health-factor" });
     }
     return formatValue(value, {
@@ -169,7 +167,7 @@ export default function Home() {
 
   // Prepare account stats values for AccountStats component
   const accountStatsValues = ACCOUNT_STATS_ITEMS.reduce((acc, item) => {
-    if (!hasMarginAccount) {
+    if (!hasMarginAccount && totalCollateralValue <= 0 && totalBorrowedValue <= 0) {
       acc[item.id] = "-";
       return acc;
     }

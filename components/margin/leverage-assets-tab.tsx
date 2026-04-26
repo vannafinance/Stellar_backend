@@ -74,6 +74,8 @@ export const LeverageAssetsTab = () => {
   // Component state
   const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
   const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
+  const totalCollateralValue = useMarginAccountInfoStore((state) => state.totalCollateralValue);
+  const totalBorrowedValue = useMarginAccountInfoStore((state) => state.totalBorrowedValue);
   const isCreatingAccount = useMarginAccountInfoStore((state) => state.isCreatingAccount);
   const [editingId, setEditingId] = useState<string | null>(null);
   const mode: Modes = "Deposit";
@@ -204,11 +206,22 @@ export const LeverageAssetsTab = () => {
   // Simple calculations
   const fees = totalDepositValue > 0 ? totalDepositValue * 0.000234 : 0;
   const totalDeposit = totalDepositValue + fees;
-  // In MB mode, feed selected collateral USD as deposit base for BorrowBox preview (no fees)
-  const effectiveTotalForBorrow = isMBMode ? mbSelectedUsd : totalDeposit;
+  // Borrow preview/input should use pure collateral USD (no fee uplift).
+  const effectiveTotalForBorrow = isMBMode ? mbSelectedUsd : depositAmount;
   const platformPoints = Number((leverage * 0.575).toFixed(1));
-  const updatedCollateral = Math.round(depositAmount * leverage * 0.6);
-  const netHealthFactor = Number((2.0 - leverage * 0.0875).toFixed(2));
+  const projectedBorrowUsd = Math.max(0, effectiveTotalForBorrow * (leverage - 1));
+  const projectedCollateralUsd = totalCollateralValue + (isMBMode ? 0 : depositAmount);
+  const projectedDebtUsd = totalBorrowedValue + projectedBorrowUsd;
+  const updatedCollateral = Math.max(
+    0,
+    projectedCollateralUsd - projectedDebtUsd * 1.1
+  );
+  const netHealthFactor =
+    projectedDebtUsd > 1e-6
+      ? projectedCollateralUsd / projectedDebtUsd
+      : projectedCollateralUsd > 0
+        ? 999
+        : 0;
 
   // Memoized callbacks
   const handleAddCollateral = useCallback(() => {

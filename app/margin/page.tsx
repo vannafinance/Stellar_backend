@@ -65,18 +65,16 @@ const Margin = () => {
   );
 
   // Margin account data — single shallow-compared read.
-  // store.debtLimit holds collateralLeftBeforeLiquidation (repurposed field).
-  // store.minDebt  holds netAvailableCollateral           (repurposed field).
   const {
     hasMarginAccount,
     avgHealthFactor,
     totalCollateralValue,
     totalBorrowedValue,
     totalValue,
+    collateralLeftBeforeLiquidation,
+    netAvailableCollateral,
     timeToLiquidation,
     storeBorrowRate,
-    storedCollateralLeft,
-    storedNetAvailable,
     storeIsLoading,
   } = useMarginAccountInfoStore(
     useShallow((state) => ({
@@ -85,10 +83,10 @@ const Margin = () => {
       totalCollateralValue: state.totalCollateralValue,
       totalBorrowedValue: state.totalBorrowedValue,
       totalValue: state.totalValue,
+      collateralLeftBeforeLiquidation: state.collateralLeftBeforeLiquidation,
+      netAvailableCollateral: state.netAvailableCollateral,
       timeToLiquidation: state.timeToLiquidation,
       storeBorrowRate: state.borrowRate,
-      storedCollateralLeft: state.debtLimit,
-      storedNetAvailable: state.minDebt,
       storeIsLoading: state.isLoadingBorrowedBalances,
     })),
   );
@@ -139,17 +137,15 @@ const Margin = () => {
 
     return {
       netHealthFactor: avgHealthFactor,
-      // storedCollateralLeft = state.debtLimit (repurposed) = collateralLeftBeforeLiquidation
-      collateralLeftBeforeLiquidation: storedCollateralLeft,
-      // storedNetAvailable = state.minDebt (repurposed) = netAvailableCollateral
-      netAvailableCollateral: storedNetAvailable,
+      collateralLeftBeforeLiquidation,
+      netAvailableCollateral,
       netAmountBorrowed: totalBorrowedValue,
       netProfitAndLoss: totalValue,
     };
   }, [
     avgHealthFactor,
-    storedCollateralLeft,
-    storedNetAvailable,
+    collateralLeftBeforeLiquidation,
+    netAvailableCollateral,
     totalBorrowedValue,
     totalValue,
     hasMarginAccount,
