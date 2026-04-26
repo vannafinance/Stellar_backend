@@ -252,7 +252,7 @@ const Margin = () => {
       }
       return formatValue(value, {
         type: "health-factor",
-        showZeroAsDash: true,
+        showZeroAsDash: false,
       });
     }
 

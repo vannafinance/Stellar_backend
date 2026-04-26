@@ -58,7 +58,8 @@ export const AccountStats = ({
       {/* Mobile/Small-tablet: 2x2 grid (< 768px) */}
       <div className="md:hidden w-full grid grid-cols-2 gap-2">
         {items.filter(item => item.id !== "netProfitAndLoss").map((item, idx, arr) => {
-          const displayValue = values[item.id] ?? "-";
+          const raw = values[item.id];
+          const displayValue = (!raw || raw === "-") ? "0" : raw;
           const isLoading = displayValue === "⟳";
           return (
             <motion.article
@@ -105,7 +106,8 @@ export const AccountStats = ({
         }`}
       >
         {items.map((item, idx) => {
-          const displayValue = values[item.id] ?? "-";
+          const raw = values[item.id];
+          const displayValue = (!raw || raw === "-") ? "0" : raw;
           const isLoading = displayValue === "⟳";
           return (
             <motion.article
