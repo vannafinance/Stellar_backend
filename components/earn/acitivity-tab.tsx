@@ -65,6 +65,12 @@ const TOKEN_PRICES: Record<string, number> = {
   XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0,
 };
 
+const normalizeTimestamp = (value: number | string | undefined): number => {
+  const ts = Number(value ?? 0);
+  if (!Number.isFinite(ts) || ts <= 0) return 0;
+  return ts < 1_000_000_000_000 ? ts * 1000 : ts;
+};
+
 export const ActivityTab = () => {
   const { isDark } = useTheme();
   const { transactions: recentTransactions } = useEarnTransactions();
@@ -82,7 +88,7 @@ export const ActivityTab = () => {
         type: tx.type === "withdraw" ? "withdraw" : "supply",
         asset: assetKey,
         amount: String(tx.amount ?? "0"),
-        timestamp: Number(tx.timestamp ?? 0),
+        timestamp: normalizeTimestamp(tx.timestamp),
         hash: String(tx.hash ?? ""),
         status: tx.status ?? "success",
       }));
@@ -94,7 +100,7 @@ export const ActivityTab = () => {
         type: tx.type,
         asset: assetKey,
         amount: tx.amount,
-        timestamp: tx.timestamp,
+        timestamp: normalizeTimestamp(tx.timestamp),
         hash: tx.hash,
         status: tx.status,
       }));
