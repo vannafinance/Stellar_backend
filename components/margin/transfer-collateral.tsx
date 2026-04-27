@@ -19,7 +19,7 @@ export const TransferCollateral = () => {
   const { isDark } = useTheme();
   const normalizeContractTokenSymbol = (symbol: string) =>
     symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
-      ? "BLUSDC"
+      ? "USDC"
       : symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC"
         ? "AQUSDC"
         : symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC"
@@ -87,7 +87,7 @@ export const TransferCollateral = () => {
       const balances = await ContractService.getAllTokenBalances(address);
       const contractTokenSymbol = normalizeContractTokenSymbol(tokenSymbol);
 
-      if (contractTokenSymbol === "BLUSDC") return parseFloat(balances.BLEND_USDC) || 0;
+      if (contractTokenSymbol === "USDC") return parseFloat(balances.BLEND_USDC) || 0;
       if (contractTokenSymbol === "AQUSDC") return parseFloat(balances.AQUARIUS_USDC) || 0;
       if (contractTokenSymbol === "SOUSDC") return parseFloat(balances.SOROSWAP_USDC) || 0;
 

@@ -127,6 +127,25 @@ export class MarginAccountService {
   private static addUsdcAliases(
     balances: Record<string, { amount: string; usdValue: string }>
   ): Record<string, { amount: string; usdValue: string }> {
+    const usdc = balances.USDC;
+    const blusdc = balances.BLUSDC;
+
+    // Some deployments store/retrieve Blend USDC under USDC, while UI reads BLUSDC.
+    // Mirror the non-zero side so both keys stay consistent for rendering + transfer inputs.
+    if (usdc && blusdc) {
+      const usdcAmount = parseFloat(usdc.amount || '0');
+      const blusdcAmount = parseFloat(blusdc.amount || '0');
+      if (usdcAmount > blusdcAmount) {
+        balances.BLUSDC = { ...usdc };
+      } else if (blusdcAmount > usdcAmount) {
+        balances.USDC = { ...blusdc };
+      }
+    } else if (usdc && !blusdc) {
+      balances.BLUSDC = { ...usdc };
+    } else if (blusdc && !usdc) {
+      balances.USDC = { ...blusdc };
+    }
+
     return balances;
   }
 
