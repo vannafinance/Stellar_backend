@@ -17,13 +17,13 @@ import { InfoCard } from "./info-card";
 import {
   useMarginAccountInfoStore,
   type BorrowedBalance,
-  depositAndBorrow,
   borrowTokens,
   setupContractConfiguration,
   refreshBorrowedBalances,
   createMarginAccount,
   checkUserMarginAccount,
 } from "@/store/margin-account-info-store";
+import { MarginAccountService } from "@/lib/margin-utils";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWallet } from "@/hooks/use-wallet";
@@ -42,25 +42,6 @@ const ensureCollateralId = (collateral: Collaterals): Collaterals => {
   }
   return collateral;
 };
-
-const extractDepositHash = (result: { success: boolean; hash?: string; error?: string }): string => {
-  if (result.hash) {
-    if (result.hash.includes("Deposit:")) {
-      const depositPart = result.hash.split(",")[0] ?? result.hash;
-      return depositPart.replace("Deposit:", "").trim();
-    }
-    return result.hash.trim();
-  }
-
-  if (result.error) {
-    const match = result.error.match(/Deposit was successful(?: with hash:)?\s*([A-Z0-9]{20,})/i);
-    if (match?.[1]) return match[1].trim();
-  }
-
-  return "";
-};
-
-
 
 export const LeverageAssetsTab = () => {
   const XLM_WALLET_RESERVE = 1;
@@ -482,27 +463,46 @@ export const LeverageAssetsTab = () => {
         if (marginAccountAddress) {
           await refreshBorrowedBalances(marginAccountAddress);
         }
+        if (!marginAccountAddress) {
+          toast.error("Margin account not found. Please reconnect wallet and try again.");
+          setIsProcessing(false);
+          return;
+        }
 
-        // Get deposit amount and multiplier from collaterals
-        const depositCollateral = collateralList[0]; // Get first collateral
-        const depositAmount = depositCollateral?.amount || 0;
-        const depositAmountUsd = depositCollateral?.amountInUsd || 0;
-        
-        if (depositAmount <= 0) {
+        const wbDeposits = collateralList
+          .filter((item) => (item.balanceType || "").toLowerCase() === "wb")
+          .map((item) => {
+            const normalizedAsset = normalizeContractTokenSymbol(item.asset || "XLM");
+            const amount = Number(item.amount || 0);
+            const amountInUsd =
+              Number(item.amountInUsd || 0) ||
+              amount * (MB_TOKEN_PRICES[normalizedAsset] ?? 1);
+            return {
+              asset: normalizedAsset,
+              amount,
+              amountInUsd,
+            };
+          })
+          .filter((item) => item.amount > 0);
+
+        if (wbDeposits.length === 0) {
           toast.error('Please enter a deposit amount greater than 0');
           setIsProcessing(false);
           return;
         }
 
         const multiplier = leverage; // Use the leverage state as multiplier
-        const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
-        const isXlmDeposit = tokenSymbol === "XLM";
+        const totalDepositAmountUsd = wbDeposits.reduce((sum, item) => sum + item.amountInUsd, 0);
+        const totalXlmDeposit = wbDeposits
+          .filter((item) => item.asset === "XLM")
+          .reduce((sum, item) => sum + item.amount, 0);
+        const isXlmDeposit = totalXlmDeposit > 0;
         const walletXlmBalance = parseFloat(tokenBalances.XLM || "0") || 0;
         const maxXlmDeposit = Math.max(0, walletXlmBalance - XLM_WALLET_RESERVE);
 
         if (
           isXlmDeposit &&
-          depositAmount > maxXlmDeposit + XLM_DEPOSIT_EPSILON
+          totalXlmDeposit > maxXlmDeposit + XLM_DEPOSIT_EPSILON
         ) {
           toast.error("You cannot deposit 100% of your wallet balance. Please keep at least 1 XLM in your wallet.");
           setIsProcessing(false);
@@ -517,8 +517,8 @@ export const LeverageAssetsTab = () => {
           const liveTotalBorrowedValue = latestMarginState.totalBorrowedValue;
           const liveTotalCollateralValue = latestMarginState.totalCollateralValue;
           const threshold = 1.1;
-          const projectedCollateralUsd = liveTotalCollateralValue + depositAmountUsd;
-          const requestedBorrowUsd = depositAmountUsd * (multiplier - 1);
+          const projectedCollateralUsd = liveTotalCollateralValue + totalDepositAmountUsd;
+          const requestedBorrowUsd = totalDepositAmountUsd * (multiplier - 1);
 
           // Max borrow derived from contract formula:
           // (projectedCollateral + borrow) / (existingDebt + borrow) > threshold
@@ -537,8 +537,8 @@ export const LeverageAssetsTab = () => {
           }
 
           if (requestedBorrowUsd > maxAdditionalBorrowUsd) {
-            const maxSafeLeverage = depositAmountUsd > 0
-              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.95) / depositAmountUsd).toFixed(2))
+            const maxSafeLeverage = totalDepositAmountUsd > 0
+              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.95) / totalDepositAmountUsd).toFixed(2))
               : 1;
             toast.error(
               `Selected leverage (${multiplier}x) exceeds your account's safe borrowing limit. Max safe leverage: ~${maxSafeLeverage}x. Add more collateral or repay existing debt first.`
@@ -548,82 +548,100 @@ export const LeverageAssetsTab = () => {
           }
         }
 
-        console.log('🚀 Executing deposit and borrow:', {
+        console.log('🚀 Executing multi-collateral deposit flow:', {
           userAddress,
-          depositAmount,
-          depositAmountUsd,
+          deposits: wbDeposits,
+          totalDepositAmountUsd,
           multiplier,
-          tokenSymbol,
+          borrowToken,
           marginAccountAddress
         });
+        const depositHashes: string[] = [];
+        for (const item of wbDeposits) {
+          const amountWad = (BigInt(Math.floor(item.amount * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
+          const depositResult = await MarginAccountService.depositCollateralTokens(
+            marginAccountAddress!,
+            item.asset,
+            amountWad
+          );
+          if (!depositResult.success) {
+            if (depositResult.error?.includes('not allowed as collateral') || depositResult.error?.includes('Max asset cap')) {
+              toast.error(`Contract configuration error: ${depositResult.error}`);
+              try {
+                const configResult = await setupContractConfiguration();
+                if (configResult.success) {
+                  toast.success('Contract configuration setup successful! You can now try the deposit again.');
+                } else {
+                  toast.error('Contract setup failed: ' + configResult.error);
+                }
+              } catch (setupError) {
+                toast.error('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
+              }
+            } else {
+              toast.error(getFriendlyDepositError(depositResult.error));
+            }
+            setIsProcessing(false);
+            return;
+          }
 
-        const result = await depositAndBorrow(
-          userAddress,
-          depositAmount,
-          multiplier,
-          tokenSymbol
-        );
-
-        const didDepositSucceed =
-          result.success || result.error?.includes("Deposit was successful with hash");
-
-        if (didDepositSucceed && marginAccountAddress) {
-          const depositHash = extractDepositHash(result);
+          if (depositResult.hash) depositHashes.push(depositResult.hash);
           appendMarginHistory({
-            marginAccountAddress,
+            marginAccountAddress: marginAccountAddress!,
             type: "deposit",
-            asset: tokenSymbol,
-            amount: depositAmount.toFixed(7),
-            hash: depositHash,
+            asset: item.asset,
+            amount: item.amount.toFixed(7),
+            hash: depositResult.hash ?? "",
           });
         }
 
-        // Always refresh wallet + margin balances after a successful deposit phase,
-        // even when borrow fails due to risk-engine limits.
-        if (didDepositSucceed) {
-          try {
-            await refreshBalances(userAddress);
-          } catch (refreshErr) {
-            console.warn("Failed to refresh wallet balances after leverage action:", refreshErr);
-          }
-          if (marginAccountAddress) {
-            await refreshBorrowedBalances(marginAccountAddress);
-          }
-        }
+        let borrowHash = "";
+        if (multiplier > 1) {
+          const normalizedBorrowToken = normalizeContractTokenSymbol(borrowToken || wbDeposits[0]?.asset || "XLM");
+          const borrowTokenPrice = MB_TOKEN_PRICES[normalizedBorrowToken] ?? 1;
+          const borrowAmountUsd = totalDepositAmountUsd * (multiplier - 1);
+          const borrowAmountTokens = borrowAmountUsd / borrowTokenPrice;
 
-        if (result.success) {
-          if (result.hash && marginAccountAddress && multiplier > 1) {
-            const borrowedAmount = depositAmount * (multiplier - 1);
-            appendMarginHistory({
-              marginAccountAddress,
-              type: "borrow",
-              asset: tokenSymbol,
-              amount: borrowedAmount.toFixed(7),
-              hash: result.hash,
-            });
-          }
-          console.log('✅ Deposit and borrow successful:', result.hash);
-          toast.success('Deposit and borrow successful! Tx: ' + (result.hash ? result.hash.slice(0, 16) + '…' : ''));
-        } else {
-          console.error('❌ Deposit and borrow failed:', result.error);
-          
-          if (result.error?.includes('not allowed as collateral') || result.error?.includes('Max asset cap')) {
-            toast.error(`Contract configuration error: ${result.error}`);
+          const borrowResult = await borrowTokens(userAddress, normalizedBorrowToken, borrowAmountTokens);
+          if (!borrowResult.success) {
+            console.error('❌ Borrow failed after successful deposits:', borrowResult.error);
+            toast.error(getFriendlyDepositError(
+              `Deposits were successful. Borrow failed: ${borrowResult.error || "Unknown borrow error"}`
+            ));
             try {
-              const configResult = await setupContractConfiguration();
-              if (configResult.success) {
-                toast.success('Contract configuration setup successful! You can now try the deposit again.');
-              } else {
-                toast.error('Contract setup failed: ' + configResult.error);
-              }
-            } catch (setupError) {
-              toast.error('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
+              await refreshBalances(userAddress);
+            } catch (refreshErr) {
+              console.warn("Failed to refresh wallet balances after borrow failure:", refreshErr);
             }
+            if (marginAccountAddress) {
+              await refreshBorrowedBalances(marginAccountAddress);
+            }
+            setIsProcessing(false);
             return;
           }
-          
-          toast.error(getFriendlyDepositError(result.error));
+          borrowHash = borrowResult.hash ?? "";
+          appendMarginHistory({
+            marginAccountAddress: marginAccountAddress!,
+            type: "borrow",
+            asset: normalizedBorrowToken,
+            amount: borrowAmountTokens.toFixed(7),
+            hash: borrowHash,
+          });
         }
+
+        try {
+          await refreshBalances(userAddress);
+        } catch (refreshErr) {
+          console.warn("Failed to refresh wallet balances after leverage action:", refreshErr);
+        }
+        if (marginAccountAddress) {
+          await refreshBorrowedBalances(marginAccountAddress);
+        }
+
+        const txPreview = borrowHash || depositHashes[depositHashes.length - 1] || "";
+        console.log('✅ Deposit and borrow successful:', { depositHashes, borrowHash });
+        toast.success(
+          `Deposit${multiplier > 1 ? " + borrow" : ""} successful! Tx: ${txPreview ? txPreview.slice(0, 16) + "…" : ""}`
+        );
 
       } catch (error) {
         console.error('❌ Error in deposit and borrow:', error);
