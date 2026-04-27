@@ -415,7 +415,7 @@ export class BlendService {
    */
   static async getUserBlendBalance(
     marginAccountAddress: string,
-    tokenSymbol: string
+    tokenSymbol: 'XLM' | 'USDC'
   ): Promise<BlendBalanceInfo> {
     try {
       const assetInfo = BLEND_POOL_ASSETS.find((a) => a.symbol === tokenSymbol);
