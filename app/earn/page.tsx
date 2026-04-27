@@ -232,7 +232,11 @@ export default function Earn() {
                    parseFloat(userPositions[asset]?.borrowed || "0") > 0
       )
       .map((asset) => {
-        const displaySymbol = asset === "AQUARIUS_USDC" ? "AqUSDC" : asset === "SOROSWAP_USDC" ? "SoUSDC" : asset;
+        const displaySymbol =
+          asset === "AQUARIUS_USDC" ? "AqUSDC"
+          : asset === "SOROSWAP_USDC" ? "SoUSDC"
+          : asset === "USDC" ? "BLUSDC"
+          : asset;
         return buildPositionRow(displaySymbol, userPositions[asset], pools[asset]);
       });
 

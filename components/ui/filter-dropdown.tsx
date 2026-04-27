@@ -282,6 +282,7 @@ export const FilterDropdown = memo((props: FilterDropdownProps) => {
                       ? "border-[1px] border-black"
                       : "border-[1px] border-white"
                   }`}
+                  style={isDark ? { filter: "brightness(0) invert(1)" } : undefined}
                   src={value}
                   alt={key}
                   width={props.compact ? 16 : 20}

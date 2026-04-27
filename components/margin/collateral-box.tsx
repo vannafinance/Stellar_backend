@@ -7,11 +7,9 @@ import {
   iconPaths,
 } from "@/lib/constants";
 import Image from "next/image";
-import { AmountBreakdownDialogue } from "../ui/amount-breakdown-dialogue";
 import {
   DEPOSIT_PERCENTAGES,
   PERCENTAGE_COLORS,
-  UNIFIED_BALANCE_BREAKDOWN_DATA,
   BALANCE_TYPE_OPTIONS,
 } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
@@ -62,9 +60,6 @@ const CollateralComponent = (props: Collateral) => {
   const [selectedBalanceType, setSelectedBalanceType] = useState<string>(
     props.collaterals?.balanceType.toUpperCase() || BALANCE_TYPE_OPTIONS[0]
   );
-
-  // Dialogue visibility states
-  const [isUnifiedBalanceOpen, setIsUnifiedBalanceOpen] = useState(false);
 
   // Extract collateral data for conditional rendering
   const collateral = props.collaterals;
@@ -127,14 +122,6 @@ const CollateralComponent = (props: Collateral) => {
       : 0;
     const calculatedAmount = (balance * item) / 100;
     setValueInput(calculatedAmount.toString());
-  };
-
-  const handleUnifiedBalanceClick = () => {
-    setIsUnifiedBalanceOpen(true);
-  };
-
-  const handleCloseUnifiedBalance = () => {
-    setIsUnifiedBalanceOpen(false);
   };
 
   const handleSave = () => {
@@ -295,33 +282,15 @@ const CollateralComponent = (props: Collateral) => {
               </div>
             </div>
 
-            {/* Row 4: balance info + USD | Cancel | Add */}
+            {/* Row 4: balance info | Cancel | Add */}
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                {/* Balance link */}
-                <motion.button
-                  type="button"
-                  onClick={handleUnifiedBalanceClick}
-                  className={`text-[12px] font-medium cursor-pointer hover:underline truncate ${
-                    isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                  }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={{ duration: 0.1 }}
-                  aria-label="View balance breakdown"
-                >
-                  Balance: {String(liveBalance)} {selectedCurrency}
-                </motion.button>
-
-                <span
-                  className={`text-[12px] font-medium shrink-0 ${
-                    isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                  }`}
-                  aria-live="polite"
-                >
-                  ≈ {valueInUsd} USD
-                </span>
-              </div>
+              <span
+                className={`text-[12px] font-medium truncate min-w-0 ${
+                  isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                }`}
+              >
+                Balance: {String(liveBalance)} {selectedCurrency}
+              </span>
 
               <div className="flex items-center gap-3 shrink-0">
                 <motion.button
@@ -476,66 +445,23 @@ const CollateralComponent = (props: Collateral) => {
               </div>
             )}
 
-            {/* Row 3: balance link + USD */}
+            {/* Row 3: balance label */}
             {hasCollateral && collateral && (
-              <div className="flex items-center justify-between">
-                <motion.button
-                  type="button"
-                  onClick={handleUnifiedBalanceClick}
-                  className={`text-[12px] font-medium cursor-pointer hover:underline ${
+              <div className="flex items-center">
+                <span
+                  className={`text-[12px] font-medium ${
                     isDark ? "text-[#777777]" : "text-[#A7A7A7]"
                   }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={{ duration: 0.1 }}
-                  aria-label="View unified balance breakdown"
                 >
                   Balance:{" "}
                   {collateral.balanceType.toLowerCase() === "wb"
                     ? String(tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0")
                     : collateral.unifiedBalance}{" "}
                   {collateral.asset}
-                </motion.button>
-                <span
-                  className={`text-[12px] font-medium ${
-                    isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                  }`}
-                >
-                  ≈ ${collateral.amountInUsd}
                 </span>
               </div>
             )}
           </motion.section>
-        )}
-      </AnimatePresence>
-
-      {/* Unified Balance dialogue */}
-      <AnimatePresence>
-        {isUnifiedBalanceOpen && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566] p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            onClick={handleCloseUnifiedBalance}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ duration: 0.3 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <AmountBreakdownDialogue
-                heading={UNIFIED_BALANCE_BREAKDOWN_DATA.heading}
-                asset={UNIFIED_BALANCE_BREAKDOWN_DATA.asset}
-                totalDeposit={UNIFIED_BALANCE_BREAKDOWN_DATA.totalDeposit}
-                breakdown={[...UNIFIED_BALANCE_BREAKDOWN_DATA.breakdown]}
-                onClose={handleCloseUnifiedBalance}
-              />
-            </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
     </motion.article>

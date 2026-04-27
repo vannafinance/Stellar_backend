@@ -274,8 +274,8 @@ export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
         </div>
 
         {/* Balance / preview row + % pills */}
-        <div className="flex items-center justify-between flex-wrap gap-x-2 gap-y-1.5 px-4 pb-3">
-          <div className="flex items-center gap-1 flex-wrap">
+        <div className="flex items-center justify-between gap-2 px-4 pb-3">
+          <div className="flex items-center gap-1 shrink-0">
             {DEPOSIT_PERCENTAGES.map((pct) => (
               <motion.button
                 key={pct}
@@ -297,8 +297,13 @@ export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
               </motion.button>
             ))}
           </div>
-          <span className={`text-[11px] font-medium whitespace-nowrap ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-            Balance: {userAddress ? `${availableBalance.toFixed(4)} ${selectedOption}` : `-- ${selectedOption}`}
+          <span
+            className={`text-[10px] font-medium whitespace-nowrap overflow-hidden text-ellipsis min-w-0 ${
+              isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+            }`}
+            title={userAddress ? `Balance: ${availableBalance.toFixed(7)} ${selectedOption}` : undefined}
+          >
+            Bal: {userAddress ? `${availableBalance.toFixed(2)} ${selectedOption}` : `-- ${selectedOption}`}
           </span>
         </div>
       </div>
