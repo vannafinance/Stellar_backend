@@ -151,8 +151,27 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
 
   const handleWithdraw = async () => {
     if (!userAddress || !marginAccountAddress) return;
-    const amount = parseFloat(value);
+    let amount = parseFloat(value);
     if (isNaN(amount) || amount <= 0) return;
+
+    const displayedAvailable = parseFloat(blendBalance) || 0;
+    const isFullWithdrawalIntent =
+      selectedPercentage === 100 || Math.abs(amount - displayedAvailable) < 0.0000001;
+
+    // For 100% remove, fetch the latest underlying balance right before tx
+    // so the call targets the full accrued amount (including interest updates).
+    if (isFullWithdrawalIntent) {
+      try {
+        const latest = await BlendService.getUserBlendBalance(marginAccountAddress, selectedToken);
+        const latestUnderlying = parseFloat(latest.underlyingBalance);
+        if (!isNaN(latestUnderlying) && latestUnderlying > 0) {
+          amount = latestUnderlying;
+          setValue(latestUnderlying.toFixed(7));
+        }
+      } catch (err) {
+        console.warn("[RemoveLiquidity] Failed to refresh latest Blend balance before full withdraw:", err);
+      }
+    }
 
     setTxStatus("loading");
     setTxError("");

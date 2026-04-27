@@ -464,9 +464,13 @@ export class BlendService {
         const raw = StellarSdk.scValToNative(balanceSim.result.retval);
         // Tracking token balance is in b-tokens (Blend's internal representation, 7 decimals)
         const balanceNum = Number(raw) / 1e7;
+        const reserve = await BlendService.getBlendReserveData(tokenSymbol);
+        const bRate = reserve ? parseFloat(reserve.bRate) : 1;
+        const underlying = balanceNum * bRate;
+
         return {
           bTokenBalance: balanceNum.toFixed(7),
-          underlyingBalance: balanceNum.toFixed(7),
+          underlyingBalance: underlying.toFixed(7),
         };
       }
 

@@ -365,6 +365,31 @@ export const LeverageAssetsTab = () => {
     setEditingId(null);
   }, []); // No dependencies - uses functional updates
 
+  const resetLeverageInputs = useCallback(() => {
+    setCollaterals((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map<string, Collaterals>();
+      prev.forEach((item, key) => {
+        next.set(key, {
+          ...item,
+          amount: 0,
+          amountInUsd: 0,
+        });
+      });
+      return next;
+    });
+
+    setMbEditAmounts((prev) => {
+      const next: Record<string, string> = {};
+      Object.keys(prev).forEach((asset) => {
+        next[asset] = "0";
+      });
+      return next;
+    });
+
+    setBorrowItems([]);
+  }, []);
+
   const handleButtonClick = async () => {
     if (!userAddress) {
       console.log('No user address available');
@@ -444,6 +469,7 @@ export const LeverageAssetsTab = () => {
             if (marginAccountAddress) {
               await refreshBorrowedBalances(marginAccountAddress);
             }
+            resetLeverageInputs();
           } else {
             toast.error('Borrow failed: ' + result.error);
           }
@@ -642,6 +668,7 @@ export const LeverageAssetsTab = () => {
         toast.success(
           `Deposit${multiplier > 1 ? " + borrow" : ""} successful! Tx: ${txPreview ? txPreview.slice(0, 16) + "…" : ""}`
         );
+        resetLeverageInputs();
 
       } catch (error) {
         console.error('❌ Error in deposit and borrow:', error);
@@ -723,12 +750,12 @@ export const LeverageAssetsTab = () => {
                               isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
                             }`}
                           >
-                            {/* Row 1: Deposit label + % chips + WB/MB toggle (first card only) */}
+                            {/* Row 1: Deposit label + % chips */}
                             <div className="flex items-center justify-between">
                               <span className={`text-sm font-medium ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>
                                 Deposit
                               </span>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1 sm:gap-1.5">
                                 {[10, 25, 50, 100].map((pct) => (
                                   <motion.button
                                     key={pct}
@@ -749,34 +776,10 @@ export const LeverageAssetsTab = () => {
                                     {pct}%
                                   </motion.button>
                                 ))}
-                                {index === 0 && (
-                                  <div className={`flex items-center rounded-lg p-0.5 ml-1 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
-                                    {BALANCE_TYPE_OPTIONS.map((option) => (
-                                      <motion.button
-                                        key={option}
-                                        type="button"
-                                        onClick={() => {
-                                          const id = collateralList[0]?.id || generateCollateralId();
-                                          handleBalanceTypeChange(id, option);
-                                        }}
-                                        whileTap={{ scale: 0.95 }}
-                                        transition={{ duration: 0.1 }}
-                                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
-                                          selectedBalanceType === option
-                                            ? "bg-[#703AE6] text-white shadow-sm"
-                                            : isDark ? "text-[#777777] hover:text-[#AAAAAA]" : "text-[#888888] hover:text-[#555555]"
-                                        }`}
-                                        aria-pressed={selectedBalanceType === option}
-                                      >
-                                        {option}
-                                      </motion.button>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                             </div>
 
-                            {/* Row 2: token pill + MB badge + editable amount input */}
+                            {/* Row 2: token pill + editable amount input */}
                             <div className="flex items-center justify-between gap-3">
                               <div className={`flex items-center gap-2 px-3 py-2 rounded-full shrink-0 ${isDark ? "bg-[#333333]" : "bg-[#EEEEEE]"}`}>
                                 {iconPaths[item.asset] && (
@@ -811,14 +814,82 @@ export const LeverageAssetsTab = () => {
                               />
                             </div>
 
-                            {/* Row 3: margin account balance + entered USD value */}
-                            <div className="flex items-center justify-between">
-                              <span className={`text-[12px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-                                Balance: {item.amount.toFixed(4)} {item.asset}
-                              </span>
-                              <span className={`text-[12px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-                                ≈ ${((parseFloat(mbEditAmounts[item.asset] || "0") || 0) * (MB_TOKEN_PRICES[item.asset] ?? 1)).toFixed(2)} USD
-                              </span>
+                            {/* Row 3: WB/MB tabs only (same position as WB card) */}
+                            {index === 0 && (
+                              <div className="flex items-center">
+                                <div className={`flex items-center rounded-lg p-0.5 shrink-0 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
+                                  {BALANCE_TYPE_OPTIONS.map((option) => (
+                                    <motion.button
+                                      key={option}
+                                      type="button"
+                                      onClick={() => {
+                                        const id = collateralList[0]?.id || generateCollateralId();
+                                        handleBalanceTypeChange(id, option);
+                                      }}
+                                      whileTap={{ scale: 0.95 }}
+                                      transition={{ duration: 0.1 }}
+                                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
+                                        selectedBalanceType === option
+                                          ? "bg-[#703AE6] text-white shadow-sm"
+                                          : isDark ? "text-[#777777] hover:text-[#AAAAAA]" : "text-[#888888] hover:text-[#555555]"
+                                      }`}
+                                      aria-pressed={selectedBalanceType === option}
+                                    >
+                                      {option}
+                                    </motion.button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Row 4: balance + USD + actions (same as WB layout) */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`text-[12px] font-medium truncate ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+                                  Balance: {item.amount.toFixed(4)} {item.asset}
+                                </span>
+                                <span className={`text-[12px] font-medium shrink-0 ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+                                  ≈ ${((parseFloat(mbEditAmounts[item.asset] || "0") || 0) * (MB_TOKEN_PRICES[item.asset] ?? 1)).toFixed(2)} USD
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-3 shrink-0">
+                                <motion.button
+                                  type="button"
+                                  onClick={() => {
+                                    setMbEditAmounts((prev) => ({
+                                      ...prev,
+                                      [item.asset]: item.amount.toFixed(7),
+                                    }));
+                                  }}
+                                  className={`text-[13px] font-medium cursor-pointer ${
+                                    isDark
+                                      ? "text-[#777777] hover:text-[#AAAAAA]"
+                                      : "text-[#A7A7A7] hover:text-[#777777]"
+                                  }`}
+                                  whileTap={{ scale: 0.97 }}
+                                  transition={{ duration: 0.1 }}
+                                  aria-label={`Reset ${item.asset} amount`}
+                                >
+                                  Cancel
+                                </motion.button>
+                                <motion.button
+                                  type="button"
+                                  onClick={() => {
+                                    const parsed = parseFloat(mbEditAmounts[item.asset] || "0") || 0;
+                                    setMbEditAmounts((prev) => ({
+                                      ...prev,
+                                      [item.asset]: parsed.toFixed(7),
+                                    }));
+                                  }}
+                                  className="text-[13px] font-medium cursor-pointer text-[#703AE6] hover:text-[#5C30C0]"
+                                  whileTap={{ scale: 0.97 }}
+                                  transition={{ duration: 0.1 }}
+                                  aria-label={`Confirm ${item.asset} amount`}
+                                >
+                                  Add
+                                </motion.button>
+                              </div>
                             </div>
                           </motion.article>
                         </motion.li>
