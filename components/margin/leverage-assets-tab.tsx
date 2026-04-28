@@ -17,13 +17,13 @@ import { InfoCard } from "./info-card";
 import {
   useMarginAccountInfoStore,
   type BorrowedBalance,
-  depositAndBorrow,
   borrowTokens,
   setupContractConfiguration,
   refreshBorrowedBalances,
   createMarginAccount,
   checkUserMarginAccount,
 } from "@/store/margin-account-info-store";
+import { MarginAccountService } from "@/lib/margin-utils";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWallet } from "@/hooks/use-wallet";
@@ -43,9 +43,9 @@ const ensureCollateralId = (collateral: Collaterals): Collaterals => {
   return collateral;
 };
 
-
-
 export const LeverageAssetsTab = () => {
+  const XLM_WALLET_RESERVE = 1;
+  const XLM_DEPOSIT_EPSILON = 1e-7;
   const { isDark } = useTheme();
   const { refreshBalances } = useWallet();
   const normalizeContractTokenSymbol = (symbol: string) => {
@@ -57,6 +57,8 @@ export const LeverageAssetsTab = () => {
   // Component state
   const hasMarginAccount = useMarginAccountInfoStore((state) => state.hasMarginAccount);
   const marginAccountAddress = useMarginAccountInfoStore((state) => state.marginAccountAddress);
+  const totalCollateralValue = useMarginAccountInfoStore((state) => state.totalCollateralValue);
+  const totalBorrowedValue = useMarginAccountInfoStore((state) => state.totalBorrowedValue);
   const isCreatingAccount = useMarginAccountInfoStore((state) => state.isCreatingAccount);
   const [editingId, setEditingId] = useState<string | null>(null);
   const mode: Modes = "Deposit";
@@ -74,6 +76,29 @@ export const LeverageAssetsTab = () => {
   const [mbEditAmounts, setMbEditAmounts] = useState<Record<string, string>>({});
 
   const userAddress = useUserStore((state) => state.address);
+  const tokenBalances = useUserStore((state) => state.tokenBalances);
+
+  const getFriendlyDepositError = useCallback((rawError?: string) => {
+    const compact = (rawError || "").split("\nEvent log")[0]?.trim() || "";
+    const text = compact.toLowerCase();
+
+    if (
+      text.includes("error(contract, #10)") ||
+      text.includes("resulting balance is not within the allowed range")
+    ) {
+      return "You cannot deposit 100% of your wallet balance. Please keep at least 1 XLM in your wallet.";
+    }
+
+    if (text.includes("insufficient")) {
+      return "Insufficient wallet balance for this deposit.";
+    }
+
+    if (text.includes("hosterror")) {
+      return "Deposit failed on-chain. Please retry with a slightly smaller amount.";
+    }
+
+    return compact || "Deposit and borrow failed. Please try again.";
+  }, []);
 
   useEffect(() => {
     if (!userAddress) return;
@@ -187,11 +212,22 @@ export const LeverageAssetsTab = () => {
   // Simple calculations
   const fees = totalDepositValue > 0 ? totalDepositValue * 0.000234 : 0;
   const totalDeposit = totalDepositValue + fees;
-  // In MB mode, feed selected collateral USD as deposit base for BorrowBox preview (no fees)
-  const effectiveTotalForBorrow = isMBMode ? mbSelectedUsd : totalDeposit;
+  // Borrow preview/input should use pure collateral USD (no fee uplift).
+  const effectiveTotalForBorrow = isMBMode ? mbSelectedUsd : depositAmount;
   const platformPoints = Number((leverage * 0.575).toFixed(1));
-  const updatedCollateral = Math.round(depositAmount * leverage * 0.6);
-  const netHealthFactor = Number((2.0 - leverage * 0.0875).toFixed(2));
+  const projectedBorrowUsd = Math.max(0, effectiveTotalForBorrow * (leverage - 1));
+  const projectedCollateralUsd = totalCollateralValue + (isMBMode ? 0 : depositAmount);
+  const projectedDebtUsd = totalBorrowedValue + projectedBorrowUsd;
+  const updatedCollateral = Math.max(
+    0,
+    projectedCollateralUsd - projectedDebtUsd * 1.1
+  );
+  const netHealthFactor =
+    projectedDebtUsd > 1e-6
+      ? projectedCollateralUsd / projectedDebtUsd
+      : projectedCollateralUsd > 0
+        ? 999
+        : 0;
 
   // Memoized callbacks
   const handleAddCollateral = useCallback(() => {
@@ -329,6 +365,31 @@ export const LeverageAssetsTab = () => {
     setEditingId(null);
   }, []); // No dependencies - uses functional updates
 
+  const resetLeverageInputs = useCallback(() => {
+    setCollaterals((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map<string, Collaterals>();
+      prev.forEach((item, key) => {
+        next.set(key, {
+          ...item,
+          amount: 0,
+          amountInUsd: 0,
+        });
+      });
+      return next;
+    });
+
+    setMbEditAmounts((prev) => {
+      const next: Record<string, string> = {};
+      Object.keys(prev).forEach((asset) => {
+        next[asset] = "0";
+      });
+      return next;
+    });
+
+    setBorrowItems([]);
+  }, []);
+
   const handleButtonClick = async () => {
     if (!userAddress) {
       console.log('No user address available');
@@ -408,6 +469,7 @@ export const LeverageAssetsTab = () => {
             if (marginAccountAddress) {
               await refreshBorrowedBalances(marginAccountAddress);
             }
+            resetLeverageInputs();
           } else {
             toast.error('Borrow failed: ' + result.error);
           }
@@ -427,20 +489,51 @@ export const LeverageAssetsTab = () => {
         if (marginAccountAddress) {
           await refreshBorrowedBalances(marginAccountAddress);
         }
+        if (!marginAccountAddress) {
+          toast.error("Margin account not found. Please reconnect wallet and try again.");
+          setIsProcessing(false);
+          return;
+        }
 
-        // Get deposit amount and multiplier from collaterals
-        const depositCollateral = collateralList[0]; // Get first collateral
-        const depositAmount = depositCollateral?.amount || 0;
-        const depositAmountUsd = depositCollateral?.amountInUsd || 0;
-        
-        if (depositAmount <= 0) {
+        const wbDeposits = collateralList
+          .filter((item) => (item.balanceType || "").toLowerCase() === "wb")
+          .map((item) => {
+            const normalizedAsset = normalizeContractTokenSymbol(item.asset || "XLM");
+            const amount = Number(item.amount || 0);
+            const amountInUsd =
+              Number(item.amountInUsd || 0) ||
+              amount * (MB_TOKEN_PRICES[normalizedAsset] ?? 1);
+            return {
+              asset: normalizedAsset,
+              amount,
+              amountInUsd,
+            };
+          })
+          .filter((item) => item.amount > 0);
+
+        if (wbDeposits.length === 0) {
           toast.error('Please enter a deposit amount greater than 0');
           setIsProcessing(false);
           return;
         }
 
         const multiplier = leverage; // Use the leverage state as multiplier
-        const tokenSymbol = normalizeContractTokenSymbol(depositCollateral?.asset || 'XLM');
+        const totalDepositAmountUsd = wbDeposits.reduce((sum, item) => sum + item.amountInUsd, 0);
+        const totalXlmDeposit = wbDeposits
+          .filter((item) => item.asset === "XLM")
+          .reduce((sum, item) => sum + item.amount, 0);
+        const isXlmDeposit = totalXlmDeposit > 0;
+        const walletXlmBalance = parseFloat(tokenBalances.XLM || "0") || 0;
+        const maxXlmDeposit = Math.max(0, walletXlmBalance - XLM_WALLET_RESERVE);
+
+        if (
+          isXlmDeposit &&
+          totalXlmDeposit > maxXlmDeposit + XLM_DEPOSIT_EPSILON
+        ) {
+          toast.error("You cannot deposit 100% of your wallet balance. Please keep at least 1 XLM in your wallet.");
+          setIsProcessing(false);
+          return;
+        }
 
         // Pre-validate borrow against the Risk Engine's formula before submitting.
         // Contract check: (collateral + borrow) / (existingDebt + borrow) > 1.1
@@ -450,8 +543,8 @@ export const LeverageAssetsTab = () => {
           const liveTotalBorrowedValue = latestMarginState.totalBorrowedValue;
           const liveTotalCollateralValue = latestMarginState.totalCollateralValue;
           const threshold = 1.1;
-          const projectedCollateralUsd = liveTotalCollateralValue + depositAmountUsd;
-          const requestedBorrowUsd = depositAmountUsd * (multiplier - 1);
+          const projectedCollateralUsd = liveTotalCollateralValue + totalDepositAmountUsd;
+          const requestedBorrowUsd = totalDepositAmountUsd * (multiplier - 1);
 
           // Max borrow derived from contract formula:
           // (projectedCollateral + borrow) / (existingDebt + borrow) > threshold
@@ -470,8 +563,8 @@ export const LeverageAssetsTab = () => {
           }
 
           if (requestedBorrowUsd > maxAdditionalBorrowUsd) {
-            const maxSafeLeverage = depositAmountUsd > 0
-              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.95) / depositAmountUsd).toFixed(2))
+            const maxSafeLeverage = totalDepositAmountUsd > 0
+              ? parseFloat((1 + (maxAdditionalBorrowUsd * 0.95) / totalDepositAmountUsd).toFixed(2))
               : 1;
             toast.error(
               `Selected leverage (${multiplier}x) exceeds your account's safe borrowing limit. Max safe leverage: ~${maxSafeLeverage}x. Add more collateral or repay existing debt first.`
@@ -481,75 +574,106 @@ export const LeverageAssetsTab = () => {
           }
         }
 
-        console.log('🚀 Executing deposit and borrow:', {
+        console.log('🚀 Executing multi-collateral deposit flow:', {
           userAddress,
-          depositAmount,
-          depositAmountUsd,
+          deposits: wbDeposits,
+          totalDepositAmountUsd,
           multiplier,
-          tokenSymbol,
+          borrowToken,
           marginAccountAddress
         });
-
-        const result = await depositAndBorrow(
-          userAddress,
-          depositAmount,
-          multiplier,
-          tokenSymbol
-        );
-
-        const didDepositSucceed =
-          result.success || result.error?.includes("Deposit was successful with hash");
-
-        // Always refresh wallet + margin balances after a successful deposit phase,
-        // even when borrow fails due to risk-engine limits.
-        if (didDepositSucceed) {
-          try {
-            await refreshBalances(userAddress);
-          } catch (refreshErr) {
-            console.warn("Failed to refresh wallet balances after leverage action:", refreshErr);
-          }
-          if (marginAccountAddress) {
-            await refreshBorrowedBalances(marginAccountAddress);
-          }
-        }
-
-        if (result.success) {
-          if (result.hash && marginAccountAddress && multiplier > 1) {
-            const borrowedAmount = depositAmount * (multiplier - 1);
-            appendMarginHistory({
-              marginAccountAddress,
-              type: "borrow",
-              asset: tokenSymbol,
-              amount: borrowedAmount.toFixed(7),
-              hash: result.hash,
-            });
-          }
-          console.log('✅ Deposit and borrow successful:', result.hash);
-          toast.success('Deposit and borrow successful! Tx: ' + (result.hash ? result.hash.slice(0, 16) + '…' : ''));
-        } else {
-          console.error('❌ Deposit and borrow failed:', result.error);
-          
-          if (result.error?.includes('not allowed as collateral') || result.error?.includes('Max asset cap')) {
-            toast.error(`Contract configuration error: ${result.error}`);
-            try {
-              const configResult = await setupContractConfiguration();
-              if (configResult.success) {
-                toast.success('Contract configuration setup successful! You can now try the deposit again.');
-              } else {
-                toast.error('Contract setup failed: ' + configResult.error);
+        const depositHashes: string[] = [];
+        for (const item of wbDeposits) {
+          const amountWad = (BigInt(Math.floor(item.amount * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
+          const depositResult = await MarginAccountService.depositCollateralTokens(
+            marginAccountAddress!,
+            item.asset,
+            amountWad
+          );
+          if (!depositResult.success) {
+            if (depositResult.error?.includes('not allowed as collateral') || depositResult.error?.includes('Max asset cap')) {
+              toast.error(`Contract configuration error: ${depositResult.error}`);
+              try {
+                const configResult = await setupContractConfiguration();
+                if (configResult.success) {
+                  toast.success('Contract configuration setup successful! You can now try the deposit again.');
+                } else {
+                  toast.error('Contract setup failed: ' + configResult.error);
+                }
+              } catch (setupError) {
+                toast.error('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
               }
-            } catch (setupError) {
-              toast.error('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
+            } else {
+              toast.error(getFriendlyDepositError(depositResult.error));
             }
+            setIsProcessing(false);
             return;
           }
-          
-          toast.error('Deposit and borrow failed: ' + result.error);
+
+          if (depositResult.hash) depositHashes.push(depositResult.hash);
+          appendMarginHistory({
+            marginAccountAddress: marginAccountAddress!,
+            type: "deposit",
+            asset: item.asset,
+            amount: item.amount.toFixed(7),
+            hash: depositResult.hash ?? "",
+          });
         }
+
+        let borrowHash = "";
+        if (multiplier > 1) {
+          const normalizedBorrowToken = normalizeContractTokenSymbol(borrowToken || wbDeposits[0]?.asset || "XLM");
+          const borrowTokenPrice = MB_TOKEN_PRICES[normalizedBorrowToken] ?? 1;
+          const borrowAmountUsd = totalDepositAmountUsd * (multiplier - 1);
+          const borrowAmountTokens = borrowAmountUsd / borrowTokenPrice;
+
+          const borrowResult = await borrowTokens(userAddress, normalizedBorrowToken, borrowAmountTokens);
+          if (!borrowResult.success) {
+            console.error('❌ Borrow failed after successful deposits:', borrowResult.error);
+            toast.error(getFriendlyDepositError(
+              `Deposits were successful. Borrow failed: ${borrowResult.error || "Unknown borrow error"}`
+            ));
+            try {
+              await refreshBalances(userAddress);
+            } catch (refreshErr) {
+              console.warn("Failed to refresh wallet balances after borrow failure:", refreshErr);
+            }
+            if (marginAccountAddress) {
+              await refreshBorrowedBalances(marginAccountAddress);
+            }
+            setIsProcessing(false);
+            return;
+          }
+          borrowHash = borrowResult.hash ?? "";
+          appendMarginHistory({
+            marginAccountAddress: marginAccountAddress!,
+            type: "borrow",
+            asset: normalizedBorrowToken,
+            amount: borrowAmountTokens.toFixed(7),
+            hash: borrowHash,
+          });
+        }
+
+        try {
+          await refreshBalances(userAddress);
+        } catch (refreshErr) {
+          console.warn("Failed to refresh wallet balances after leverage action:", refreshErr);
+        }
+        if (marginAccountAddress) {
+          await refreshBorrowedBalances(marginAccountAddress);
+        }
+
+        const txPreview = borrowHash || depositHashes[depositHashes.length - 1] || "";
+        console.log('✅ Deposit and borrow successful:', { depositHashes, borrowHash });
+        toast.success(
+          `Deposit${multiplier > 1 ? " + borrow" : ""} successful! Tx: ${txPreview ? txPreview.slice(0, 16) + "…" : ""}`
+        );
+        resetLeverageInputs();
 
       } catch (error) {
         console.error('❌ Error in deposit and borrow:', error);
-        toast.error('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        toast.error(getFriendlyDepositError(errorMessage));
       } finally {
         setIsProcessing(false);
       }
@@ -626,12 +750,12 @@ export const LeverageAssetsTab = () => {
                               isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
                             }`}
                           >
-                            {/* Row 1: Deposit label + % chips + WB/MB toggle (first card only) */}
+                            {/* Row 1: Deposit label + % chips */}
                             <div className="flex items-center justify-between">
                               <span className={`text-sm font-medium ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>
                                 Deposit
                               </span>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1 sm:gap-1.5">
                                 {[10, 25, 50, 100].map((pct) => (
                                   <motion.button
                                     key={pct}
@@ -652,34 +776,10 @@ export const LeverageAssetsTab = () => {
                                     {pct}%
                                   </motion.button>
                                 ))}
-                                {index === 0 && (
-                                  <div className={`flex items-center rounded-lg p-0.5 ml-1 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
-                                    {BALANCE_TYPE_OPTIONS.map((option) => (
-                                      <motion.button
-                                        key={option}
-                                        type="button"
-                                        onClick={() => {
-                                          const id = collateralList[0]?.id || generateCollateralId();
-                                          handleBalanceTypeChange(id, option);
-                                        }}
-                                        whileTap={{ scale: 0.95 }}
-                                        transition={{ duration: 0.1 }}
-                                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
-                                          selectedBalanceType === option
-                                            ? "bg-[#703AE6] text-white shadow-sm"
-                                            : isDark ? "text-[#777777] hover:text-[#AAAAAA]" : "text-[#888888] hover:text-[#555555]"
-                                        }`}
-                                        aria-pressed={selectedBalanceType === option}
-                                      >
-                                        {option}
-                                      </motion.button>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                             </div>
 
-                            {/* Row 2: token pill + MB badge + editable amount input */}
+                            {/* Row 2: token pill + editable amount input */}
                             <div className="flex items-center justify-between gap-3">
                               <div className={`flex items-center gap-2 px-3 py-2 rounded-full shrink-0 ${isDark ? "bg-[#333333]" : "bg-[#EEEEEE]"}`}>
                                 {iconPaths[item.asset] && (
@@ -714,14 +814,82 @@ export const LeverageAssetsTab = () => {
                               />
                             </div>
 
-                            {/* Row 3: margin account balance + entered USD value */}
-                            <div className="flex items-center justify-between">
-                              <span className={`text-[12px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-                                Balance: {item.amount.toFixed(4)} {item.asset}
-                              </span>
-                              <span className={`text-[12px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-                                ≈ ${((parseFloat(mbEditAmounts[item.asset] || "0") || 0) * (MB_TOKEN_PRICES[item.asset] ?? 1)).toFixed(2)} USD
-                              </span>
+                            {/* Row 3: WB/MB tabs only (same position as WB card) */}
+                            {index === 0 && (
+                              <div className="flex items-center">
+                                <div className={`flex items-center rounded-lg p-0.5 shrink-0 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
+                                  {BALANCE_TYPE_OPTIONS.map((option) => (
+                                    <motion.button
+                                      key={option}
+                                      type="button"
+                                      onClick={() => {
+                                        const id = collateralList[0]?.id || generateCollateralId();
+                                        handleBalanceTypeChange(id, option);
+                                      }}
+                                      whileTap={{ scale: 0.95 }}
+                                      transition={{ duration: 0.1 }}
+                                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
+                                        selectedBalanceType === option
+                                          ? "bg-[#703AE6] text-white shadow-sm"
+                                          : isDark ? "text-[#777777] hover:text-[#AAAAAA]" : "text-[#888888] hover:text-[#555555]"
+                                      }`}
+                                      aria-pressed={selectedBalanceType === option}
+                                    >
+                                      {option}
+                                    </motion.button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Row 4: balance + USD + actions (same as WB layout) */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`text-[12px] font-medium truncate ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+                                  Balance: {item.amount.toFixed(4)} {item.asset}
+                                </span>
+                                <span className={`text-[12px] font-medium shrink-0 ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+                                  ≈ ${((parseFloat(mbEditAmounts[item.asset] || "0") || 0) * (MB_TOKEN_PRICES[item.asset] ?? 1)).toFixed(2)} USD
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-3 shrink-0">
+                                <motion.button
+                                  type="button"
+                                  onClick={() => {
+                                    setMbEditAmounts((prev) => ({
+                                      ...prev,
+                                      [item.asset]: item.amount.toFixed(7),
+                                    }));
+                                  }}
+                                  className={`text-[13px] font-medium cursor-pointer ${
+                                    isDark
+                                      ? "text-[#777777] hover:text-[#AAAAAA]"
+                                      : "text-[#A7A7A7] hover:text-[#777777]"
+                                  }`}
+                                  whileTap={{ scale: 0.97 }}
+                                  transition={{ duration: 0.1 }}
+                                  aria-label={`Reset ${item.asset} amount`}
+                                >
+                                  Cancel
+                                </motion.button>
+                                <motion.button
+                                  type="button"
+                                  onClick={() => {
+                                    const parsed = parseFloat(mbEditAmounts[item.asset] || "0") || 0;
+                                    setMbEditAmounts((prev) => ({
+                                      ...prev,
+                                      [item.asset]: parsed.toFixed(7),
+                                    }));
+                                  }}
+                                  className="text-[13px] font-medium cursor-pointer text-[#703AE6] hover:text-[#5C30C0]"
+                                  whileTap={{ scale: 0.97 }}
+                                  transition={{ duration: 0.1 }}
+                                  aria-label={`Confirm ${item.asset} amount`}
+                                >
+                                  Add
+                                </motion.button>
+                              </div>
                             </div>
                           </motion.article>
                         </motion.li>
@@ -972,7 +1140,7 @@ export const LeverageAssetsTab = () => {
               isProcessing ? "Processing..." :
               !userAddress ? "Login" :
               hasMarginAccount  && !isMBMode
-                ? "Deposit & Borrow"
+                ? leverage <= 1 ? "Deposit" : "Deposit & Borrow"
                 : hasMarginAccount && isMBMode
                 ? "Borrow"
                 :  "Create your Margin Account"

@@ -28,6 +28,8 @@ const TOKEN_PRICES: Record<string, number> = {
 // Liquidation threshold from RiskEngine contract: BALANCE_TO_BORROW_THRESHOLD = 1.1 * WAD
 // Account is liquidatable when: (totalCollateral / totalDebt) < 1.1
 const LIQUIDATION_THRESHOLD = 1.1;
+const HEALTH_FACTOR_INFINITY_SENTINEL = 999;
+const USD_DUST_EPSILON = 1e-6;
 
 const canonicalMarginToken = (token: string): string => {
   const normalized = token.toUpperCase();
@@ -474,24 +476,29 @@ export const refreshBorrowedBalances = async (
 
     // ── Derived calculations (matching RiskEngine contract math) ──────────────
     //
-    //  Health Factor = totalCollateral / totalDebt
-    //  Contract constant: BALANCE_TO_BORROW_THRESHOLD = 1.1
-    //  Account is liquidatable when Health Factor < 1.1
+    // Contract check is effectively:
+    //   (totalCollateral / totalDebt) > 1.1    (when debt > 0)
+    // We keep a finite sentinel for "infinite" HF to avoid giant unreadable UI numbers.
+    const effectiveDebtValue =
+      totalBorrowedValue > USD_DUST_EPSILON ? totalBorrowedValue : 0;
+
     const avgHealthFactor =
-      totalBorrowedValue > 0
-        ? totalCollateralValue / totalBorrowedValue
-        : totalCollateralValue > 0 ? 999 : 0;
+      effectiveDebtValue > 0
+        ? totalCollateralValue / effectiveDebtValue
+        : totalCollateralValue > 0
+          ? HEALTH_FACTOR_INFINITY_SENTINEL
+          : 0;
 
     //  Collateral Left Before Liquidation:
     //    = totalCollateral - (totalDebt × LIQUIDATION_THRESHOLD)
     //    i.e. how much collateral value can fall before HF hits 1.1
     const collateralLeftBeforeLiquidation = Math.max(
       0,
-      totalCollateralValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
+      totalCollateralValue - effectiveDebtValue * LIQUIDATION_THRESHOLD
     );
 
     //  Net Available Collateral = collateral - debt (unencumbered equity)
-    const netAvailableCollateral = Math.max(0, totalCollateralValue - totalBorrowedValue);
+    const netAvailableCollateral = Math.max(0, totalCollateralValue - effectiveDebtValue);
 
     //  Total Value = net equity (collateral minus debt)
     const totalValue = netAvailableCollateral;
@@ -513,6 +520,7 @@ export const refreshBorrowedBalances = async (
       avgHealthFactor,
       collateralLeftBeforeLiquidation,
       netAvailableCollateral,
+      timeToLiquidation: 0,
       borrowRate,
       debtLimit,
       minDebt: 0,

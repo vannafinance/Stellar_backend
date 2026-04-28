@@ -29,11 +29,9 @@ import {
   useBlendPoolStats,
   useUserBlendPositions,
   useBlendEvents,
-  buildSupplyChartData,
   useAquariusPoolStats,
   useAquariusLpPosition,
   useAquariusEvents,
-  buildLpChartData,
 } from "@/hooks/use-farm";
 import { useSoroswapPoolStats, useSoroswapLpPosition, useSoroswapEvents } from "@/hooks/use-soroswap";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
@@ -52,6 +50,125 @@ const positionTableHeadings = [
   { label: "APY", id: "supply-apy" },
   { label: "b-Rate", id: "b-rate" },
 ];
+
+type PositionSnapshot = {
+  timestamp: number;
+  value: number;
+};
+
+const SNAPSHOT_MAX_ITEMS = 3000;
+
+const normalizeTimestamp = (value: unknown): number => {
+  const ts = Number(value ?? 0);
+  if (!Number.isFinite(ts) || ts <= 0) return 0;
+  return ts < 1_000_000_000_000 ? ts * 1000 : ts;
+};
+
+const getFarmChartSnapshotKey = (chartKey: string, account?: string | null) =>
+  `vanna_farm_chart_snapshots_v2_${chartKey}_${account ?? "guest"}`;
+
+const readFarmChartSnapshots = (storageKey: string): PositionSnapshot[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const normalized = parsed
+      .map((item) => ({
+        timestamp: normalizeTimestamp(item?.timestamp),
+        value: Number(item?.value ?? 0),
+      }))
+      .filter((item) => item.timestamp > 0 && Number.isFinite(item.value) && item.value >= 0)
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    // Remove transient refresh spikes: 0 between two similar positive points.
+    return normalized.filter((item, idx, arr) => {
+      if (item.value !== 0 || idx === 0 || idx === arr.length - 1) return true;
+      const prev = arr[idx - 1];
+      const next = arr[idx + 1];
+      const closeByTime =
+        item.timestamp - prev.timestamp <= 5 * 60_000 &&
+        next.timestamp - item.timestamp <= 5 * 60_000;
+      const similarNeighbors = Math.abs(next.value - prev.value) <= 0.00001;
+      return !(prev.value > 0 && next.value > 0 && closeByTime && similarNeighbors);
+    });
+  } catch {
+    return [];
+  }
+};
+
+const writeFarmChartSnapshots = (storageKey: string, snapshots: PositionSnapshot[]) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(storageKey, JSON.stringify(snapshots.slice(-SNAPSHOT_MAX_ITEMS)));
+};
+
+const buildRealtimeChartData = (
+  history: Array<{ timestamp: number; delta: number }>,
+  snapshots: PositionSnapshot[],
+  currentValue: number,
+  decimals: number
+): Array<{ date: string; amount: number }> => {
+  const round = (value: number) => parseFloat(Math.max(0, value).toFixed(decimals));
+  const points: Array<{ ts: number; amount: number }> = [];
+
+  const events = history
+    .map((item) => ({
+      timestamp: normalizeTimestamp(item.timestamp),
+      delta: Number(item.delta ?? 0),
+    }))
+    .filter((item) => item.timestamp > 0 && Number.isFinite(item.delta))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  let running = 0;
+  if (events.length > 0) {
+    const firstTs = events[0].timestamp;
+    points.push({ ts: Math.max(firstTs - 1, 1), amount: 0 });
+    events.forEach((item) => {
+      running = Math.max(0, running + item.delta);
+      points.push({ ts: item.timestamp, amount: round(running) });
+    });
+  }
+
+  const sortedSnapshots = [...snapshots]
+    .map((item) => ({ timestamp: normalizeTimestamp(item.timestamp), value: round(item.value) }))
+    .filter((item) => item.timestamp > 0 && Number.isFinite(item.value))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  sortedSnapshots.forEach((item) => {
+    const last = points[points.length - 1];
+    if (!last || item.timestamp > last.ts || Math.abs(item.value - last.amount) >= 0.000001) {
+      points.push({ ts: item.timestamp, amount: item.value });
+    }
+  });
+
+  const nowTs = Date.now();
+  const nowValue = round(currentValue);
+  if (points.length === 0) {
+    if (nowValue <= 0) return [];
+    return [
+      { date: new Date(Math.max(nowTs - 60_000, 1)).toISOString(), amount: nowValue },
+      { date: new Date(nowTs).toISOString(), amount: nowValue },
+    ];
+  }
+
+  const last = points[points.length - 1];
+  if (nowTs > last.ts || Math.abs(nowValue - last.amount) >= 0.000001) {
+    points.push({ ts: nowTs, amount: nowValue });
+  } else {
+    points[points.length - 1] = { ts: last.ts, amount: nowValue };
+  }
+
+  const dedupByTs = new Map<number, number>();
+  points.forEach((item) => dedupByTs.set(item.ts, item.amount));
+
+  return Array.from(dedupByTs.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([ts, amount]) => ({
+      date: new Date(ts).toISOString(),
+      amount,
+    }));
+};
 
 const FarmHeaderStats = memo(function FarmHeaderStats({
   tokenSymbol,
@@ -98,6 +215,7 @@ export default function FarmDetailPage() {
   const [activeUiTab, setActiveUiTab] = useState<string>("all-transactions");
   const [activeTab, setActiveTab] = useState<string>("current-position");
   const [showAddLiquidity, setShowAddLiquidity] = useState(false);
+  const [chartSnapshots, setChartSnapshots] = useState<PositionSnapshot[]>([]);
 
   const userAddress = useUserStore((state) => state.address);
 
@@ -148,12 +266,12 @@ export default function FarmDetailPage() {
 
   // Real data hooks — Aquarius (multi-asset)
   const { stats: aqStats, isLoading: aqStatsLoading } = useAquariusPoolStats(aquariusPoolAddress);
-  const { lpBalance } = useAquariusLpPosition(marginAccountAddress, aquariusPoolAddress);
+  const { lpBalance, isLoading: aqLpLoading } = useAquariusLpPosition(marginAccountAddress, aquariusPoolAddress);
   const { events: aqEvents } = useAquariusEvents(aquariusPoolAddress, marginAccountAddress);
 
   // Real data hooks — Soroswap (multi-asset)
   const { stats: ssStats, isLoading: ssStatsLoading } = useSoroswapPoolStats(isSoroswapEarly);
-  const { lpBalance: ssLpBalanceRaw } = useSoroswapLpPosition(marginAccountAddress);
+  const { lpBalance: ssLpBalanceRaw, isLoading: ssLpLoading } = useSoroswapLpPosition(marginAccountAddress);
   const mySSLpBalance = parseFloat(ssLpBalanceRaw ?? '0');
   const { events: ssEvents } = useSoroswapEvents(ssStats?.pairAddress, marginAccountAddress);
   const ssTokenA = matchedSoroswapPool?.tokens[0] ?? 'XLM';
@@ -196,11 +314,6 @@ export default function FarmDetailPage() {
   const myUnderlying = parseFloat(myPosition?.underlyingValue ?? '0');
   const myBTokens = parseFloat(myPosition?.bTokenBalance ?? '0');
 
-  // Chart data: supply history from events + current value
-  const chartLiveData = useMemo(() => {
-    return buildSupplyChartData(events, myUnderlying);
-  }, [events, myUnderlying]);
-
   // Chart heading
   const chartHeading = useMemo(() => {
     if (!tokenSymbol) return 'My Supply Position';
@@ -227,7 +340,7 @@ export default function FarmDetailPage() {
   // Position History table from blockchain events
   const mergedBlendHistory = useMemo(() => {
     const normalizedOnchain = events.map((ev) => ({
-      timestamp: ev.timestamp ?? 0,
+      timestamp: normalizeTimestamp(ev.timestamp),
       action: ev.type === "supply" ? "add" : "remove",
       amountDisplay: `${ev.underlyingAmount} ${ev.tokenSymbol}`,
       txHash: ev.txHash ?? "",
@@ -240,7 +353,7 @@ export default function FarmDetailPage() {
     const normalizedLocal = blendLocalHistory
       .filter((item) => !item.txHash || !onchainHashes.has(item.txHash))
       .map((item) => ({
-        timestamp: item.timestamp,
+        timestamp: normalizeTimestamp(item.timestamp),
         action: item.action,
         amountDisplay: item.amountDisplay,
         txHash: item.txHash,
@@ -319,12 +432,6 @@ export default function FarmDetailPage() {
     },
   ], [aqStats, aqStatsLoading, poolTokenA, poolTokenB]);
 
-  // Aquarius LP chart data
-  const aqChartData = useMemo(
-    () => buildLpChartData(aqEvents, myLpBalance),
-    [aqEvents, myLpBalance]
-  );
-
   const aquariusPositionHeadings = useMemo(() => [
     { label: "Pool", id: "pool" },
     { label: "LP Shares", id: "lp-shares" },
@@ -351,12 +458,12 @@ export default function FarmDetailPage() {
         ],
       }],
     };
-  }, [myLpBalance, aqStats]);
+  }, [myLpBalance, aqStats, poolTokenA, poolTokenB]);
 
   // Aquarius position history table
   const mergedAquariusHistory = useMemo(() => {
     const normalizedOnchain = aqEvents.map((ev) => ({
-      timestamp: ev.timestamp ?? 0,
+      timestamp: normalizeTimestamp(ev.timestamp),
       action: ev.type === "deposit" ? "add" : "remove",
       amountDisplay: `${ev.shareAmount} LP`,
       txHash: ev.txHash ?? "",
@@ -369,7 +476,7 @@ export default function FarmDetailPage() {
     const normalizedLocal = aquariusLocalHistory
       .filter((item) => !item.txHash || !onchainHashes.has(item.txHash))
       .map((item) => ({
-        timestamp: item.timestamp,
+        timestamp: normalizeTimestamp(item.timestamp),
         action: item.action,
         amountDisplay: item.amountDisplay,
         txHash: item.txHash,
@@ -440,16 +547,10 @@ export default function FarmDetailPage() {
     },
   ], [ssStats, ssStatsLoading, ssTokenA, ssTokenB]);
 
-  // Soroswap LP chart data — built from on-chain events + current balance
-  const ssChartData = useMemo(
-    () => buildLpChartData(ssEvents, mySSLpBalance),
-    [ssEvents, mySSLpBalance]
-  );
-
   // Soroswap position history table
   const mergedSoroswapHistory = useMemo(() => {
     const normalizedOnchain = ssEvents.map((ev) => ({
-      timestamp: ev.timestamp ?? 0,
+      timestamp: normalizeTimestamp(ev.timestamp),
       action: ev.type === "deposit" ? "add" : "remove",
       amountDisplay: `${ev.shareAmount} LP`,
       txHash: ev.txHash ?? "",
@@ -462,7 +563,7 @@ export default function FarmDetailPage() {
     const normalizedLocal = soroswapLocalHistory
       .filter((item) => !item.txHash || !onchainHashes.has(item.txHash))
       .map((item) => ({
-        timestamp: item.timestamp,
+        timestamp: normalizeTimestamp(item.timestamp),
         action: item.action,
         amountDisplay: item.amountDisplay,
         txHash: item.txHash,
@@ -527,6 +628,93 @@ export default function FarmDetailPage() {
     };
   }, [mySSLpBalance, ssStats, ssTokenA, ssTokenB]);
 
+  const chartHistoryKey = useMemo(() => {
+    if (isSoroswapEarly) return `soroswap:${buildFarmPoolKey(ssTokenA, ssTokenB)}`;
+    if (isAquariusEarly) return `aquarius:${buildFarmPoolKey(matchedPool?.tokens[0] ?? "XLM", matchedPool?.tokens[1] ?? "USDC")}`;
+    return `blend:${buildFarmPoolKey(tokenSymbol ?? "XLM")}`;
+  }, [isSoroswapEarly, isAquariusEarly, ssTokenA, ssTokenB, matchedPool, tokenSymbol]);
+
+  const chartStorageKey = useMemo(
+    () => getFarmChartSnapshotKey(chartHistoryKey, marginAccountAddress),
+    [chartHistoryKey, marginAccountAddress]
+  );
+
+  const currentChartValue = useMemo(() => {
+    if (isSoroswapEarly) return Math.max(0, mySSLpBalance);
+    if (isAquariusEarly) return Math.max(0, myLpBalance);
+    return Math.max(0, myUnderlying);
+  }, [isSoroswapEarly, isAquariusEarly, mySSLpBalance, myLpBalance, myUnderlying]);
+
+  const isChartDataLoading = useMemo(() => {
+    if (isSoroswapEarly) return ssStatsLoading || ssLpLoading;
+    if (isAquariusEarly) return aqStatsLoading || aqLpLoading;
+    return statsLoading || posLoading || eventsLoading;
+  }, [
+    isSoroswapEarly,
+    isAquariusEarly,
+    ssStatsLoading,
+    ssLpLoading,
+    aqStatsLoading,
+    aqLpLoading,
+    statsLoading,
+    posLoading,
+    eventsLoading,
+  ]);
+
+  useEffect(() => {
+    const next = readFarmChartSnapshots(chartStorageKey);
+    queueMicrotask(() => setChartSnapshots(next));
+  }, [chartStorageKey]);
+
+  useEffect(() => {
+    if (isChartDataLoading) return;
+    if (!Number.isFinite(currentChartValue)) return;
+
+    queueMicrotask(() => {
+      setChartSnapshots((prev) => {
+        const now = Date.now();
+        const roundedCurrent = parseFloat(currentChartValue.toFixed(7));
+        const last = prev[prev.length - 1];
+        const changed = !last || Math.abs(last.value - roundedCurrent) >= 0.000001;
+
+        // Persist only on real value changes; refresh/re-render should not add points.
+        if (!changed) return prev;
+
+        const next = [
+          ...prev,
+          { timestamp: now, value: roundedCurrent },
+        ].slice(-SNAPSHOT_MAX_ITEMS);
+
+        writeFarmChartSnapshots(chartStorageKey, next);
+        return next;
+      });
+    });
+  }, [chartStorageKey, currentChartValue, isChartDataLoading]);
+
+  const blendChartData = useMemo(() => {
+    const history = mergedBlendHistory.map((ev) => ({
+      timestamp: ev.timestamp,
+      delta: (ev.action === "add" ? 1 : -1) * (parseFloat(ev.amountDisplay) || 0),
+    }));
+    return buildRealtimeChartData(history, chartSnapshots, myUnderlying, 4);
+  }, [mergedBlendHistory, chartSnapshots, myUnderlying]);
+
+  const aqChartData = useMemo(() => {
+    const history = mergedAquariusHistory.map((ev) => ({
+      timestamp: ev.timestamp,
+      delta: (ev.action === "add" ? 1 : -1) * (parseFloat(ev.amountDisplay) || 0),
+    }));
+    return buildRealtimeChartData(history, chartSnapshots, myLpBalance, 7);
+  }, [mergedAquariusHistory, chartSnapshots, myLpBalance]);
+
+  const ssChartData = useMemo(() => {
+    const history = mergedSoroswapHistory.map((ev) => ({
+      timestamp: ev.timestamp,
+      delta: (ev.action === "add" ? 1 : -1) * (parseFloat(ev.amountDisplay) || 0),
+    }));
+    return buildRealtimeChartData(history, chartSnapshots, mySSLpBalance, 7);
+  }, [mergedSoroswapHistory, chartSnapshots, mySSLpBalance]);
+
   // Route "All Transactions" table to the correct data source for the current pool type.
   const detailTableHeadings = useMemo(() => {
     if (activeTab !== "current-position") return transactionTableHeadings;
@@ -577,7 +765,7 @@ export default function FarmDetailPage() {
     return {
       heading: chartHeading,
       uptrend: myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined,
-      data: chartLiveData,
+      data: blendChartData,
     };
   }, [
     isSoroswapEarly,
@@ -589,7 +777,7 @@ export default function FarmDetailPage() {
     chartHeading,
     myUnderlying,
     tokenSymbol,
-    chartLiveData,
+    blendChartData,
   ]);
 
   // Soroswap analytics cards
@@ -647,16 +835,22 @@ export default function FarmDetailPage() {
     if (!rowData?.row?.cell?.length) {
       return { title: tokenSymbol ?? id, titles: null, chain: tokenSymbol ?? 'XLM', tags: tokenSymbol ? ['Blend', 'Supply'] : [] };
     }
-    const firstCell = rowData.row.cell[0];
-    const titles = (firstCell as any).titles || null;
+    const firstCell = rowData.row.cell[0] as {
+      title?: string;
+      chain?: string;
+      titles?: string[];
+      tags?: Array<string | number>;
+    };
+    const titles = firstCell.titles ?? null;
     const title = titles ? titles.join(' / ') : firstCell.title || id;
-    const chain = (firstCell as any).chain || 'XLM';
-    const tags = (firstCell as any).tags || [];
+    const chain = firstCell.chain ?? 'XLM';
+    const tags = firstCell.tags ?? [];
     return { title, titles, chain, tags };
   }, [rowData, id, tokenSymbol]);
 
   const iconPath = useMemo(() => {
-    if (farmData.titles?.length > 0) return iconPaths[farmData.titles[0].toUpperCase()] || '/icons/eth-icon.png';
+    const poolTitles = farmData.titles ?? [];
+    if (poolTitles.length > 0) return iconPaths[poolTitles[0].toUpperCase()] || '/icons/eth-icon.png';
     const assetName = farmData.title?.split(' / ')[0]?.toUpperCase() || farmData.chain.toUpperCase();
     return iconPaths[assetName] || iconPaths[farmData.chain.toUpperCase()] || '/icons/eth-icon.png';
   }, [farmData]);
@@ -698,7 +892,12 @@ export default function FarmDetailPage() {
   const maxPrice = useMemo(() => ethRangeMax === 0 ? "0.0000" : (usdcRangeMax / ethRangeMax).toFixed(4), [usdcRangeMax, ethRangeMax]);
   const [minPriceInput, setMinPriceInput] = useState(minPrice);
   const [maxPriceInput, setMaxPriceInput] = useState(maxPrice);
-  useEffect(() => { setMinPriceInput(minPrice); setMaxPriceInput(maxPrice); }, [minPrice, maxPrice]);
+  useEffect(() => {
+    queueMicrotask(() => {
+      setMinPriceInput(minPrice);
+      setMaxPriceInput(maxPrice);
+    });
+  }, [minPrice, maxPrice]);
   const handlePriceInputChange = useCallback((value: string, setter: (val: string) => void) => {
     const sanitized = value.replace(/[^0-9.]/g, '');
     const parts = sanitized.split('.');

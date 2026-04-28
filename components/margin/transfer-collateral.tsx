@@ -9,16 +9,26 @@ import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
+import { appendMarginHistory } from "@/lib/margin-history";
+import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import toast from "react-hot-toast";
 
 const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
+const XLM_MARGIN_WITHDRAW_BUFFER = 5;
+const LIQUIDATION_THRESHOLD = 1.1;
+const TOKEN_PRICES: Record<string, number> = {
+  XLM: 0.10,
+  USDC: 1.0,
+  AQUSDC: 1.0,
+  SOUSDC: 1.0,
+};
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
   const normalizeContractTokenSymbol = (symbol: string) =>
     symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
-      ? "BLUSDC"
+      ? "USDC"
       : symbol === "AqUSDC" || symbol === "AquiresUSDC" || symbol === "AQUARIUS_USDC"
         ? "AQUSDC"
         : symbol === "SoUSDC" || symbol === "SoroswapUSDC" || symbol === "SOROSWAP_USDC"
@@ -36,6 +46,8 @@ export const TransferCollateral = () => {
   const [marginAccountBalance, setMarginAccountBalance] = useState<number>(0);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+  const totalCollateralValue = useMarginAccountInfoStore((state) => state.totalCollateralValue);
+  const totalBorrowedValue = useMarginAccountInfoStore((state) => state.totalBorrowedValue);
 
   const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
   const maxTransferableBalance = computeMaxTransferableBalance(
@@ -43,6 +55,31 @@ export const TransferCollateral = () => {
     normalizeContractTokenSymbol(selectedCurrency),
     sourceBalance
   );
+  const selectedTokenPrice = TOKEN_PRICES[normalizeContractTokenSymbol(selectedCurrency)] ?? 1;
+  const maxRiskSafeWithdraw = (() => {
+    if (selectedTransferType !== "WB") return maxTransferableBalance;
+    if (totalBorrowedValue <= XLM_TRANSFER_EPSILON) return maxTransferableBalance;
+    const withdrawableUsd = Math.max(
+      0,
+      totalCollateralValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
+    );
+    if (selectedTokenPrice <= 0) return 0;
+    const withdrawableToken = withdrawableUsd / selectedTokenPrice;
+    return Math.max(0, Math.min(maxTransferableBalance, withdrawableToken) - XLM_TRANSFER_EPSILON);
+  })();
+  const maxExecutableWithdraw = (() => {
+    if (selectedTransferType !== "WB") return maxTransferableBalance;
+    const token = normalizeContractTokenSymbol(selectedCurrency);
+    // In practice, exact full XLM collateral withdraw can fail on-chain due to
+    // state/rounding drift. Keep a small operational buffer for WB XLM when no debt.
+    if (token === "XLM" && totalBorrowedValue <= XLM_TRANSFER_EPSILON) {
+      return Math.max(
+        0,
+        Math.min(maxRiskSafeWithdraw, maxTransferableBalance - XLM_MARGIN_WITHDRAW_BUFFER)
+      );
+    }
+    return Math.max(0, maxRiskSafeWithdraw - XLM_TRANSFER_EPSILON);
+  })();
   const isOverSourceBalance = Number(valueInput || 0) > sourceBalance;
 
   function computeMaxTransferableBalance(
@@ -56,18 +93,47 @@ export const TransferCollateral = () => {
     return Math.max(0, balance);
   }
 
-  const getFriendlyTransferError = (rawError?: string) => {
-    const text = (rawError || "").toLowerCase();
+  const getFriendlyTransferError = (rawError?: string, maxSafeWithdrawAmount?: number) => {
+    const compact = (rawError || "").split("\nEvent log")[0]?.trim() || "";
+    const text = compact.toLowerCase();
     if (
       text.includes("error(contract, #10)") ||
       text.includes("resulting balance is not within the allowed range")
     ) {
       return "You cannot transfer all your wallet balance. Please keep at least 1 XLM in your wallet.";
     }
+    if (
+      text.includes("invalidaction") ||
+      text.includes("is_withdraw_allowed") ||
+      text.includes("unreachablecodereached")
+    ) {
+      if (typeof maxSafeWithdrawAmount === "number" && maxSafeWithdrawAmount > 0) {
+        return `Withdrawal blocked by Risk Engine. Max transferable right now: ${maxSafeWithdrawAmount.toFixed(7)} ${selectedCurrency}.`;
+      }
+      return "Withdrawal blocked by Risk Engine. Repay some debt first, then try again.";
+    }
     if (text.includes("insufficient")) {
       return "Insufficient balance for this transfer.";
     }
-    return rawError || "Transfer failed. Please try again.";
+    if (
+      text.includes("withdraw transaction failed on-chain") ||
+      text.includes("withdraw collateral failed with status")
+    ) {
+      if (selectedTransferType === "WB" && totalBorrowedValue <= XLM_TRANSFER_EPSILON) {
+        return `Full withdrawal can fail due to on-chain rounding/state dust. Try up to ${maxExecutableWithdraw.toFixed(7)} ${selectedCurrency}.`;
+      }
+      if (typeof maxSafeWithdrawAmount === "number" && maxSafeWithdrawAmount > 0) {
+        return `Withdrawal failed on-chain. Max transferable right now: ${maxSafeWithdrawAmount.toFixed(7)} ${selectedCurrency}.`;
+      }
+      return "Withdrawal failed on-chain. Please retry with a slightly smaller amount.";
+    }
+    if (text.includes("hosterror")) {
+      if (selectedTransferType === "WB" && totalBorrowedValue <= XLM_TRANSFER_EPSILON) {
+        return `Full withdrawal can fail due to on-chain rounding/state dust. Try up to ${maxExecutableWithdraw.toFixed(7)} ${selectedCurrency}.`;
+      }
+      return "Transfer failed on-chain. Please retry in a moment.";
+    }
+    return compact || "Transfer failed. Please try again.";
   };
 
   const getSelectedWalletBalance = async (address: string, tokenSymbol: string): Promise<number> => {
@@ -75,7 +141,7 @@ export const TransferCollateral = () => {
       const balances = await ContractService.getAllTokenBalances(address);
       const contractTokenSymbol = normalizeContractTokenSymbol(tokenSymbol);
 
-      if (contractTokenSymbol === "BLUSDC") return parseFloat(balances.BLEND_USDC) || 0;
+      if (contractTokenSymbol === "USDC") return parseFloat(balances.BLEND_USDC) || 0;
       if (contractTokenSymbol === "AQUSDC") return parseFloat(balances.AQUARIUS_USDC) || 0;
       if (contractTokenSymbol === "SOUSDC") return parseFloat(balances.SOROSWAP_USDC) || 0;
 
@@ -138,7 +204,8 @@ export const TransferCollateral = () => {
 
   const handlePercentageClick = (item: number) => {
     setPercentage(item);
-    const calculatedAmount = (maxTransferableBalance * item) / 100;
+    const baseBalance = selectedTransferType === "WB" ? maxExecutableWithdraw : maxTransferableBalance;
+    const calculatedAmount = (baseBalance * item) / 100;
     setValueInput(calculatedAmount.toFixed(7));
     setValueInUsd(calculatedAmount * 1); // Placeholder for price conversion
   };
@@ -150,8 +217,9 @@ export const TransferCollateral = () => {
   };
 
   const handleMaxValueClick = () => {
-    setValueInput(maxTransferableBalance.toFixed(7));
-    setValueInUsd(maxTransferableBalance);
+    const targetMax = selectedTransferType === "WB" ? maxExecutableWithdraw : maxTransferableBalance;
+    setValueInput(targetMax.toFixed(7));
+    setValueInUsd(targetMax);
   };
 
   const handleTransferClick = async () => {
@@ -176,6 +244,27 @@ export const TransferCollateral = () => {
       toast.error("You cannot transfer all your wallet balance. Please keep at least 1 XLM in your wallet.");
       return;
     }
+    if (
+      selectedTransferType === "WB" &&
+      Number(valueInput) > maxExecutableWithdraw + XLM_TRANSFER_EPSILON
+    ) {
+      if (totalBorrowedValue <= XLM_TRANSFER_EPSILON) {
+        toast.error(
+          `Full withdrawal is failing due to rounding/state dust. Try up to ${maxExecutableWithdraw.toFixed(7)} ${selectedCurrency}.`
+        );
+      } else if (maxExecutableWithdraw > 0) {
+        toast.error(
+          `Unsafe withdrawal for current debt/health factor. Max you can transfer now: ${maxExecutableWithdraw.toFixed(7)} ${selectedCurrency}.`
+        );
+      } else {
+        toast.error(
+          totalBorrowedValue <= XLM_TRANSFER_EPSILON
+            ? "Full withdrawal is currently failing on-chain. Please retry with a slightly smaller amount."
+            : "Unsafe withdrawal for current debt/health factor. Repay some debt first."
+        );
+      }
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -194,6 +283,14 @@ export const TransferCollateral = () => {
           );
 
       if (result.success) {
+        appendMarginHistory({
+          marginAccountAddress: marginAccount,
+          type: selectedTransferType === "MB" ? "transfer-in" : "transfer-out",
+          asset: normalizeContractTokenSymbol(selectedCurrency),
+          amount: Number(valueInput).toFixed(7),
+          hash: result.hash ?? "",
+        });
+
         toast.success(
           `${selectedTransferType === "MB" ? "Transfer to margin successful" : "Transfer to wallet successful"}! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`
         );
@@ -201,11 +298,24 @@ export const TransferCollateral = () => {
         setValueInput("");
         setValueInUsd(0);
       } else {
-        toast.error(getFriendlyTransferError(result.error));
+        if (
+          selectedTransferType === "WB" &&
+          normalizeContractTokenSymbol(selectedCurrency) === "XLM" &&
+          totalBorrowedValue <= XLM_TRANSFER_EPSILON
+        ) {
+          const entered = Number(valueInput) || 0;
+          const steppedDown = Math.max(0, entered - XLM_MARGIN_WITHDRAW_BUFFER);
+          const nextSuggested = Math.min(maxExecutableWithdraw, steppedDown);
+          if (nextSuggested > 0) {
+            setValueInput(nextSuggested.toFixed(7));
+            setValueInUsd(nextSuggested);
+          }
+        }
+        toast.error(getFriendlyTransferError(result.error, maxExecutableWithdraw));
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Transfer failed";
-      toast.error(getFriendlyTransferError(message));
+      toast.error(getFriendlyTransferError(message, maxExecutableWithdraw));
     } finally {
       setIsLoading(false);
     }

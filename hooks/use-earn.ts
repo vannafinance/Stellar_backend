@@ -25,11 +25,12 @@ const calculateBorrowAPY = (utilizationRate: string) => {
   return (4.0 + utilization * 15).toFixed(2);
 };
 
-const calculateExchangeRateFromPool = (availableLiquidity: string, vTokenSupply: string) => {
-  const liquidity = parseFloat(availableLiquidity) || 0;
+const calculateExchangeRateFromPool = (poolLiquidity: string, vTokenSupply: string) => {
+  const liquidity = parseFloat(poolLiquidity) || 0;
   const supply = parseFloat(vTokenSupply) || 0;
 
-  // Mirror contract bootstrap behavior: if pool or vToken supply is zero, use 1:1.
+  // Keep frontend math aligned with current contract conversion:
+  // vToken <-> asset uses pool liquidity (cash) against live vToken supply.
   if (liquidity <= 0 || supply <= 0) return '1';
   return (liquidity / supply).toFixed(7);
 };
@@ -225,6 +226,43 @@ export const useSupplyLiquidity = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info' | '', text: string }>({ type: '', text: '' });
 
+  const normalizeSupplyError = useCallback((rawError: string | undefined, assetType: AssetType) => {
+    const fallback = `Failed to supply ${assetType}. Please try again.`;
+    if (!rawError) return fallback;
+
+    const text = rawError.replace(/\s+/g, ' ').trim();
+    const lowerText = text.toLowerCase();
+
+    if (
+      lowerText.includes('cancelled') ||
+      lowerText.includes('canceled') ||
+      lowerText.includes('rejected by user')
+    ) {
+      return 'Transaction cancelled by user.';
+    }
+
+    if (
+      lowerText.includes('insufficient') ||
+      lowerText.includes('underfunded') ||
+      lowerText.includes('insufficientbalance') ||
+      lowerText.includes('balance is not sufficient')
+    ) {
+      return `You cannot supply all your ${assetType}. Keep a small balance and try again.`;
+    }
+
+    if (
+      lowerText.includes('diagnostic event') ||
+      lowerText.includes('hosterror') ||
+      lowerText.includes('sorobanrpcerror') ||
+      lowerText.includes('transaction failed') ||
+      lowerText.includes('error(contract')
+    ) {
+      return `Supply failed for ${assetType}. Please reduce the amount and try again.`;
+    }
+
+    return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+  }, []);
+
   const refreshAllBalances = useCallback(async () => {
     if (!address) return;
 
@@ -287,16 +325,16 @@ export const useSupplyLiquidity = () => {
 
         return { success: true, hash: result.hash };
       } else {
-        setMessage({ type: 'error', text: result.error || 'Supply failed' });
+        setMessage({ type: 'error', text: normalizeSupplyError(result.error, assetType) });
         return { success: false };
       }
     } catch (error: any) {
-      setMessage({ type: 'error', text: error?.message || 'Supply failed' });
+      setMessage({ type: 'error', text: normalizeSupplyError(error?.message, assetType) });
       return { success: false };
     } finally {
       setIsLoading(false);
     }
-  }, [address, refreshAllBalances]);
+  }, [address, refreshAllBalances, normalizeSupplyError]);
 
   return {
     supply,
@@ -311,6 +349,43 @@ export const useWithdrawLiquidity = () => {
   const userPositions = useEarnPoolStore((s) => s.userPositions);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info' | '', text: string }>({ type: '', text: '' });
+
+  const normalizeWithdrawError = useCallback((rawError: string | undefined, assetType: AssetType) => {
+    const fallback = `Failed to withdraw ${assetType}. Please try again.`;
+    if (!rawError) return fallback;
+
+    const text = rawError.replace(/\s+/g, ' ').trim();
+    const lowerText = text.toLowerCase();
+
+    if (
+      lowerText.includes('cancelled') ||
+      lowerText.includes('canceled') ||
+      lowerText.includes('rejected by user')
+    ) {
+      return 'Transaction cancelled by user.';
+    }
+
+    if (
+      lowerText.includes('insufficient') ||
+      lowerText.includes('underfunded') ||
+      lowerText.includes('insufficientbalance') ||
+      lowerText.includes('balance is not sufficient')
+    ) {
+      return `You cannot withdraw all your v${assetType}. Keep a small balance and try again.`;
+    }
+
+    if (
+      lowerText.includes('diagnostic event') ||
+      lowerText.includes('hosterror') ||
+      lowerText.includes('sorobanrpcerror') ||
+      lowerText.includes('transaction failed') ||
+      lowerText.includes('error(contract')
+    ) {
+      return `Withdraw failed for ${assetType}. Please reduce the amount and try again.`;
+    }
+
+    return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+  }, []);
 
   const refreshAllBalances = useCallback(async () => {
     if (!address) return;
@@ -411,16 +486,16 @@ export const useWithdrawLiquidity = () => {
 
         return { success: true, hash: result.hash };
       } else {
-        setMessage({ type: 'error', text: result.error || 'Withdrawal failed' });
+        setMessage({ type: 'error', text: normalizeWithdrawError(result.error, assetType) });
         return { success: false };
       }
     } catch (error: any) {
-      setMessage({ type: 'error', text: error?.message || 'Withdrawal failed' });
+      setMessage({ type: 'error', text: normalizeWithdrawError(error?.message, assetType) });
       return { success: false };
     } finally {
       setIsLoading(false);
     }
-  }, [address, userPositions, refreshAllBalances]);
+  }, [address, userPositions, refreshAllBalances, normalizeWithdrawError]);
 
   return {
     withdraw,

@@ -99,6 +99,14 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
   const handleWithdraw = async () => {
     const numAmount = parseFloat(shares);
     if (numAmount > 0 && userAddress) {
+      const isFullBalanceWithdraw =
+        selectedPercentage === 100 || numAmount >= Math.max(0, vTokenBalance - 0.0000001);
+
+      if (isFullBalanceWithdraw) {
+        toast.error(`You cannot withdraw all your v${selectedOption}. Keep a small balance and try again.`);
+        return;
+      }
+
       const result = await withdraw(numAmount, normalizedAsset as AssetType);
       if (result.success) {
         setShares("");
