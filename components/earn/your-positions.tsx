@@ -7,7 +7,6 @@ import { useTheme } from "@/contexts/theme-context";
 import { usePoolData, useUserPositions, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
-import { depositData } from "@/lib/constants/earn";
 import { getEarnHistoryByAsset } from "@/lib/earn-history";
 
 const tabs = [
@@ -37,24 +36,15 @@ type EarnTxLike = {
   hash?: string;
 };
 
-// Scale a template series so its last point equals liveEndValue; empty array when value=0.
-// Dates are remapped to a rolling 365-day window ending today so time filters always find data.
-const scaleSeries = (
-  template: Array<{ date: string; amount: number }>,
-  liveEndValue: number
-): Array<{ date: string; amount: number }> => {
-  if (liveEndValue <= 0 || template.length === 0) return [];
-  const lastTemplate = template[template.length - 1].amount;
-  if (lastTemplate === 0) return [];
-  const scale = liveEndValue / lastTemplate;
-  const now = new Date();
-  const n = template.length;
-  return template.map((p, i) => {
-    const daysAgo = Math.round((n - 1 - i) * 365 / Math.max(n - 1, 1));
-    const d = new Date(now);
-    d.setDate(d.getDate() - daysAgo);
-    return { date: d.toISOString().split('T')[0], amount: parseFloat((p.amount * scale).toFixed(2)) };
-  });
+const normalizeTimestamp = (value: string | number | undefined): number => {
+  const ts = Number(value ?? 0);
+  if (!Number.isFinite(ts) || ts <= 0) return 0;
+  // Handle unix seconds from any legacy/local source
+  return ts < 1_000_000_000_000 ? ts * 1000 : ts;
+};
+
+const toIsoDate = (timestamp: number): string => {
+  return new Date(timestamp).toISOString().split("T")[0];
 };
 
 // USD price lookup
@@ -65,6 +55,7 @@ const TOKEN_PRICES: Record<string, number> = {
 export const YourPositions = memo(function YourPositions() {
   const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState<string>("current-positions");
+  const [chartNow] = useState<number>(() => Date.now());
 
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const assetKey = toInternalAsset(selectedAsset);
@@ -85,12 +76,6 @@ export const YourPositions = memo(function YourPositions() {
 
   const price = TOKEN_PRICES[assetKey] ?? 1;
   const vTokenBalance = parseFloat(userPosition?.vTokenBalance || '0');
-
-  // Generate scaled chart data for the user's current deposit
-  const mySupplyChartData = useMemo(
-    () => scaleSeries(depositData, deposited * price),
-    [deposited, price]
-  );
 
   const positionTableHeadings = [
     { label: "Pool", id: "pool" },
@@ -134,7 +119,7 @@ export const YourPositions = memo(function YourPositions() {
     const onchain = (transactions ?? [])
       .filter((tx: EarnTxLike) => normalize(tx.asset || "") === normalize(assetKey))
       .map((tx: EarnTxLike) => ({
-        timestamp: Number(tx.timestamp ?? 0),
+        timestamp: normalizeTimestamp(tx.timestamp),
         type: tx.type === "withdraw" ? "withdraw" : "supply",
         amount: String(tx.amount ?? "0"),
         hash: String(tx.hash ?? ""),
@@ -145,7 +130,7 @@ export const YourPositions = memo(function YourPositions() {
     const local = getEarnHistoryByAsset(assetKey)
       .filter((tx) => !tx.hash || !onchainHashes.has(tx.hash))
       .map((tx) => ({
-        timestamp: tx.timestamp,
+        timestamp: normalizeTimestamp(tx.timestamp),
         type: tx.type,
         amount: tx.amount,
         hash: tx.hash,
@@ -154,6 +139,56 @@ export const YourPositions = memo(function YourPositions() {
 
     return [...onchain, ...local].sort((a, b) => b.timestamp - a.timestamp);
   }, [transactions, assetKey]);
+
+  // Build chart from real user transactions so tooltip dates match actual activity.
+  const mySupplyChartData = useMemo(() => {
+    const currentUsdValue = parseFloat((deposited * price).toFixed(2));
+    const txsAsc = [...mergedHistory]
+      .filter((tx) => tx.timestamp > 0)
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    if (txsAsc.length === 0) {
+      if (currentUsdValue <= 0) return [];
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      return [
+        { date: toIsoDate(yesterday.getTime()), amount: currentUsdValue },
+        { date: toIsoDate(today.getTime()), amount: currentUsdValue },
+      ];
+    }
+
+    const dayDeltaMap = new Map<string, number>();
+    txsAsc.forEach((tx) => {
+      const date = toIsoDate(tx.timestamp);
+      const amountUsd = (parseFloat(tx.amount || "0") || 0) * price;
+      const signedDelta = tx.type === "withdraw" ? -amountUsd : amountUsd;
+      dayDeltaMap.set(date, (dayDeltaMap.get(date) ?? 0) + signedDelta);
+    });
+
+    const points: Array<{ date: string; amount: number }> = [];
+    let running = 0;
+    Array.from(dayDeltaMap.keys()).sort().forEach((date) => {
+      running = Math.max(0, running + (dayDeltaMap.get(date) ?? 0));
+      points.push({ date, amount: parseFloat(running.toFixed(2)) });
+    });
+
+    const todayIso = toIsoDate(chartNow);
+    const hasToday = points.length > 0 && points[points.length - 1].date === todayIso;
+    if (hasToday) {
+      points[points.length - 1] = { date: todayIso, amount: currentUsdValue };
+    } else {
+      points.push({ date: todayIso, amount: currentUsdValue });
+    }
+
+    if (points.length < 2) {
+      const firstDate = new Date(points[0]?.date ?? todayIso);
+      firstDate.setDate(firstDate.getDate() - 1);
+      points.unshift({ date: toIsoDate(firstDate.getTime()), amount: 0 });
+    }
+
+    return points;
+  }, [mergedHistory, deposited, price, chartNow]);
 
   const historyTableBody = useMemo(() => {
     if (mergedHistory.length === 0) return { rows: [] };

@@ -146,6 +146,42 @@ export async function executeOneClickStrategy(
   };
 
   try {
+    // ── Atomic path: Blend single-asset + same-asset scenario in one tx ──────
+    if (
+      poolType === 'single' &&
+      scenario === 'same-asset' &&
+      poolProtocol.toLowerCase().includes('blend')
+    ) {
+      // Soroban host currently enforces a single operation per tx in this flow.
+      // Keep atomic mode behind a feature gate so production users are not blocked.
+      const atomicEnabled = process.env.NEXT_PUBLIC_ENABLE_ATOMIC_BLEND_OPEN_POSITION === 'true';
+      if (atomicEnabled) {
+        const total = collateralAmount + borrowAmount;
+        step(
+          leverage > 1
+            ? `Step 1/1: Depositing ${collateralAmount} ${collateralAsset}, borrowing ${borrowAmount.toFixed(4)} ${collateralAsset}, and deploying ${total.toFixed(4)} ${collateralAsset} to ${poolProtocol}...`
+            : `Step 1/1: Depositing ${collateralAmount} ${collateralAsset} and deploying ${total.toFixed(4)} ${collateralAsset} to ${poolProtocol}...`
+        );
+
+        const atomicResult = await MarginAccountService.depositBorrowAndDeployBlendAtomic(
+          marginAccountAddress,
+          collateralAmount,
+          leverage > 1 ? borrowAmount : 0,
+          collateralAsset
+        );
+
+        if (atomicResult.success) {
+          return { success: true, hash: atomicResult.hash };
+        }
+
+        const shouldFallbackToSplit =
+          (atomicResult.error || '').toLowerCase().includes('more than one operation');
+        if (!shouldFallbackToSplit) {
+          return { success: false, error: atomicResult.error };
+        }
+      }
+    }
+
     // ── Phase 1: Deposit collateral + borrow ────────────────────────────────
 
     if (scenario === 'same-asset') {

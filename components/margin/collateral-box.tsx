@@ -451,7 +451,18 @@ const CollateralComponent = (props: Collateral) => {
 
             {/* Row 3: balance label */}
             {hasCollateral && collateral && (
-              <div className="flex items-center">
+              <div className="flex items-center justify-between">
+                <span
+                  className={`text-[12px] font-medium ${
+                    isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                  }`}
+                >
+                  Balance:{" "}
+                  {collateral.balanceType.toLowerCase() === "wb"
+                    ? String(tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0")
+                    : collateral.unifiedBalance}{" "}
+                  {collateral.asset}
+                </span>
                 <span
                   className={`text-[12px] font-medium ${
                     isDark ? "text-[#777777]" : "text-[#A7A7A7]"

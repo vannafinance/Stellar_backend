@@ -1,7 +1,7 @@
 export interface MarginHistoryEntry {
   id: string;
   marginAccountAddress: string;
-  type: "borrow" | "repay";
+  type: "deposit" | "borrow" | "repay" | "transfer-in" | "transfer-out";
   asset: string;
   amount: string;
   timestamp: number;
@@ -47,7 +47,9 @@ export const appendMarginHistory = (entry: Omit<MarginHistoryEntry, "id" | "time
         item.hash &&
         next.hash &&
         item.hash === next.hash &&
-        item.marginAccountAddress === next.marginAccountAddress
+        item.marginAccountAddress === next.marginAccountAddress &&
+        item.type === next.type &&
+        item.asset === next.asset
       )
   );
   writeAll([next, ...withoutDuplicate]);

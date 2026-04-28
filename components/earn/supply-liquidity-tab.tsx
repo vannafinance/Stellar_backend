@@ -99,6 +99,14 @@ export const SupplyLiquidityTab = () => {
   const handleSupply = async () => {
     const numAmount = parseFloat(value);
     if (numAmount > 0 && userAddress) {
+      const isFullBalanceSupply =
+        selectedPercentage === 100 || numAmount >= Math.max(0, parseFloat(availableBalance) - 0.0000001);
+
+      if (isFullBalanceSupply) {
+        toast.error(`You cannot supply all your ${selectedOption}. Keep a small balance and try again.`);
+        return;
+      }
+
       const result = await supply(numAmount, normalizedAsset as AssetType);
       if (result.success) {
         setValue("");
@@ -296,4 +304,3 @@ export const SupplyLiquidityTab = () => {
     </div>
   );
 };
-

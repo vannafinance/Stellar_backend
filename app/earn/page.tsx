@@ -11,32 +11,88 @@ import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { setSelectedPool } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { usePoolData, useUserPositions } from "@/hooks/use-earn";
-import { depositData, netApyData } from "@/lib/constants/earn";
 
 // USD prices for testnet tokens
 const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0 };
+const HISTORY_MAX_ITEMS = 3000;
+const ALL_ASSETS = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
 
-/**
- * Scale a reference series so its last data point equals `liveEndValue`.
- * Dates are remapped to a rolling 365-day window ending today so that
- * "3 Months", "6 Months", etc. chart filters always find matching data.
- */
-const scaleSeries = (
-  template: Array<{ date: string; amount: number }>,
-  liveEndValue: number
+type EarnOverviewSnapshot = {
+  timestamp: number;
+  totalDepositedUSD: number;
+  annualEarningsUSD: number;
+};
+
+const getHistoryKey = (address: string) => `vanna_earn_overview_history_v2_${address}`;
+
+const normalizeTimestamp = (value: unknown): number => {
+  const ts = Number(value ?? 0);
+  if (!Number.isFinite(ts) || ts <= 0) return 0;
+  return ts < 1_000_000_000_000 ? ts * 1000 : ts;
+};
+
+const readOverviewHistory = (address: string): EarnOverviewSnapshot[] => {
+  if (typeof window === "undefined" || !address) return [];
+  try {
+    const raw = window.localStorage.getItem(getHistoryKey(address));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const normalized = parsed
+      .map((item) => ({
+        timestamp: normalizeTimestamp(item?.timestamp),
+        totalDepositedUSD: Number(item?.totalDepositedUSD ?? 0),
+        annualEarningsUSD: Number(item?.annualEarningsUSD ?? 0),
+      }))
+      .filter((item) =>
+        item.timestamp > 0 &&
+        Number.isFinite(item.totalDepositedUSD) &&
+        Number.isFinite(item.annualEarningsUSD)
+      )
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    // Remove transient refresh spikes: 0 sandwiched between two similar non-zero values.
+    return normalized.filter((item, idx, arr) => {
+      if (item.totalDepositedUSD !== 0 || idx === 0 || idx === arr.length - 1) return true;
+      const prev = arr[idx - 1];
+      const next = arr[idx + 1];
+      const closeByTime =
+        item.timestamp - prev.timestamp <= 5 * 60_000 &&
+        next.timestamp - item.timestamp <= 5 * 60_000;
+      const similarNeighbors = Math.abs(next.totalDepositedUSD - prev.totalDepositedUSD) <= 0.5;
+      return !(prev.totalDepositedUSD > 0 && next.totalDepositedUSD > 0 && closeByTime && similarNeighbors);
+    });
+  } catch {
+    return [];
+  }
+};
+
+const writeOverviewHistory = (address: string, snapshots: EarnOverviewSnapshot[]) => {
+  if (typeof window === "undefined" || !address) return;
+  window.localStorage.setItem(getHistoryKey(address), JSON.stringify(snapshots.slice(-HISTORY_MAX_ITEMS)));
+};
+
+const toChartData = (
+  snapshots: EarnOverviewSnapshot[],
+  key: "totalDepositedUSD" | "annualEarningsUSD"
 ): Array<{ date: string; amount: number }> => {
-  if (liveEndValue <= 0 || template.length === 0) return [];
-  const lastTemplate = template[template.length - 1].amount;
-  if (lastTemplate === 0) return [];
-  const scale = liveEndValue / lastTemplate;
-  const now = new Date();
-  const n = template.length;
-  return template.map((p, i) => {
-    const daysAgo = Math.round((n - 1 - i) * 365 / Math.max(n - 1, 1));
-    const d = new Date(now);
-    d.setDate(d.getDate() - daysAgo);
-    return { date: d.toISOString().split('T')[0], amount: parseFloat((p.amount * scale).toFixed(2)) };
-  });
+  if (snapshots.length === 0) return [];
+  const points = snapshots
+    .map((item) => ({
+      date: new Date(item.timestamp).toISOString(),
+      amount: parseFloat((item[key] || 0).toFixed(2)),
+    }))
+    .filter((item) => Number.isFinite(item.amount));
+
+  if (points.length >= 2) return points;
+
+  const only = points[0];
+  const firstTs = normalizeTimestamp(snapshots[0]?.timestamp);
+  const prevTs = Math.max(firstTs - 60_000, firstTs - 1);
+  return [
+    { date: new Date(prevTs).toISOString(), amount: only.amount },
+    only,
+  ];
 };
 
 // Format a raw token amount into a compact human-readable string (e.g. 1250000 → "1.3M")
@@ -152,6 +208,13 @@ const buildPositionRow = (
   };
 };
 
+type VaultTableCell = {
+  chain?: string;
+  title?: string;
+  tag?: string;
+  onlyIcons?: string[];
+};
+
 export default function Earn() {
   const userAddress = useUserStore((state) => state.address);
   const setSelectedVault = useEarnVaultStore((state) => state.set);
@@ -159,8 +222,9 @@ export default function Earn() {
   const [activeTab, setActiveTab] = useState("vaults");
 
   // Live data from on-chain contracts (auto-refreshes every 30s)
-  const { pools } = usePoolData();
-  const { positions: userPositions } = useUserPositions();
+  const { pools, isLoading: poolsLoading } = usePoolData();
+  const { positions: userPositions, isLoading: positionsLoading } = useUserPositions();
+  const [overviewHistory, setOverviewHistory] = useState<EarnOverviewSnapshot[]>([]);
 
   // Set default pool selection on mount
   useEffect(() => {
@@ -172,26 +236,11 @@ export default function Earn() {
     });
   }, []);
 
-  // ─── Live Chart Data ─────────────────────────────────────────────────────────
-  // Scale the static historical series so the last point equals the current live value.
-  // totalDepositedUSD = sum of each asset's deposited amount × its USD price.
-  // netApyEarningsUSD = totalDepositedUSD × weightedAPY / 100  (annual run-rate earnings).
-  const ALL_ASSETS = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
-
-  const liveDepositData = useMemo(() => {
-    const totalDepositedUSD = ALL_ASSETS.reduce((sum, asset) => {
+  const { totalDepositedUSD, annualEarnings } = useMemo(() => {
+    const totalUSD = ALL_ASSETS.reduce((sum, asset) => {
       const deposited = parseFloat(userPositions[asset]?.deposited || "0");
       return sum + deposited * (TOKEN_PRICES[asset] ?? 1.0);
     }, 0);
-    return scaleSeries(depositData, totalDepositedUSD);
-  }, [userPositions]);
-
-  const liveNetApyData = useMemo(() => {
-    const totalDepositedUSD = ALL_ASSETS.reduce((sum, asset) => {
-      const deposited = parseFloat(userPositions[asset]?.deposited || "0");
-      return sum + deposited * (TOKEN_PRICES[asset] ?? 1.0);
-    }, 0);
-    // Weighted average APY across assets with non-zero deposits
     let weightedAPY = 0;
     let weightTotal = 0;
     ALL_ASSETS.forEach((asset) => {
@@ -202,9 +251,64 @@ export default function Earn() {
       }
     });
     const avgAPY = weightTotal > 0 ? weightedAPY / weightTotal : 0;
-    const annualEarnings = totalDepositedUSD * (avgAPY / 100);
-    return scaleSeries(netApyData, annualEarnings);
+    const annual = totalUSD * (avgAPY / 100);
+    return {
+      totalDepositedUSD: totalUSD,
+      annualEarnings: annual,
+    };
   }, [userPositions, pools]);
+
+  useEffect(() => {
+    if (!userAddress) {
+      queueMicrotask(() => setOverviewHistory([]));
+      return;
+    }
+    const next = readOverviewHistory(userAddress);
+    queueMicrotask(() => setOverviewHistory(next));
+  }, [userAddress]);
+
+  useEffect(() => {
+    if (!userAddress) return;
+    if (poolsLoading || positionsLoading) return;
+    if (!Number.isFinite(totalDepositedUSD) || !Number.isFinite(annualEarnings)) return;
+
+    queueMicrotask(() => {
+      setOverviewHistory((prev) => {
+        const now = Date.now();
+        const roundedDeposited = parseFloat(totalDepositedUSD.toFixed(2));
+        const roundedAnnual = parseFloat(annualEarnings.toFixed(2));
+        const last = prev[prev.length - 1];
+        const depositedChanged = !last || Math.abs(last.totalDepositedUSD - roundedDeposited) >= 0.01;
+        const earningsChanged = !last || Math.abs(last.annualEarningsUSD - roundedAnnual) >= 0.01;
+
+        // Update only when actual value changes; never just because page refreshed.
+        if (!depositedChanged && !earningsChanged) {
+          return prev;
+        }
+
+        const next = [
+          ...prev,
+          {
+            timestamp: now,
+            totalDepositedUSD: roundedDeposited,
+            annualEarningsUSD: roundedAnnual,
+          },
+        ].slice(-HISTORY_MAX_ITEMS);
+
+        writeOverviewHistory(userAddress, next);
+        return next;
+      });
+    });
+  }, [userAddress, totalDepositedUSD, annualEarnings, poolsLoading, positionsLoading]);
+
+  const liveDepositData = useMemo(
+    () => toChartData(overviewHistory, "totalDepositedUSD"),
+    [overviewHistory]
+  );
+  const liveNetApyData = useMemo(
+    () => toChartData(overviewHistory, "annualEarningsUSD"),
+    [overviewHistory]
+  );
 
   // ─── Vaults Table ────────────────────────────────────────────────────────────
   // Each row reflects live pool-level stats fetched from the lending contracts.
@@ -252,9 +356,9 @@ export default function Earn() {
 
   // ─── Row Click Handler ────────────────────────────────────────────────────────
   const handleRowClick = useCallback(
-    (row: any) => {
-      const cells = row.cell;
-      const id = cells[0]?.title;
+    (row: { cell?: VaultTableCell[] }) => {
+      const cells = row.cell ?? [];
+      const id = cells[0]?.title ?? "";
 
       if (id) {
         const assetType =
@@ -276,9 +380,9 @@ export default function Earn() {
 
         const vaultData = {
           id: id,
-          chain: cells[0]?.chain || "XLM",
-          title: cells[0]?.title || "",
-          tag: cells[0]?.tag || "Active",
+          chain: cells[0]?.chain ?? "XLM",
+          title: cells[0]?.title ?? "",
+          tag: cells[0]?.tag ?? "Active",
           assetsSupplied: { title: cells[1]?.title || "", tag: cells[1]?.tag || "" },
           supplyApy: { title: cells[2]?.title || "", tag: cells[2]?.tag || "" },
           assetsBorrowed: { title: cells[3]?.title || "", tag: cells[3]?.tag || "" },

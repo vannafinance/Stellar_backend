@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, memo } from "react";
 import { Dropdown } from "../ui/dropdown";
 import { SvgChart } from "../ui/svg-chart";
-import { depositData, netApyData } from "@/lib/constants/earn";
+import { depositData } from "@/lib/constants/earn";
 import { AnimatedTabs } from "../ui/animated-tabs";
 import { ExpandableModal } from "../ui/expandable-modal";
 import { useTheme } from "@/contexts/theme-context";
@@ -136,15 +136,15 @@ export const Chart = memo(function Chart({ type, currencyTab, height, containerW
     // Otherwise use default data
     switch (type) {
       case "overall-deposit":
-        return depositData;
+        return [];
       case "net-apy":
-        return netApyData;
+        return [];
       case "farm":
         return depositData;
       case "my-supply":
         return []; // ✅ Return empty instead of mock data if no customData
       case "deposit-apy":
-        return netApyData;
+        return [];
       case "net-volume":
         return netVolumeData;
       case "net-profit-loss":
