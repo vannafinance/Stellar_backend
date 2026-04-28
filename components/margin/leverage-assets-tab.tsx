@@ -109,6 +109,17 @@ export const LeverageAssetsTab = () => {
   type DialogueState = "none" | "create-margin" | "sign-agreement";
   const [activeDialogue, setActiveDialogue] = useState<DialogueState>("none");
 
+  // If a previous flow left isCreatingAccount=true (e.g. cross-tab success or
+  // an interrupted attempt), the Sign Agreement button gets stuck on "Creating
+  // Account...". Reset on dialog open — the effect only fires on the transition
+  // into "sign-agreement", so it won't clobber the real loading state once the
+  // user clicks Sign Agreement (handleSignAgreement re-sets the flag itself).
+  useEffect(() => {
+    if (activeDialogue === "sign-agreement") {
+      useMarginAccountInfoStore.getState().set({ isCreatingAccount: false });
+    }
+  }, [activeDialogue]);
+
   // Map-based state for O(1) operations
   const [collaterals, setCollaterals] = useState<Map<string, Collaterals>>(
     new Map()
@@ -136,10 +147,28 @@ export const LeverageAssetsTab = () => {
     XLM: 0.10, BLUSDC: 1.00, AQUSDC: 1.00, SOUSDC: 1.00, USDC: 1.00, EURC: 1.00,
   };
 
-  // Build Collaterals[] from real on-chain margin account collateral (used in MB mode grid)
+  // Map dropdown asset name → canonical key used in collateralBalances.
+  // Mirrors canonicalMarginToken() in margin-account-info-store.ts.
+  const toCanonicalAsset = (asset: string | undefined): string | null => {
+    if (!asset) return null;
+    const u = asset.toUpperCase();
+    if (u === 'BLEND_USDC' || u === 'USDC') return 'BLUSDC';
+    if (u === 'AQUIRESUSDC' || u === 'AQUARIUS_USDC') return 'AQUSDC';
+    if (u === 'SOROSWAPUSDC' || u === 'SOROSWAP_USDC') return 'SOUSDC';
+    return u;
+  };
+
+  // Build Collaterals[] from real on-chain margin account collateral (used in MB mode grid).
+  // Only show the asset the user selected in the dropdown when toggling to MB —
+  // showing every margin balance regardless of selection was confusing.
   const mbCollateralItems = useMemo((): Collaterals[] => {
+    const selectedAsset = toCanonicalAsset(collateralList[0]?.asset);
     return (Object.entries(collateralBalances) as [string, BorrowedBalance][])
-      .filter(([, bal]) => parseFloat(bal.amount) > 0)
+      .filter(([token, bal]) => {
+        if (parseFloat(bal.amount) <= 0) return false;
+        if (selectedAsset && token !== selectedAsset) return false;
+        return true;
+      })
       .map(([token, bal]): Collaterals => ({
         asset: token,
         amount: parseFloat(parseFloat(bal.amount).toFixed(7)),
@@ -147,7 +176,7 @@ export const LeverageAssetsTab = () => {
         balanceType: "mb",
         unifiedBalance: parseFloat(bal.usdValue),
       }));
-  }, [collateralBalances]);
+  }, [collateralBalances, collateralList]);
 
   // When entering MB mode (or when margin-account collaterals first appear),
   // pre-select every available collateral so the user can borrow against the
@@ -589,7 +618,7 @@ export const LeverageAssetsTab = () => {
           }
         }
 
-        console.log('🚀 Executing multi-collateral deposit flow:', {
+        console.log('🚀 Executing deposit flow:', {
           userAddress,
           deposits: wbDeposits,
           totalDepositAmountUsd,
@@ -597,76 +626,127 @@ export const LeverageAssetsTab = () => {
           borrowToken,
           marginAccountAddress
         });
+
+        const normalizedBorrowToken = normalizeContractTokenSymbol(borrowToken || wbDeposits[0]?.asset || "XLM");
+
+        // Fast path: single-collateral, same-asset borrow → use the atomic
+        // deposit_and_borrow contract method (one wallet signature instead of two).
+        const canUseAtomic =
+          wbDeposits.length === 1 &&
+          (multiplier <= 1 || wbDeposits[0].asset === normalizedBorrowToken);
+
         const depositHashes: string[] = [];
-        for (const item of wbDeposits) {
-          const amountWad = (BigInt(Math.floor(item.amount * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
-          const depositResult = await MarginAccountService.depositCollateralTokens(
+        let borrowHash = "";
+
+        if (canUseAtomic) {
+          const item = wbDeposits[0];
+          const atomicResult = await MarginAccountService.depositAndBorrow(
             marginAccountAddress!,
-            item.asset,
-            amountWad
+            item.amount,
+            multiplier,
+            item.asset
           );
-          if (!depositResult.success) {
-            if (depositResult.error?.includes('not allowed as collateral') || depositResult.error?.includes('Max asset cap')) {
-              toast.error(`Contract configuration error: ${depositResult.error}`);
-              try {
-                const configResult = await setupContractConfiguration();
-                if (configResult.success) {
-                  toast.success('Contract configuration setup successful! You can now try the deposit again.');
-                } else {
-                  toast.error('Contract setup failed: ' + configResult.error);
-                }
-              } catch (setupError) {
-                toast.error('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
-              }
+          if (!atomicResult.success) {
+            if (atomicResult.error?.includes('not allowed as collateral') || atomicResult.error?.includes('Max asset cap')) {
+              toast.error(`Contract configuration error: ${atomicResult.error}`);
             } else {
-              toast.error(getFriendlyDepositError(depositResult.error));
+              toast.error(getFriendlyDepositError(atomicResult.error));
             }
             setIsProcessing(false);
             return;
           }
-
-          if (depositResult.hash) depositHashes.push(depositResult.hash);
+          if (atomicResult.hash) {
+            depositHashes.push(atomicResult.hash);
+            if (multiplier > 1) borrowHash = atomicResult.hash;
+          }
           appendMarginHistory({
             marginAccountAddress: marginAccountAddress!,
             type: "deposit",
             asset: item.asset,
             amount: item.amount.toFixed(7),
-            hash: depositResult.hash ?? "",
+            hash: atomicResult.hash ?? "",
           });
-        }
-
-        let borrowHash = "";
-        if (multiplier > 1) {
-          const normalizedBorrowToken = normalizeContractTokenSymbol(borrowToken || wbDeposits[0]?.asset || "XLM");
-          const borrowTokenPrice = MB_TOKEN_PRICES[normalizedBorrowToken] ?? 1;
-          const borrowAmountUsd = totalDepositAmountUsd * (multiplier - 1);
-          const borrowAmountTokens = borrowAmountUsd / borrowTokenPrice;
-
-          const borrowResult = await borrowTokens(userAddress, normalizedBorrowToken, borrowAmountTokens);
-          if (!borrowResult.success) {
-            console.error('❌ Borrow failed after successful deposits:', borrowResult.error);
-            toast.error(getFriendlyDepositError(
-              `Deposits were successful. Borrow failed: ${borrowResult.error || "Unknown borrow error"}`
-            ));
-            try {
-              await refreshBalances(userAddress);
-            } catch (refreshErr) {
-              console.warn("Failed to refresh wallet balances after borrow failure:", refreshErr);
-            }
-            if (marginAccountAddress) {
-              await refreshBorrowedBalances(marginAccountAddress);
-            }
-            setIsProcessing(false);
-            return;
+          if (multiplier > 1) {
+            const borrowAmountTokens = item.amount * (multiplier - 1);
+            appendMarginHistory({
+              marginAccountAddress: marginAccountAddress!,
+              type: "borrow",
+              asset: normalizedBorrowToken,
+              amount: borrowAmountTokens.toFixed(7),
+              hash: atomicResult.hash ?? "",
+            });
           }
-          borrowHash = borrowResult.hash ?? "";
-          appendMarginHistory({
-            marginAccountAddress: marginAccountAddress!,
-            type: "borrow",
-            asset: normalizedBorrowToken,
-            amount: borrowAmountTokens.toFixed(7),
-            hash: borrowHash,
-          });
+        } else {
+          // Multi-collateral or cross-asset borrow: fall back to per-token deposit
+          // followed by a separate borrow.
+          for (const item of wbDeposits) {
+            const amountWad = (BigInt(Math.floor(item.amount * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
+            const depositResult = await MarginAccountService.depositCollateralTokens(
+              marginAccountAddress!,
+              item.asset,
+              amountWad
+            );
+            if (!depositResult.success) {
+              if (depositResult.error?.includes('not allowed as collateral') || depositResult.error?.includes('Max asset cap')) {
+                toast.error(`Contract configuration error: ${depositResult.error}`);
+                try {
+                  const configResult = await setupContractConfiguration();
+                  if (configResult.success) {
+                    toast.success('Contract configuration setup successful! You can now try the deposit again.');
+                  } else {
+                    toast.error('Contract setup failed: ' + configResult.error);
+                  }
+                } catch (setupError) {
+                  toast.error('Setup error: ' + (setupError instanceof Error ? setupError.message : 'Unknown error'));
+                }
+              } else {
+                toast.error(getFriendlyDepositError(depositResult.error));
+              }
+              setIsProcessing(false);
+              return;
+            }
+
+            if (depositResult.hash) depositHashes.push(depositResult.hash);
+            appendMarginHistory({
+              marginAccountAddress: marginAccountAddress!,
+              type: "deposit",
+              asset: item.asset,
+              amount: item.amount.toFixed(7),
+              hash: depositResult.hash ?? "",
+            });
+          }
+
+          if (multiplier > 1) {
+            const borrowTokenPrice = MB_TOKEN_PRICES[normalizedBorrowToken] ?? 1;
+            const borrowAmountUsd = totalDepositAmountUsd * (multiplier - 1);
+            const borrowAmountTokens = borrowAmountUsd / borrowTokenPrice;
+
+            const borrowResult = await borrowTokens(userAddress, normalizedBorrowToken, borrowAmountTokens);
+            if (!borrowResult.success) {
+              console.error('❌ Borrow failed after successful deposits:', borrowResult.error);
+              toast.error(getFriendlyDepositError(
+                `Deposits were successful. Borrow failed: ${borrowResult.error || "Unknown borrow error"}`
+              ));
+              try {
+                await refreshBalances(userAddress);
+              } catch (refreshErr) {
+                console.warn("Failed to refresh wallet balances after borrow failure:", refreshErr);
+              }
+              if (marginAccountAddress) {
+                await refreshBorrowedBalances(marginAccountAddress);
+              }
+              setIsProcessing(false);
+              return;
+            }
+            borrowHash = borrowResult.hash ?? "";
+            appendMarginHistory({
+              marginAccountAddress: marginAccountAddress!,
+              type: "borrow",
+              asset: normalizedBorrowToken,
+              amount: borrowAmountTokens.toFixed(7),
+              hash: borrowHash,
+            });
+          }
         }
 
         try {

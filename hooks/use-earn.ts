@@ -25,14 +25,16 @@ const calculateBorrowAPY = (utilizationRate: string) => {
   return (4.0 + utilization * 15).toFixed(2);
 };
 
-const calculateExchangeRateFromPool = (poolLiquidity: string, vTokenSupply: string) => {
-  const liquidity = parseFloat(poolLiquidity) || 0;
+const calculateExchangeRateFromPool = (totalAssets: string, vTokenSupply: string) => {
+  const assets = parseFloat(totalAssets) || 0;
   const supply = parseFloat(vTokenSupply) || 0;
 
-  // Keep frontend math aligned with current contract conversion:
-  // vToken <-> asset uses pool liquidity (cash) against live vToken supply.
-  if (liquidity <= 0 || supply <= 0) return '1';
-  return (liquidity / supply).toFixed(7);
+  // Rate = total_assets / vToken_supply, where total_assets = available cash +
+  // outstanding borrows (+ accrued interest). Borrows alone don't move the rate
+  // since the loan is still owed back to the pool — cash drops but borrows rise
+  // by the same amount. Interest pushes the rate above 1, so 1 vToken > 1 asset.
+  if (assets <= 0 || supply <= 0) return '1';
+  return (assets / supply).toFixed(7);
 };
 
 export const usePoolData = () => {
@@ -56,25 +58,25 @@ export const usePoolData = () => {
           ...xlmStats,
           supplyAPY: calculateSupplyAPY(xlmStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(xlmStats.utilizationRate),
-          exchangeRate: calculateExchangeRateFromPool(xlmStats.availableLiquidity, xlmStats.vTokenSupply),
+          exchangeRate: calculateExchangeRateFromPool(xlmStats.totalSupply, xlmStats.vTokenSupply),
         },
         USDC: {
           ...usdcStats,
           supplyAPY: calculateSupplyAPY(usdcStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(usdcStats.utilizationRate),
-          exchangeRate: calculateExchangeRateFromPool(usdcStats.availableLiquidity, usdcStats.vTokenSupply),
+          exchangeRate: calculateExchangeRateFromPool(usdcStats.totalSupply, usdcStats.vTokenSupply),
         },
         AQUARIUS_USDC: {
           ...aquiresUsdcStats,
           supplyAPY: calculateSupplyAPY(aquiresUsdcStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(aquiresUsdcStats.utilizationRate),
-          exchangeRate: calculateExchangeRateFromPool(aquiresUsdcStats.availableLiquidity, aquiresUsdcStats.vTokenSupply),
+          exchangeRate: calculateExchangeRateFromPool(aquiresUsdcStats.totalSupply, aquiresUsdcStats.vTokenSupply),
         },
         SOROSWAP_USDC: {
           ...soroswapUsdcStats,
           supplyAPY: calculateSupplyAPY(soroswapUsdcStats.utilizationRate),
           borrowAPY: calculateBorrowAPY(soroswapUsdcStats.utilizationRate),
-          exchangeRate: calculateExchangeRateFromPool(soroswapUsdcStats.availableLiquidity, soroswapUsdcStats.vTokenSupply),
+          exchangeRate: calculateExchangeRateFromPool(soroswapUsdcStats.totalSupply, soroswapUsdcStats.vTokenSupply),
         },
       };
 
@@ -157,10 +159,10 @@ export const useUserPositions = () => {
         ContractService.getPoolStats(ASSET_TYPES.SOROSWAP_USDC),
       ]);
 
-      const xlmExchangeRate = parseFloat(calculateExchangeRateFromPool(xlmStats.availableLiquidity, xlmStats.vTokenSupply));
-      const usdcExchangeRate = parseFloat(calculateExchangeRateFromPool(usdcStats.availableLiquidity, usdcStats.vTokenSupply));
-      const aquiresUsdcExchangeRate = parseFloat(calculateExchangeRateFromPool(aquiresUsdcStats.availableLiquidity, aquiresUsdcStats.vTokenSupply));
-      const soroswapUsdcExchangeRate = parseFloat(calculateExchangeRateFromPool(soroswapUsdcStats.availableLiquidity, soroswapUsdcStats.vTokenSupply));
+      const xlmExchangeRate = parseFloat(calculateExchangeRateFromPool(xlmStats.totalSupply, xlmStats.vTokenSupply));
+      const usdcExchangeRate = parseFloat(calculateExchangeRateFromPool(usdcStats.totalSupply, usdcStats.vTokenSupply));
+      const aquiresUsdcExchangeRate = parseFloat(calculateExchangeRateFromPool(aquiresUsdcStats.totalSupply, aquiresUsdcStats.vTokenSupply));
+      const soroswapUsdcExchangeRate = parseFloat(calculateExchangeRateFromPool(soroswapUsdcStats.totalSupply, soroswapUsdcStats.vTokenSupply));
 
       const xlmVBalanceNum = parseFloat(xlmVBalance) || 0;
       const usdcVBalanceNum = parseFloat(usdcVBalance) || 0;
@@ -456,7 +458,8 @@ export const useWithdrawLiquidity = () => {
       return { success: false };
     }
 
-    const depositedAmount = parseFloat(userPositions[assetType]?.vTokenBalance || '0');
+    const userPosition = assetType === ASSET_TYPES.BLEND_USDC ? userPositions.USDC : userPositions[assetType];
+    const depositedAmount = parseFloat(userPosition?.vTokenBalance || '0');
     if (amount > depositedAmount) {
       setMessage({ type: 'error', text: `Cannot withdraw more than deposited balance (${depositedAmount.toFixed(7)} v${assetType})` });
       return { success: false };

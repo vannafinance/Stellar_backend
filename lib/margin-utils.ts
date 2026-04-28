@@ -1834,7 +1834,13 @@ export class MarginAccountService {
     repayAmountWad: string
   ): Promise<{ success: boolean; hash?: string; error?: string }> {
     try {
-      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      // The contract's borrow() always stores the BLEND USDC pool's debt under the
+      // BLUSDC symbol (account_manager.rs:329), regardless of whether the caller
+      // passed USDC or BLUSDC. repay() then validates token_symbol against the
+      // stored borrowed-tokens list, so we must pass BLUSDC for that pool — not
+      // USDC, even though deposit_collateral_tokens prefers USDC.
+      const normalized = this.normalizeContractTokenSymbol(tokenSymbol);
+      const contractTokenSymbol = normalized === 'USDC' ? 'BLUSDC' : normalized;
       console.log('💳 Repaying loan:', { marginAccountAddress, tokenSymbol: contractTokenSymbol, repayAmountWad });
 
       const userAddress = await getAddress();
@@ -2147,7 +2153,9 @@ export class MarginAccountService {
   }
 
   /**
-   * Combined deposit and borrow operation (leverage)
+   * Combined deposit and borrow operation (leverage). Calls the contract's
+   * `deposit_and_borrow` wrapper so the user signs once instead of twice.
+   * Falls through to deposit-only when multiplier <= 1.
    */
   static async depositAndBorrow(
     marginAccountAddress: string,
@@ -2158,113 +2166,87 @@ export class MarginAccountService {
     try {
       const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
 
-      console.log('🚀 Executing deposit and borrow:', {
-        marginAccountAddress,
-        depositAmount,
-        multiplier,
-        tokenSymbol: contractTokenSymbol,
-      });
-      console.log(
-        `📝 Leverage Explanation: Depositing ${depositAmount} ${contractTokenSymbol}, with ${multiplier}x leverage = borrowing ${depositAmount * (multiplier - 1)} ${contractTokenSymbol} for total ${depositAmount * multiplier} ${contractTokenSymbol} position`
-      );
-      
-      // Convert amounts to WAD format (18 decimals) - using string multiplication for better precision
-      const depositAmountWad = (BigInt(Math.floor(depositAmount * 1000000)) * BigInt(1000000000000)).toString();
-      const requestedBorrowAmountWad = BigInt(Math.floor(depositAmount * (multiplier - 1) * 1000000)) * BigInt(1000000000000);
-      let borrowAmountWad = requestedBorrowAmountWad.toString();
-      
-      console.log('💰 Amounts:', { depositAmountWad, borrowAmountWad });
-      console.log('💰 In human terms:', { 
-        depositAmount: `${parseFloat(depositAmountWad) / Math.pow(10, 18)} ${contractTokenSymbol}`,
-        borrowAmount: `${parseFloat(borrowAmountWad) / Math.pow(10, 18)} ${contractTokenSymbol}`,
-        totalPosition: `${(parseFloat(depositAmountWad) + parseFloat(borrowAmountWad)) / Math.pow(10, 18)} ${contractTokenSymbol}`
+      console.log('🚀 deposit_and_borrow (single tx):', {
+        marginAccountAddress, depositAmount, multiplier, tokenSymbol: contractTokenSymbol,
       });
 
-      // Step 1: Deposit collateral
-      console.log('🏦 Step 1: Depositing collateral...');
-      const depositResult = await this.depositCollateralTokens(
-        marginAccountAddress,
-        contractTokenSymbol,
-        depositAmountWad
-      );
-      
-      if (!depositResult.success) {
+      const depositAmountWad = (BigInt(Math.floor(depositAmount * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
+      const borrowAmountTokens = multiplier > 1 ? depositAmount * (multiplier - 1) : 0;
+      const borrowAmountWad = (BigInt(Math.floor(borrowAmountTokens * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
+
+      // Pre-flight checks (cheap reads, surface admin/config issues before signing)
+      const configCheck = await this.isTokenConfigured(contractTokenSymbol);
+      if (!configCheck.configured) {
         return {
           success: false,
-          error: `Deposit failed: ${depositResult.error}`
+          error: `⚠️ Configuration Issue: ${configCheck.error}\n\n` +
+                 `The ${contractTokenSymbol} token contract address needs to be set in the Registry contract.\n` +
+                 `Please contact the admin to configure the new Registry deployment.`,
         };
       }
-
-      // Step 2: Wait a bit for deposit to be processed
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Step 2.1: Ensure deposited collateral is visible in SmartAccount state
-      // before attempting borrow (avoids stale-state risk check failures).
-      const minExpectedCollateralWad = BigInt(depositAmountWad);
-      const collateralSynced = await this.waitForCollateralSync(
-        marginAccountAddress,
-        contractTokenSymbol,
-        minExpectedCollateralWad
-      );
-      if (!collateralSynced) {
+      const isCollateralAllowed = await this.isCollateralAllowed(contractTokenSymbol);
+      if (!isCollateralAllowed) {
         return {
           success: false,
-          error: `Deposit was successful (hash: ${depositResult.hash}) but collateral state is not yet synchronized on-chain. Please retry borrow in a few seconds.`
+          error: `${contractTokenSymbol} is not allowed as collateral. Please ask the contract admin to enable this token first.`,
         };
       }
 
-      // Step 3: Borrow additional funds if multiplier > 1
-      if (multiplier > 1) {
-        const maxAllowedBorrowWad = await this.findMaxBorrowAllowedWad(
-          marginAccountAddress,
-          contractTokenSymbol,
-          requestedBorrowAmountWad
-        );
-
-        if (maxAllowedBorrowWad > BigInt(0) && maxAllowedBorrowWad < requestedBorrowAmountWad) {
-          console.log('⚖️ Auto-adjusted borrow to on-chain safe max', {
-            requestedBorrowWad: requestedBorrowAmountWad.toString(),
-            adjustedBorrowWad: maxAllowedBorrowWad.toString(),
-          });
-          borrowAmountWad = maxAllowedBorrowWad.toString();
-        } else if (maxAllowedBorrowWad <= BigInt(0)) {
-          // Best-effort simulation can fail for reasons other than risk checks
-          // (resource estimation, transient RPC state, etc). Do not hard-block:
-          // execute real borrow tx and rely on on-chain validation + retry fallback.
-          console.warn('⚠️ Could not determine safe max borrow from simulation; attempting requested borrow directly', {
-            requestedBorrowWad: requestedBorrowAmountWad.toString(),
-            tokenSymbol: contractTokenSymbol,
-          });
-        }
-
-        console.log('💰 Step 2: Borrowing additional funds...');
-        const borrowResult = await this.borrowTokens(
-          marginAccountAddress,
-          contractTokenSymbol,
-          borrowAmountWad
-        );
-        
-        if (!borrowResult.success) {
-          return {
-            success: false,
-            error:
-              `Deposit was successful with hash: ${depositResult.hash}. ` +
-              `Borrow failed: ${borrowResult.error || 'Risk Engine rejected the borrow. Try reducing your leverage or adding more collateral.'}`,
-          };
-        }
-        
-        return {
-          success: true,
-          hash: `Deposit: ${depositResult.hash}, Borrow: ${borrowResult.hash}`
-        };
+      const userAddress = await getAddress();
+      if (userAddress.error || !userAddress.address) {
+        return { success: false, error: 'Failed to get user address' };
       }
-      
-      return depositResult;
-    } catch (error: any) {
-      console.error('❌ Error in deposit and borrow:', error);
+
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const sourceAccount = await server.getAccount(userAddress.address);
+      const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.ACCOUNT_MANAGER);
+
+      // Argument order matches account_manager.rs:
+      //   deposit_and_borrow(smart_account, deposit_amount_wad, borrow_amount_wad, token_symbol)
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: (parseInt(StellarSdk.BASE_FEE) * 50).toString(),
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          contract.call(
+            'deposit_and_borrow',
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+            StellarSdk.nativeToScVal(depositAmountWad, { type: 'u256' }),
+            StellarSdk.nativeToScVal(borrowAmountWad, { type: 'u256' }),
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' })
+          )
+        )
+        .setTimeout(60)
+        .build();
+
+      const preparedTx = await server.prepareTransaction(transaction);
+      const signResult = await signTransaction(preparedTx.toXDR(), {
+        networkPassphrase: NETWORK_PASSPHRASE,
+      });
+      const signedTx = StellarSdk.TransactionBuilder.fromXDR(
+        signResult.signedTxXdr,
+        NETWORK_PASSPHRASE
+      );
+
+      const result = await server.sendTransaction(signedTx as StellarSdk.Transaction);
+      if (result.status !== 'PENDING') {
+        return { success: false, error: `deposit_and_borrow rejected: ${result.status}` };
+      }
+
+      const finalResult = await this.pollTransactionStatus(server, result.hash);
+      if (finalResult.status === 'SUCCESS') {
+        return { success: true, hash: result.hash };
+      }
       return {
         success: false,
-        error: error?.message || 'Unknown error in deposit and borrow operation'
+        error: `deposit_and_borrow failed on-chain (status ${finalResult.status}). ` +
+               `If the borrow leg was rejected by the Risk Engine, try a lower leverage or more collateral.`,
+      };
+    } catch (error: any) {
+      console.error('❌ Error in deposit_and_borrow:', error);
+      return {
+        success: false,
+        error: this.formatUserFacingContractError(error?.message || error, 'borrow'),
       };
     }
   }

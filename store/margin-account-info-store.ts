@@ -124,6 +124,10 @@ export const setMarginAccount = (account: MarginAccount) => {
     hasMarginAccount: true,
     marginAccountAddress: account.address,
     accountCreationError: null,
+    // Reset creation-loading flag on success — without this the button stays
+    // stuck on "Creating Account..." and the next open-position attempt is
+    // blocked. (setAccountCreationError already resets it on the error path.)
+    isCreatingAccount: false,
   });
 };
 
