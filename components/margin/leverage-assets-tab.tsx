@@ -683,7 +683,7 @@ export const LeverageAssetsTab = () => {
         toast.success(
           `Deposit${multiplier > 1 ? " + borrow" : ""} successful! Tx: ${txPreview ? txPreview.slice(0, 16) + "…" : ""}`
         );
-        resetLeverageInputs();
+        resetForm();
 
       } catch (error) {
         console.error('❌ Error in deposit and borrow:', error);
