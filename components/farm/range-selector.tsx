@@ -536,7 +536,7 @@ export const RangeSelector = ({
       const steps = 6;
       for (let i = 0; i <= steps; i++) {
         const value = dataMin + ((dataMax - dataMin) / steps) * i;
-        labels.push(value.toFixed(4));
+        labels.push(value.toFixed(2));
       }
       return labels.map((label, idx) => ({
         label,
@@ -839,7 +839,7 @@ export const RangeSelector = ({
           className="absolute inset-0"
           style={{ overflow: "visible" }}
           role="img"
-          aria-label={`Price distribution chart showing range from ${dataMin.toFixed(4)} to ${dataMax.toFixed(4)}`}
+          aria-label={`Price distribution chart showing range from ${dataMin.toFixed(2)} to ${dataMax.toFixed(2)}`}
         >
           {/* Chart area background */}
           <defs>
@@ -890,11 +890,11 @@ export const RangeSelector = ({
             onTouchStart={handlePointerDown("min")}
             tabIndex={0}
             role="slider"
-            aria-label={`Minimum price: ${currentMinValue.toFixed(4)}`}
+            aria-label={`Minimum price: ${currentMinValue.toFixed(2)}`}
             aria-valuemin={dataMin}
             aria-valuemax={dataMax}
             aria-valuenow={currentMinValue}
-            aria-valuetext={`${currentMinValue.toFixed(4)} (${minPercentage}%)`}
+            aria-valuetext={`${currentMinValue.toFixed(2)} (${minPercentage}%)`}
             onKeyDown={handleKeyDown("min")}
             onFocus={() => setFocusedHandle("min")}
             onBlur={() => setFocusedHandle(null)}
@@ -969,11 +969,11 @@ export const RangeSelector = ({
             onTouchStart={handlePointerDown("max")}
             tabIndex={0}
             role="slider"
-            aria-label={`Maximum price: ${currentMaxValue.toFixed(4)}`}
+            aria-label={`Maximum price: ${currentMaxValue.toFixed(2)}`}
             aria-valuemin={dataMin}
             aria-valuemax={dataMax}
             aria-valuenow={currentMaxValue}
-            aria-valuetext={`${currentMaxValue.toFixed(4)} (${maxPercentage}%)`}
+            aria-valuetext={`${currentMaxValue.toFixed(2)} (${maxPercentage}%)`}
             onKeyDown={handleKeyDown("max")}
             onFocus={() => setFocusedHandle("max")}
             onBlur={() => setFocusedHandle(null)}

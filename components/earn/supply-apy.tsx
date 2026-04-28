@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AnimatedTabs } from "../ui/animated-tabs";
 import { useTheme } from "@/contexts/theme-context";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 interface SupplyApyProps {
   supplyApy: {
@@ -128,13 +129,16 @@ export const SupplyApy = (props: SupplyApyProps) => {
             </label>
             <input
               id="apy-percentage"
-              type="number"
+              type="text"
+              inputMode="decimal"
               placeholder="Enter Amount"
               value={props.supplyApy.percentage.toString()}
               onChange={(e) => {
+                const sanitized = validateAmountChange(e.target.value);
+                if (sanitized === null) return;
                 props.setSupplyApyFilter((prev) => ({
                   ...prev,
-                  percentage: Number(e.target.value),
+                  percentage: sanitized === "" ? 0 : Number(sanitized),
                 }));
               }}
               className={`outline-none placeholder:text-[#C6C6C6] w-full h-fit text-[13px] font-medium ${

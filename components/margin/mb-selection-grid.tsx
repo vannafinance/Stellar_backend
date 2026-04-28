@@ -59,12 +59,12 @@ const MBSelectionGridComponent = ({
             <div className={`text-[16px] font-semibold ${
               isDark ? "text-white" : ""
             }`}>
-              {item.amount} {item.asset}
+              {(Number(item.amount) || 0).toFixed(2)} {item.asset}
             </div>
             <div className={`rounded-[4px] py-[2px] px-[4px] text-[10px] font-medium ${
               isDark ? "bg-[#111111] text-white" : "bg-[#FFFFFF]"
             }`}>
-              {item.amountInUsd} USD
+              {(Number(item.amountInUsd) || 0).toFixed(2)} USD
             </div>
           </article>
         );

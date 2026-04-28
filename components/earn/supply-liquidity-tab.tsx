@@ -10,6 +10,7 @@ import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useSupplyLiquidity, usePoolData, useUserPositions } from "@/hooks/use-earn";
 import { AssetType, ContractService } from "@/lib/stellar-utils";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 export const SupplyLiquidityTab = () => {
   const { isDark } = useTheme();
@@ -75,7 +76,7 @@ export const SupplyLiquidityTab = () => {
     if (normalizedAsset === 'XLM') {
       // For XLM, use native balance minus some reserve for fees
       const xlmBalance = parseFloat(tokenBalances?.XLM || balance) || 0;
-      return Math.max(0, xlmBalance - 1).toFixed(7); // Keep 1 XLM for fees
+      return Math.max(0, xlmBalance - 1).toFixed(2); // Keep 1 XLM for fees
     } else if (normalizedAsset === 'USDC') {
       return tokenBalances?.BLEND_USDC || tokenBalances?.USDC || '0';
     } else if (normalizedAsset === 'AQUARIUS_USDC') {
@@ -90,7 +91,7 @@ export const SupplyLiquidityTab = () => {
   const handlePercentageClick = (percent: number) => {
     setSelectedPercentage(percent);
     const maxAmount = parseFloat(availableBalance) || 0;
-    const calculatedAmount = (maxAmount * percent / 100).toFixed(7);
+    const calculatedAmount = (maxAmount * percent / 100).toFixed(2);
     setValue(calculatedAmount);
   };
 
@@ -117,9 +118,9 @@ export const SupplyLiquidityTab = () => {
     if (amount <= 0) return '0';
     
     const exchangeRate = parseFloat(selectedPool?.exchangeRate || '1');
-    if (exchangeRate <= 0) return amount.toFixed(7);
-    
-    return (amount / exchangeRate).toFixed(7);
+    if (exchangeRate <= 0) return amount.toFixed(2);
+
+    return (amount / exchangeRate).toFixed(2);
   }, [value, selectedPool]);
 
   // Get button text
@@ -162,10 +163,13 @@ export const SupplyLiquidityTab = () => {
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-center">
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={value}
               onChange={(e) => {
-                setValue(e.target.value);
+                const sanitized = validateAmountChange(e.target.value);
+                if (sanitized === null) return;
+                setValue(sanitized);
                 setSelectedPercentage(null);
               }}
               placeholder="0.00"
@@ -185,7 +189,7 @@ export const SupplyLiquidityTab = () => {
               ≈ ${(parseFloat(value) * (selectedOption === 'XLM' ? 0.1 : 1) || 0).toFixed(2)} USD
             </span>
             <span className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-              Available: {availableBalance} {selectedOption}
+              Available: {(parseFloat(String(availableBalance)) || 0).toFixed(2)} {selectedOption}
             </span>
           </div>
         </div>
@@ -228,7 +232,7 @@ export const SupplyLiquidityTab = () => {
           <div className="flex flex-col">
             <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Total Supply</span>
             <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {parseFloat(selectedPool?.totalSupply || '0').toLocaleString()} {selectedOption}
+              {parseFloat(selectedPool?.totalSupply || '0').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedOption}
             </span>
           </div>
           <div className="flex flex-col">
@@ -240,7 +244,7 @@ export const SupplyLiquidityTab = () => {
           <div className="flex flex-col">
             <span className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Available</span>
             <span className={`text-sm font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {parseFloat(selectedPool?.availableLiquidity || '0').toLocaleString()} {selectedOption}
+              {parseFloat(selectedPool?.availableLiquidity || '0').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedOption}
             </span>
           </div>
         </div>

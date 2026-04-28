@@ -7,6 +7,7 @@ import { ASSET_TYPES, AssetType } from "@/lib/stellar-utils";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import toast from "react-hot-toast";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -70,7 +71,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({ isOpen, onClose }) =
 
   const setPercentage = (percent: number) => {
     const currentBalance = parseFloat(balance) || 0;
-    setAmount((currentBalance * percent).toFixed(7));
+    setAmount((currentBalance * percent).toFixed(2));
   };
 
   const depositAssets: AssetType[] = [
@@ -194,12 +195,15 @@ export const DepositModal: React.FC<DepositModalProps> = ({ isOpen, onClose }) =
                     : "bg-[#FAFAFA] border-[#E5E7EB] focus-within:border-[#703AE6]"
                 }`}>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => {
+                      const sanitized = validateAmountChange(e.target.value);
+                      if (sanitized === null) return;
+                      setAmount(sanitized);
+                    }}
                     placeholder="0.00"
-                    step="0.0000001"
-                    min="0"
                     className={`flex-1 bg-transparent text-[20px] font-bold outline-none min-w-0 ${
                       isDark ? "text-white placeholder-[#444]" : "text-[#0f172a] placeholder-[#D1D5DB]"
                     }`}

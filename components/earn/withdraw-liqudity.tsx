@@ -13,6 +13,7 @@ import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import { useWithdrawLiquidity, usePoolData, useUserPositions } from "@/hooks/use-earn";
 import { AssetType } from "@/lib/stellar-utils";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 
@@ -92,7 +93,7 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
     setSelectedPercentage(percent);
     if (vTokenBalance > 0) {
       const calculatedAmount = (vTokenBalance * percent) / 100;
-      setShares(calculatedAmount.toFixed(7).replace(/\.?0+$/, ""));
+      setShares(calculatedAmount.toFixed(2).replace(/\.?0+$/, ""));
     }
   };
 
@@ -241,11 +242,15 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
             <label htmlFor="withdraw-amount" className="sr-only">Withdraw Amount</label>
             <input
               id="withdraw-amount"
-              onChange={(e) => { setShares(e.target.value); setSelectedPercentage(0); }}
+              onChange={(e) => {
+                const sanitized = validateAmountChange(e.target.value);
+                if (sanitized === null) return;
+                setShares(sanitized);
+                setSelectedPercentage(0);
+              }}
               value={shares}
-              type="number"
-              step="any"
-              min="0"
+              type="text"
+              inputMode="decimal"
               placeholder="0"
               disabled={isLoading}
               className={`w-full text-right text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-20 ${
@@ -280,7 +285,7 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
             ))}
           </div>
           <span className={`text-[11px] font-medium whitespace-nowrap ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-            Balance: {userAddress ? `${vTokenBalance.toFixed(4)} v${selectedOption}` : `-- v${selectedOption}`}
+            Balance: {userAddress ? `${vTokenBalance.toFixed(2)} v${selectedOption}` : `-- v${selectedOption}`}
           </span>
         </div>
       </div>

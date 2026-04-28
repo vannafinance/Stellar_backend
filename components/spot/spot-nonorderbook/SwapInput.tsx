@@ -4,6 +4,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { Token } from "./types";
 import { TokenSelector } from "./TokenSelector";
 import { motion } from "framer-motion";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 const PRESET_COLORS: Record<number, string> = {
   25: "bg-[#703AE6]",
@@ -54,10 +55,9 @@ export const SwapInput = ({
   const { isDark } = useTheme();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    if (val === "" || /^\d*\.?\d*$/.test(val)) {
-      onAmountChange?.(val);
-    }
+    const sanitized = validateAmountChange(e.target.value);
+    if (sanitized === null) return;
+    onAmountChange?.(sanitized);
   };
 
   return (
@@ -138,7 +138,7 @@ export const SwapInput = ({
             <span
               className={`text-[12px] font-medium leading-[18px] ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}
             >
-              Balance: {balance}
+              Balance: {(parseFloat(String(balance)) || 0).toFixed(2)}
             </span>
           )}
           {showMax && balance !== null && (

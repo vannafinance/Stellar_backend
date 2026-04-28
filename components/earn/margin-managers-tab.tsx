@@ -35,8 +35,8 @@ export const MarginManagersTab = () => {
               description: shortenAddr(config.lendingProtocol),
             },
             {
-              title: `${supply.toLocaleString()} ${asset}`,
-              description: `$${(supply * price).toLocaleString()}`,
+              title: `${supply.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${asset}`,
+              description: `$${(supply * price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
             },
             {
               title: `${Object.keys(STELLAR_POOLS).length} assets`,

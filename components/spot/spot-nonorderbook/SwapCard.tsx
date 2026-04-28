@@ -254,26 +254,26 @@ export const SwapCard = ({
       if (swapMode === "wallet") {
         if (token.symbol === "XLM") {
           const xlm = parseFloat(walletXlmBalance || "0");
-          return Math.max(0, xlm - 1).toFixed(7);
+          return Math.max(0, xlm - 1).toFixed(2);
         }
-        return parseFloat(aquariusUsdcWalletBalance || "0").toFixed(7);
+        return parseFloat(aquariusUsdcWalletBalance || "0").toFixed(2);
       } else {
-        if (token.symbol === "XLM") return parseFloat(marginXlmBalance).toFixed(7);
-        if (token.symbol === "USDC") return parseFloat(marginUsdcBalance).toFixed(7);
-        return "0.0000000";
+        if (token.symbol === "XLM") return parseFloat(marginXlmBalance).toFixed(2);
+        if (token.symbol === "USDC") return parseFloat(marginUsdcBalance).toFixed(2);
+        return "0.00";
       }
     }
     if (isSoroswap) {
       if (swapMode === "wallet") {
         if (token.symbol === "XLM") {
           const xlm = parseFloat(walletXlmBalance || "0");
-          return Math.max(0, xlm - 1).toFixed(7);
+          return Math.max(0, xlm - 1).toFixed(2);
         }
-        return parseFloat(soroswapUsdcWalletBalance || "0").toFixed(7);
+        return parseFloat(soroswapUsdcWalletBalance || "0").toFixed(2);
       } else {
-        if (token.symbol === "XLM") return parseFloat(ssMarginXlmBalance).toFixed(7);
-        if (token.symbol === "USDC") return parseFloat(ssMarginUsdcBalance).toFixed(7);
-        return "0.0000000";
+        if (token.symbol === "XLM") return parseFloat(ssMarginXlmBalance).toFixed(2);
+        if (token.symbol === "USDC") return parseFloat(ssMarginUsdcBalance).toFixed(2);
+        return "0.00";
       }
     }
     return null;
@@ -286,7 +286,7 @@ export const SwapCard = ({
     const map: Record<string, string> = {};
     tokenList.forEach((t) => {
       const b = getBalance(t);
-      if (b !== null) map[t.id] = parseFloat(b).toFixed(4);
+      if (b !== null) map[t.id] = parseFloat(b).toFixed(2);
     });
     return map;
   }, [tokenList, getBalance]);
@@ -299,7 +299,7 @@ export const SwapCard = ({
     if (!tokenInBalance) return;
     const bal = parseFloat(tokenInBalance.replace(/,/g, ""));
     if (!Number.isFinite(bal) || bal <= 0) return;
-    const val = (bal * pct / 100).toFixed(7);
+    const val = (bal * pct / 100).toFixed(2);
     setAmountIn(val);
     setTxStatus("idle");
   }, [tokenInBalance]);
@@ -320,9 +320,9 @@ export const SwapCard = ({
       if (cancelled) return;
       if (quote && parseFloat(quote) > 0) {
         const outNum = parseFloat(quote);
-        setAmountOut(outNum.toFixed(7));
+        setAmountOut(outNum.toFixed(2));
         setExchangeRate(
-          `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(4)} ${tokenOut?.symbol ?? ""}`,
+          `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
         );
       } else {
         setAmountOut("");
@@ -348,9 +348,9 @@ export const SwapCard = ({
       if (cancelled) return;
       if (quote && parseFloat(quote) > 0) {
         const outNum = parseFloat(quote);
-        setAmountOut(outNum.toFixed(7));
+        setAmountOut(outNum.toFixed(2));
         setExchangeRate(
-          `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(4)} ${tokenOut?.symbol ?? ""}`,
+          `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
         );
       } else {
         setAmountOut("");
@@ -477,7 +477,7 @@ export const SwapCard = ({
   }, [buttonState, isAquarius, isSoroswap, swapMode, userAddress, marginAccountAddress, tokenIn, amountIn, tokenInBalance, slippageMode, slippage]);
 
   const minReceived = amountOut && slippage
-    ? `${(parseFloat(amountOut) * (1 - parseFloat(slippageMode === "auto" ? "0.5" : slippage) / 100)).toFixed(4)} ${tokenOut?.symbol ?? ""}`
+    ? `${(parseFloat(amountOut) * (1 - parseFloat(slippageMode === "auto" ? "0.5" : slippage) / 100)).toFixed(2)} ${tokenOut?.symbol ?? ""}`
     : null;
 
   return (

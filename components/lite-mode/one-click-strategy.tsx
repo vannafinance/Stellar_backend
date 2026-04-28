@@ -11,6 +11,7 @@ import { iconPaths } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { LeverageSlider } from "@/components/ui/leverage-slider";
 import { Modal } from "@/components/ui/modal";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 /* ═══════════════════════════════════════════════════════════════
    Pool & Token types
@@ -541,7 +542,7 @@ export const OneClickStrategy = () => {
                     type="button"
                     onClick={() => {
                       const val = collateralAsset === "XLM" ? Math.max(balanceNum - 0.5, 0) : balanceNum;
-                      setCollateralAmount(val.toString());
+                      setCollateralAmount(val.toFixed(2));
                     }}
                     className="ml-1.5 text-[10px] font-bold text-[#703AE6] bg-[#F1EBFD] rounded px-1.5 py-[1px] cursor-pointer hover:bg-[#703AE6]/20 transition-colors"
                   >
@@ -552,11 +553,15 @@ export const OneClickStrategy = () => {
 
               <div className="flex items-center gap-3">
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
                   placeholder="0.00"
                   value={collateralAmount}
-                  onChange={(e) => setCollateralAmount(e.target.value)}
+                  onChange={(e) => {
+                    const sanitized = validateAmountChange(e.target.value);
+                    if (sanitized === null) return;
+                    setCollateralAmount(sanitized);
+                  }}
                   className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] sm:text-[24px] font-bold leading-8 sm:leading-9 ${headingText} placeholder:${isDark ? "text-[#2C2C2C]" : "text-[#DFDFDF]"}`}
                 />
                 <div className="relative shrink-0" ref={tokenDropdownRef}>
@@ -795,7 +800,7 @@ export const OneClickStrategy = () => {
                             <div className="flex items-center gap-[8px]">
                               <PoolTokenBadge symbol={collateralAsset} size={14} />
                               <span className={`text-[12px] font-medium ${isDark ? "text-[#B794F6]" : "text-[#703AE6]"}`}>
-                                <strong>{collateralNum.toFixed(4)} + {borrowedAmount.toFixed(4)} = {(collateralNum + borrowedAmount).toFixed(4)} {collateralAsset}</strong>
+                                <strong>{collateralNum.toFixed(2)} + {borrowedAmount.toFixed(2)} = {(collateralNum + borrowedAmount).toFixed(2)} {collateralAsset}</strong>
                                 {" "}→ <strong>{selectedPool.protocol} {collateralAsset} pool</strong>
                               </span>
                             </div>
@@ -810,13 +815,13 @@ export const OneClickStrategy = () => {
                               <div className="flex items-center gap-[8px]">
                                 <PoolTokenBadge symbol={collateralAsset} size={14} />
                                 <span className={`text-[11px] font-medium ${isDark ? "text-[#B794F6]" : "text-[#703AE6]"}`}>
-                                  {collateralNum.toFixed(4)} {collateralAsset} → <strong>{selectedPool.protocol} {collateralAsset} pool</strong>
+                                  {collateralNum.toFixed(2)} {collateralAsset} → <strong>{selectedPool.protocol} {collateralAsset} pool</strong>
                                 </span>
                               </div>
                               <div className="flex items-center gap-[8px]">
                                 <PoolTokenBadge symbol={borrowAsset} size={14} />
                                 <span className={`text-[11px] font-medium ${isDark ? "text-[#B794F6]" : "text-[#703AE6]"}`}>
-                                  {borrowedAmount.toFixed(4)} {borrowAsset} → <strong>{selectedPool.protocol} {borrowAsset} pool</strong>
+                                  {borrowedAmount.toFixed(2)} {borrowAsset} → <strong>{selectedPool.protocol} {borrowAsset} pool</strong>
                                 </span>
                               </div>
                             </div>
@@ -828,7 +833,7 @@ export const OneClickStrategy = () => {
                                   <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 014-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 01-4 4H3" />
                                 </svg>
                                 <span className={`text-[11px] font-medium ${isDark ? "text-[#B794F6]" : "text-[#703AE6]"}`}>
-                                  {collateralNum.toFixed(4)} {collateralAsset} swapped via Soroswap → {selectedPool.tokens[0]}
+                                  {collateralNum.toFixed(2)} {collateralAsset} swapped via Soroswap → {selectedPool.tokens[0]}
                                 </span>
                               </div>
                               <div className="flex items-center gap-[8px]">
@@ -1006,7 +1011,7 @@ export const OneClickStrategy = () => {
                             <span className={`shrink-0 ${isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>1.</span>
                             <span>
                               You deposit{" "}
-                              <span className={`font-semibold ${headingText}`}>{collateralNum.toFixed(4)} {collateralAsset}</span>{" "}
+                              <span className={`font-semibold ${headingText}`}>{collateralNum.toFixed(2)} {collateralAsset}</span>{" "}
                               (~${collateralUsd.toFixed(2)}) as collateral to your Vanna margin account on Stellar.
                             </span>
                           </li>
@@ -1014,7 +1019,7 @@ export const OneClickStrategy = () => {
                             <span className={`shrink-0 ${isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>2.</span>
                             <span>
                               Vanna lenders fund{" "}
-                              <span className={`font-semibold ${headingText}`}>{borrowedAmount.toFixed(4)} {borrowAsset}</span>{" "}
+                              <span className={`font-semibold ${headingText}`}>{borrowedAmount.toFixed(2)} {borrowAsset}</span>{" "}
                               (~${borrowUsd.toFixed(2)}) at {selectedPool.borrowApr}% APR.
                             </span>
                           </li>
@@ -1022,7 +1027,7 @@ export const OneClickStrategy = () => {
                             <li className="flex gap-[10px]">
                               <span className={`shrink-0 ${isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>3.</span>
                               <span>
-                                <span className={`font-semibold ${headingText}`}>{(collateralNum + borrowedAmount).toFixed(4)} {collateralAsset}</span>{" "}
+                                <span className={`font-semibold ${headingText}`}>{(collateralNum + borrowedAmount).toFixed(2)} {collateralAsset}</span>{" "}
                                 deployed to{" "}
                                 <span className={`font-semibold ${headingText}`}>{selectedPool.tokens.join("/")}</span>{" "}
                                 on {selectedPool.protocol} at {selectedPool.supplyApr}% supply APR.
@@ -1034,14 +1039,14 @@ export const OneClickStrategy = () => {
                               <li className="flex gap-[10px]">
                                 <span className={`shrink-0 ${isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>3.</span>
                                 <span>
-                                  Your <span className={`font-semibold ${headingText}`}>{collateralNum.toFixed(4)} {collateralAsset}</span>{" "}
+                                  Your <span className={`font-semibold ${headingText}`}>{collateralNum.toFixed(2)} {collateralAsset}</span>{" "}
                                   supplied to <span className={`font-semibold ${headingText}`}>{selectedPool.protocol} {collateralAsset} pool</span> at {POOL_OPTIONS.find((p) => p.tokens[0] === collateralAsset)?.supplyApr ?? 0}% APR.
                                 </span>
                               </li>
                               <li className="flex gap-[10px]">
                                 <span className={`shrink-0 ${isDark ? "text-[#595959]" : "text-[#A9A9A9]"}`}>4.</span>
                                 <span>
-                                  <span className={`font-semibold ${headingText}`}>{borrowedAmount.toFixed(4)} {borrowAsset}</span>{" "}
+                                  <span className={`font-semibold ${headingText}`}>{borrowedAmount.toFixed(2)} {borrowAsset}</span>{" "}
                                   supplied to <span className={`font-semibold ${headingText}`}>{selectedPool.protocol} {borrowAsset} pool</span> at {selectedPool.supplyApr}% APR.
                                 </span>
                               </li>

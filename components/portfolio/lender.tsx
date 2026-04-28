@@ -23,9 +23,9 @@ export const Lender = () => {
 
         return [
           { id: "1", name: "Total Assets", amount: `$${totalDeposited.toFixed(2)}` },
-          { id: "2", name: "Wallet Balance", amount: `${balance} XLM` },
-          { id: "3", name: "XLM Deposited", amount: `${depositedBalances.XLM} XLM` },
-          { id: "4", name: "USDC Deposited", amount: `${depositedBalances.USDC} USDC` },
+          { id: "2", name: "Wallet Balance", amount: `${parseFloat(String(balance || '0')).toFixed(2)} XLM` },
+          { id: "3", name: "XLM Deposited", amount: `${parseFloat(String(depositedBalances.XLM || '0')).toFixed(2)} XLM` },
+          { id: "4", name: "USDC Deposited", amount: `${parseFloat(String(depositedBalances.USDC || '0')).toFixed(2)} USDC` },
         ];
       }, [address, balance, depositedBalances]);
 

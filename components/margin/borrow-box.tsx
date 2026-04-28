@@ -239,21 +239,21 @@ export const BorrowBox = ({
                 isDark ? "text-white" : "text-[#111111]"
               } ${previewBorrowableAmount <= 0 ? "opacity-20" : ""}`}
             >
-              {previewBorrowableAmount > 0 ? previewBorrowableAmount.toFixed(4) : "0"}
+              {previewBorrowableAmount > 0 ? previewBorrowableAmount.toFixed(2) : "0"}
             </p>
           </div>
 
           {/* Row 3: balance + ≈ USD */}
           <div
-            className={`flex items-center justify-between text-sm font-medium ${
+            className={`flex items-center justify-between text-[12px] font-medium ${
               isDark ? "text-[#777777]" : "text-[#A7A7A7]"
             }`}
           >
             <span>
               Balance:{" "}
               {collateralBalances[selectedCollateralKey]
-                ? parseFloat(collateralBalances[selectedCollateralKey].amount).toFixed(4)
-                : "0.0000"}{" "}
+                ? parseFloat(collateralBalances[selectedCollateralKey].amount).toFixed(2)
+                : "0.00"}{" "}
               {selectedToken}
             </span>
             <span>
@@ -288,7 +288,7 @@ export const BorrowBox = ({
                     <div key={idx} className="flex items-center gap-2">
                       <div className="flex flex-col gap-0.5">
                         <span className={`text-[13px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
-                          {balance ? parseFloat(balance.amount).toFixed(4) : "0.0000"} {selectedOption}
+                          {balance ? parseFloat(balance.amount).toFixed(2) : "0.00"} {selectedOption}
                         </span>
                         <span className={`text-[11px] ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
                           {balance ? parseFloat(balance.usdValue).toFixed(2) : "0.00"} USD

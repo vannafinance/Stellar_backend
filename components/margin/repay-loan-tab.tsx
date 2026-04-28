@@ -14,6 +14,7 @@ import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
 import { refreshBorrowedBalances as refreshMarginStoreBorrowedBalances } from "@/store/margin-account-info-store";
 import toast from "react-hot-toast";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 const REPAY_DUST_EPSILON = 1e-6;
 const WAD = BigInt("1000000000000000000");
@@ -52,7 +53,6 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
   const [repayStats, setRepayStats] = useState({
     netOutstandingAmountToPay: 0,
     availableBalance: 0,
-    frozenBalance: 0,
   });
   const [selectedRepayCurrency, setSelectedRepayCurrency] =
     useState<string>(() => toDropdownAsset(prefilledAsset) ?? DropdownOptions[0]);
@@ -70,7 +70,20 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
     }
   }, [prefilledAsset]);
   const [currentDebtWad, setCurrentDebtWad] = useState<string>('0');
-  const [repayAmountInUsd] = useState<number>(0);
+
+  // USD price lookup (testnet prices) — keyed by normalized contract symbol,
+  // matching the convention used in borrow-box.tsx and transfer-collateral.tsx.
+  const TOKEN_PRICES: Record<string, number> = {
+    XLM: 0.10,
+    BLUSDC: 1.00,
+    AQUSDC: 1.00,
+    SOUSDC: 1.00,
+    USDC: 1.00,
+    EURC: 1.00,
+  };
+  const selectedTokenPrice =
+    TOKEN_PRICES[normalizeContractTokenSymbol(selectedRepayCurrency)] ?? 1;
+  const repayAmountInUsd = repayAmount * selectedTokenPrice;
 
   // Popup visibility states
   const [isPayNowPopupOpen, setIsPayNowPopupOpen] = useState(false);
@@ -88,14 +101,13 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
     return `${whole.toString()}.${frac7}`;
   };
 
-  const formatStatValue = (value: number, key: string) => {
+  const formatStatValue = (value: number, _key: string) => {
     const cleaned = clampRepayDust(value);
     if (cleaned === 0) return "0";
 
-    const digits = key === "availableBalance" ? 6 : 7;
     return cleaned.toLocaleString(undefined, {
       minimumFractionDigits: 0,
-      maximumFractionDigits: digits,
+      maximumFractionDigits: 2,
     });
   };
 
@@ -197,18 +209,21 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
 
     if (item === 100 && currentDebtWad && currentDebtWad !== '0') {
       const fullAmount = parseFloat(currentDebtWad) / 1e18;
-      setRepayAmount(clampRepayDust(Number.isFinite(fullAmount) ? fullAmount : 0));
+      const clamped = clampRepayDust(Number.isFinite(fullAmount) ? fullAmount : 0);
+      setRepayAmount(parseFloat(clamped.toFixed(2)));
       return;
     }
 
     // Calculate amount based on percentage.
     const calculatedAmount = clampRepayDust((repayStats.netOutstandingAmountToPay * item) / 100);
-    setRepayAmount(calculatedAmount);
+    setRepayAmount(parseFloat(calculatedAmount.toFixed(2)));
   };
 
   // Handler for input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setRepayAmount(Number(e.target.value));
+    const sanitized = validateAmountChange(e.target.value);
+    if (sanitized === null) return; // invalid char — toast already shown
+    setRepayAmount(sanitized === "" ? 0 : Number(sanitized));
   };
 
   // Handler for pay now click
@@ -303,7 +318,7 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
       >
         {/* Repay stats cards */}
         <motion.section
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.2 }}
@@ -327,9 +342,7 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
               >
                 {key === "netOutstandingAmountToPay"
                   ? "Net Outstanding Amount to Repay"
-                  : key === "availableBalance"
-                    ? "Available Balance"
-                    : "Frozen Balance"}
+                  : "Available Balance"}
               </span>
               <span
                 className={`text-[22px] font-bold leading-tight ${
@@ -422,6 +435,7 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
                     : "text-[#111111] placeholder:text-[#111111]"
                 }`}
                 type="text"
+                inputMode="decimal"
                 placeholder="0"
                 value={repayAmount === 0 ? "" : repayAmount}
               />
@@ -436,7 +450,7 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
               }`}
               aria-live="polite"
             >
-              ≈ {repayAmountInUsd} USD
+              ≈ {repayAmountInUsd.toFixed(2)} USD
             </span>
           </div>
         </motion.article>
@@ -514,7 +528,7 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
             >
               <Popup
                 icon="/assets/exclamation.png"
-                description={`Are you sure you want to repay ${repayAmount} ${selectedRepayCurrency}? This will reduce your borrowed amount.`}
+                description={`Are you sure you want to repay ${(Number(repayAmount) || 0).toFixed(2)} ${selectedRepayCurrency}? This will reduce your borrowed amount.`}
                 buttonText={isLoading ? "Processing..." : "Confirm Repayment"}
                 buttonOnClick={handlePayNowClick}
                 closeButtonText="Cancel"

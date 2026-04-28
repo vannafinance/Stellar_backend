@@ -226,8 +226,8 @@ export const Chart = memo(function Chart({ type, currencyTab, height, containerW
     if (abs >= 100) return value.toFixed(0);
     if (abs >= 10) return value.toFixed(1);
     if (abs >= 1) return value.toFixed(2);
-    if (abs >= 0.1) return value.toFixed(3);
-    if (abs >= 0.01) return value.toFixed(4);
+    if (abs >= 0.1) return value.toFixed(2);
+    if (abs >= 0.01) return value.toFixed(2);
     // Sub-cent: keep 2 significant digits to avoid long strings.
     return value.toPrecision(2);
   };

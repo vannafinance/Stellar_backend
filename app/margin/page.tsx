@@ -163,7 +163,7 @@ const Margin = () => {
 
     // Actual max debt = collateral / liquidation threshold (1.1)
     const actualDebtLimit = totalCollateralValue > 0
-      ? parseFloat((totalCollateralValue / 1.1).toFixed(4))
+      ? parseFloat((totalCollateralValue / 1.1).toFixed(2))
       : 0;
 
     if (!hasAnyMarginData) {

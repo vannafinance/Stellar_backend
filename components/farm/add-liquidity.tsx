@@ -21,6 +21,7 @@ import { useBlendPoolStats } from "@/hooks/use-farm";
 import { useBlendStore } from "@/store/blend-store";
 import { appendFarmHistory, buildFarmPoolKey } from "@/lib/farm-history";
 import toast from "react-hot-toast";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
@@ -176,7 +177,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
     if (!isNaN(parsed) && parsed > 0 && reserveA > 0 && reserveB > 0) {
       const rA = reserveA;
       const rB = reserveB;
-      if (rA > 0) setAmountB((parsed * rB / rA).toFixed(7));
+      if (rA > 0) setAmountB((parsed * rB / rA).toFixed(2));
     } else if (val === '') {
       setAmountB('');
     }
@@ -197,7 +198,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
     if (!isNaN(parsed) && parsed > 0 && reserveA > 0 && reserveB > 0) {
       const rA = reserveA;
       const rB = reserveB;
-      if (rB > 0) setAmountA((parsed * rA / rB).toFixed(7));
+      if (rB > 0) setAmountA((parsed * rA / rB).toFixed(2));
     } else if (val === '') {
       setAmountA('');
     }
@@ -304,14 +305,14 @@ export const AddLiquidity = memo(function AddLiquidity() {
         poolKey: buildFarmPoolKey(tokenA, tokenB),
         marginAccountAddress,
         action: "add",
-        amountDisplay: `${amtA.toFixed(4)} ${tokenA} + ${amtB.toFixed(4)} ${tokenB}`,
+        amountDisplay: `${amtA.toFixed(2)} ${tokenA} + ${amtB.toFixed(2)} ${tokenB}`,
         txHash: result.hash ?? "",
       });
       toast.success(`Liquidity added! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
       const nextXlm = Math.max(0, parseFloat(marginXlmBalance || "0") - amtA);
       const nextUsdc = Math.max(0, parseFloat(marginUsdcBalance || "0") - amtB);
-      setMarginXlmBalance(nextXlm.toFixed(7));
-      setMarginUsdcBalance(nextUsdc.toFixed(7));
+      setMarginXlmBalance(nextXlm.toFixed(2));
+      setMarginUsdcBalance(nextUsdc.toFixed(2));
       setAmountA("");
       setAmountB("");
       // Refresh canonical balances and pool stats; retries absorb RPC indexing delay.
@@ -360,7 +361,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
         poolKey: buildFarmPoolKey(selectedToken),
         marginAccountAddress,
         action: "add",
-        amountDisplay: `${amount.toFixed(4)} ${selectedToken}`,
+        amountDisplay: `${amount.toFixed(2)} ${selectedToken}`,
         txHash: result.hash ?? "",
       });
       toast.success(`Deposit successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
@@ -388,7 +389,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
   const isInputValid = parseFloat(value) > 0 && !isNaN(parseFloat(value));
   const blendDeployed = parseFloat(blendBalance);
   const availableToDeployNum = parseFloat(marginTokenBalance || "0");
-  const availableToDeployStr = availableToDeployNum.toFixed(7);
+  const availableToDeployStr = availableToDeployNum.toFixed(2);
   const isOverBalance = parseFloat(value) > availableToDeployNum;
   const isSubmitDisabled =
     !userAddress ||
@@ -448,9 +449,9 @@ export const AddLiquidity = memo(function AddLiquidity() {
         }`}>
           {(reserveA > 0 && reserveB > 0) && (
             <div className={`text-[11px] font-medium mb-[4px] ${isDark ? "text-[#919191]" : "text-[#76737B]"}`}>
-              1 {tokenB} ≈ {(reserveA / reserveB).toFixed(4)} {tokenA}
+              1 {tokenB} ≈ {(reserveA / reserveB).toFixed(2)} {tokenA}
               &nbsp;·&nbsp;
-              1 {tokenA} ≈ {(reserveB / reserveA).toFixed(4)} {tokenB}
+              1 {tokenA} ≈ {(reserveB / reserveA).toFixed(2)} {tokenB}
             </div>
           )}
           <div className="w-full flex flex-col gap-[12px]">
@@ -462,16 +463,22 @@ export const AddLiquidity = memo(function AddLiquidity() {
                 }`}
               >
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="0"
                   value={idx === 0 ? amountA : amountB}
-                  onChange={(e) => idx === 0 ? handleAmountAChange(e.target.value) : handleAmountBChange(e.target.value)}
+                  onChange={(e) => {
+                    const sanitized = validateAmountChange(e.target.value);
+                    if (sanitized === null) return;
+                    if (idx === 0) handleAmountAChange(sanitized);
+                    else handleAmountBChange(sanitized);
+                  }}
                   min="0"
                   className={`w-full bg-transparent outline-none border-none text-[18px] font-semibold placeholder:opacity-20 ${
                     isDark ? "text-white placeholder:text-white" : "text-black placeholder:text-black"
                   } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
                 />
-                <div className="flex flex-col items-end gap-[6px]">
+                <div className="flex flex-col items-end gap-[4px] shrink-0">
                   <div className="flex items-center gap-[6px]">
                     <Image
                       src={iconPaths[token] ?? "/icons/stellar.svg"}
@@ -485,12 +492,12 @@ export const AddLiquidity = memo(function AddLiquidity() {
                       {token}
                     </span>
                   </div>
-                  <span className={`text-[11px] font-medium ${
+                  <span className={`text-[11px] font-medium whitespace-nowrap ${
                     isDark ? "text-[#919191]" : "text-[#5C5B5B]"
                   }`}>
                     {loadingMarginBalances
                       ? "Loading..."
-                      : `Balance: ${parseFloat(idx === 0 ? availableA : availableB).toFixed(7)}`}
+                      : `Bal: ${parseFloat(idx === 0 ? availableA : availableB).toFixed(2)}`}
                   </span>
                 </div>
               </div>
@@ -561,9 +568,14 @@ export const AddLiquidity = memo(function AddLiquidity() {
         <div className="flex items-center gap-2 px-3 pt-3 pb-2">
           <input
             type="text"
+            inputMode="decimal"
             placeholder="0"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              const sanitized = validateAmountChange(e.target.value);
+              if (sanitized === null) return;
+              setValue(sanitized);
+            }}
             disabled={txStatus === "loading"}
             className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:opacity-20 ${isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"}`}
           />
@@ -607,7 +619,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
                 key={pct}
                 type="button"
                 disabled={txStatus === "loading"}
-                onClick={() => { setValue(((tokenBalance * pct) / 100).toFixed(6)); }}
+                onClick={() => { setValue(((tokenBalance * pct) / 100).toFixed(2)); }}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.93 }}
                 transition={{ duration: 0.1 }}
@@ -625,7 +637,7 @@ export const AddLiquidity = memo(function AddLiquidity() {
             className={`text-[11px] font-medium underline cursor-pointer shrink-0 ${isDark ? "text-[#555555]" : "text-[#AAAAAA]"}`}
             onClick={handleMaxClick}
           >
-            Balance: {loadingMarginTokenBalance ? "..." : tokenBalance.toLocaleString()} {token}
+            Balance: {loadingMarginTokenBalance ? "..." : tokenBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {token}
           </span>
         </div>
       </div>

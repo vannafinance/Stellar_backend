@@ -14,6 +14,7 @@ import {
 } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 interface Collateral {
   id?: string;
@@ -103,12 +104,14 @@ const CollateralComponent = (props: Collateral) => {
     if (isEditing && valueInput) {
       const amount = parseFloat(valueInput) || 0;
       const price = TOKEN_PRICES[selectedCurrency] ?? 1;
-      setValueInUsd((amount * price).toFixed(4));
+      setValueInUsd((amount * price).toFixed(2));
     }
   }, [valueInput, isEditing, selectedCurrency]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValueInput(e.target.value);
+    const sanitized = validateAmountChange(e.target.value);
+    if (sanitized === null) return;
+    setValueInput(sanitized);
   };
 
   const handlePercentageClick = (item: number) => {
@@ -121,7 +124,7 @@ const CollateralComponent = (props: Collateral) => {
         )) || 0
       : 0;
     const calculatedAmount = (balance * item) / 100;
-    setValueInput(calculatedAmount.toString());
+    setValueInput(calculatedAmount.toFixed(2));
   };
 
   const handleSave = () => {
@@ -242,6 +245,7 @@ const CollateralComponent = (props: Collateral) => {
                       : "text-[#111111] placeholder:text-[#111111]"
                   }`}
                   type="text"
+                  inputMode="decimal"
                   placeholder="0"
                   value={valueInput}
                 />
@@ -289,7 +293,7 @@ const CollateralComponent = (props: Collateral) => {
                   isDark ? "text-[#777777]" : "text-[#A7A7A7]"
                 }`}
               >
-                Balance: {String(liveBalance)} {selectedCurrency}
+                Balance: {(parseFloat(String(liveBalance)) || 0).toFixed(2)} {selectedCurrency}
               </span>
 
               <div className="flex items-center gap-3 shrink-0">
@@ -440,7 +444,7 @@ const CollateralComponent = (props: Collateral) => {
                     isDark ? "text-white" : "text-[#111111]"
                   }`}
                 >
-                  {collateral.amount}
+                  {Number(collateral.amount).toFixed(2)}
                 </div>
               </div>
             )}
@@ -454,9 +458,11 @@ const CollateralComponent = (props: Collateral) => {
                   }`}
                 >
                   Balance:{" "}
-                  {collateral.balanceType.toLowerCase() === "wb"
-                    ? String(tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0")
-                    : collateral.unifiedBalance}{" "}
+                  {(parseFloat(String(
+                    collateral.balanceType.toLowerCase() === "wb"
+                      ? tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0"
+                      : collateral.unifiedBalance
+                  )) || 0).toFixed(2)}{" "}
                   {collateral.asset}
                 </span>
               </div>

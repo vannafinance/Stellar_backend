@@ -10,6 +10,7 @@ import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
 import toast from "react-hot-toast";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
@@ -43,6 +44,19 @@ export const TransferCollateral = () => {
     normalizeContractTokenSymbol(selectedCurrency),
     sourceBalance
   );
+
+  // USD price lookup — match borrow-box.tsx convention (keyed by normalized symbol).
+  const TOKEN_PRICES: Record<string, number> = {
+    XLM: 0.10,
+    BLUSDC: 1.00,
+    AQUSDC: 1.00,
+    SOUSDC: 1.00,
+    USDC: 1.00,
+    EURC: 1.00,
+  };
+  const selectedTokenPrice =
+    TOKEN_PRICES[normalizeContractTokenSymbol(selectedCurrency)] ?? 1;
+  const sourceBalanceInUsd = sourceBalance * selectedTokenPrice;
   const isOverSourceBalance = Number(valueInput || 0) > sourceBalance;
 
   function computeMaxTransferableBalance(
@@ -139,18 +153,19 @@ export const TransferCollateral = () => {
   const handlePercentageClick = (item: number) => {
     setPercentage(item);
     const calculatedAmount = (maxTransferableBalance * item) / 100;
-    setValueInput(calculatedAmount.toFixed(7));
+    setValueInput(calculatedAmount.toFixed(2));
     setValueInUsd(calculatedAmount * 1); // Placeholder for price conversion
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setValueInput(value);
-    setValueInUsd(Number(value) * 1); // Placeholder for price conversion
+    const sanitized = validateAmountChange(e.target.value);
+    if (sanitized === null) return;
+    setValueInput(sanitized);
+    setValueInUsd(sanitized === "" ? 0 : Number(sanitized) * 1); // Placeholder for price conversion
   };
 
   const handleMaxValueClick = () => {
-    setValueInput(maxTransferableBalance.toFixed(7));
+    setValueInput(maxTransferableBalance.toFixed(2));
     setValueInUsd(maxTransferableBalance);
   };
 
@@ -302,6 +317,7 @@ export const TransferCollateral = () => {
                   : "text-[#111111] placeholder:text-[#CCCCCC]"
               }`}
               type="text"
+              inputMode="decimal"
               placeholder="0"
               value={valueInput}
             />
@@ -352,12 +368,12 @@ export const TransferCollateral = () => {
                 isDark ? "text-[#777777]" : "text-[#A7A7A7]"
               }`}
               aria-live="polite"
-              key={valueInUsd}
+              key={sourceBalanceInUsd}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.2 }}
             >
-              ≈ {valueInUsd} USD
+              ≈ {sourceBalanceInUsd.toFixed(2)} USD
             </motion.p>
           </div>
         </div>
@@ -407,7 +423,7 @@ export const TransferCollateral = () => {
             },
             {
               title: selectedTransferType === "MB" ? "Margin Account Balance" : "Wallet Balance",
-              value: `${(selectedTransferType === "MB" ? marginAccountBalance : walletBalance).toFixed(7)} ${selectedCurrency}`,
+              value: `${(selectedTransferType === "MB" ? marginAccountBalance : walletBalance).toFixed(2)} ${selectedCurrency}`,
             },
           ]}
         />

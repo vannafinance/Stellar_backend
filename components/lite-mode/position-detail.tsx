@@ -293,13 +293,13 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
               {
                 label: "Collateral",
                 value: `$${position.collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
-                sub: `${position.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${position.collateralAsset}`,
+                sub: `${position.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${position.collateralAsset}`,
                 color: headingText,
               },
               {
                 label: "Borrowed",
                 value: `$${position.borrowUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
-                sub: `${position.borrowAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${position.borrowAsset}`,
+                sub: `${position.borrowAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${position.borrowAsset}`,
                 color: headingText,
               },
               {
@@ -345,7 +345,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
                 </span>
                 <TokenIcon symbol={position.collateralAsset} size={18} />
                 <span className={`text-[13px] font-semibold truncate ${headingText}`}>
-                  {position.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                  {position.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
                   {position.collateralAsset}
                 </span>
               </div>
@@ -360,7 +360,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
                 </span>
                 <TokenIcon symbol={position.borrowAsset} size={18} />
                 <span className={`text-[13px] font-semibold truncate ${headingText}`}>
-                  {position.borrowAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                  {position.borrowAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
                   {position.borrowAsset}
                 </span>
               </div>
@@ -483,7 +483,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
                 </span>
                 <TokenIcon symbol={position.borrowAsset} size={16} />
                 <span className={`text-[13px] font-semibold ${headingText}`}>
-                  {repayAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                  {repayAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
                   {position.borrowAsset}
                 </span>
               </div>
@@ -499,7 +499,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
                 </span>
                 <TokenIcon symbol={position.collateralAsset} size={16} />
                 <span className={`text-[13px] font-semibold ${headingText}`}>
-                  {withdrawAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                  {withdrawAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
                   {position.collateralAsset}
                 </span>
               </div>
@@ -528,7 +528,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
               </div>
               <div className="flex flex-col items-end">
                 <span className={`text-[14px] font-bold ${headingText}`}>
-                  {netReceivedAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                  {netReceivedAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
                   {position.collateralAsset}
                 </span>
                 <span className={`text-[11px] ${subMuted}`}>
@@ -688,12 +688,12 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
             {[
               {
                 label: "Collateral",
-                value: `${position.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${position.collateralAsset}`,
+                value: `${position.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${position.collateralAsset}`,
                 sub: `$${position.collateralUsd.toFixed(2)}`,
               },
               {
                 label: `Loan (${position.borrowAsset})`,
-                value: `${position.borrowAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${position.borrowAsset}`,
+                value: `${position.borrowAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${position.borrowAsset}`,
                 sub: `$${position.borrowUsd.toFixed(2)}`,
               },
               {

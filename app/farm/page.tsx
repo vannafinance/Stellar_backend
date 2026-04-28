@@ -220,7 +220,7 @@ export default function FarmPage() {
 
     const total = blendXlm + blendUsdc + ssXlm + ssUsdc + aqValue;
     return {
-      depositTVL: total > 0 ? `${total.toFixed(4)} XLM` : '0',
+      depositTVL: total > 0 ? `${total.toFixed(2)} XLM` : '0',
       earnings: '0',
       netFarmApy: '0',
       pendingRewards: '0',

@@ -544,7 +544,7 @@ export default function TradingPairSearch({
             <>
               <div>{format(row.openInterest)}</div>
               <div>
-                {row.funding != null ? `${row.funding.toFixed(4)}%` : "-"}
+                {row.funding != null ? `${row.funding.toFixed(2)}%` : "-"}
               </div>
             </>
           )}

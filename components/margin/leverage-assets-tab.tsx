@@ -2,16 +2,13 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import Image from "next/image";
 import { Collaterals, BorrowInfo } from "@/lib/types";
-import {
-  DropdownOptions,
-  iconPaths,
-} from "@/lib/constants";
+import { DropdownOptions } from "@/lib/constants";
 import { BALANCE_TYPE_OPTIONS } from "@/lib/constants/margin";
 import { Button } from "@/components/ui/button";
 import { Collateral } from "./collateral-box";
 import { BorrowBox } from "./borrow-box";
+import { MBSelectionGrid } from "./mb-selection-grid";
 import { Dialogue } from "@/components/ui/dialogue";
 import { InfoCard } from "./info-card";
 import {
@@ -70,8 +67,9 @@ export const LeverageAssetsTab = () => {
   // Borrow token selected in BorrowBox (exposed via callback)
   const [borrowToken, setBorrowToken] = useState<string>(DropdownOptions[0]);
 
-  // MB mode: editable amounts per token (defaults to full collateral balance)
-  const [mbEditAmounts, setMbEditAmounts] = useState<Record<string, string>>({});
+  // MB mode: which margin-account collaterals the user has selected to use.
+  // Item IDs use the same `${asset}-${amount}` format as MBSelectionGrid.
+  const [mbSelectedIds, setMbSelectedIds] = useState<Set<string>>(new Set());
 
   const userAddress = useUserStore((state) => state.address);
 
@@ -126,31 +124,37 @@ export const LeverageAssetsTab = () => {
       }));
   }, [collateralBalances]);
 
-  // Sync mbEditAmounts when collateral items first load (or change) — default to full balance
+  // When entering MB mode (or when margin-account collaterals first appear),
+  // pre-select every available collateral so the user can borrow against the
+  // full margin account without having to re-tick boxes manually.
   useEffect(() => {
     if (!isMBMode || mbCollateralItems.length === 0) return;
-    setMbEditAmounts((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      mbCollateralItems.forEach((item) => {
-        if (next[item.asset] === undefined) {
-          next[item.asset] = item.amount.toFixed(7);
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
+    setMbSelectedIds((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set(mbCollateralItems.map((item) => `${item.asset}-${item.amount}`));
     });
   }, [isMBMode, mbCollateralItems]);
 
-  // Total USD based on user-edited MB amounts
+  // Total USD across selected MB collaterals — uses each item's full margin
+  // balance (no per-asset edit amounts now that selection is binary).
   const mbSelectedUsd = useMemo(() => {
     if (!isMBMode) return 0;
     return mbCollateralItems.reduce((sum, item) => {
-      const entered = parseFloat(mbEditAmounts[item.asset] || "0") || 0;
+      const itemId = `${item.asset}-${item.amount}`;
+      if (!mbSelectedIds.has(itemId)) return sum;
       const price = MB_TOKEN_PRICES[item.asset] ?? 1;
-      return sum + entered * price;
+      return sum + item.amount * price;
     }, 0);
-  }, [isMBMode, mbCollateralItems, mbEditAmounts]);
+  }, [isMBMode, mbCollateralItems, mbSelectedIds]);
+
+  const handleMbToggleSelection = useCallback((itemId: string) => {
+    setMbSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
 
   // Initialize with one empty collateral if none exist
   useEffect(() => {
@@ -326,8 +330,37 @@ export const LeverageAssetsTab = () => {
     });
 
     setSelectedBalanceType(balanceType.toUpperCase());
-    setEditingId(null);
+    // When the user switches MB→WB, drop the form straight back into edit
+    // mode so they can type a fresh amount instead of having to click the
+    // pencil icon on a 0-amount saved card.
+    if (normalized === "wb") {
+      setEditingId(id);
+    } else {
+      setEditingId(null);
+    }
   }, []); // No dependencies - uses functional updates
+
+  // Reset the entire Leverage Assets form back to its initial state.
+  // Called after a successful Deposit & Borrow / Borrow so the next position
+  // doesn't inherit stale collateral, leverage, or selected MB items.
+  const resetForm = useCallback(() => {
+    const newId = generateCollateralId();
+    const fresh: Collaterals = {
+      id: newId,
+      amount: 0,
+      amountInUsd: 0,
+      asset: DropdownOptions[0],
+      balanceType: "wb",
+      unifiedBalance: 0,
+    };
+    setCollaterals(new Map([[newId, fresh]]));
+    setEditingId(newId);
+    setSelectedBalanceType(BALANCE_TYPE_OPTIONS[0]);
+    setMbSelectedIds(new Set());
+    setLeverage(2);
+    setBorrowItems([]);
+    setCurrentBorrowItems([]);
+  }, []);
 
   const handleButtonClick = async () => {
     if (!userAddress) {
@@ -347,12 +380,19 @@ export const LeverageAssetsTab = () => {
             return;
           }
 
-          // Use user-edited amounts (or full balance as fallback)
+          // Sum the full balance of every selected MB collateral.
           const totalCollateralUsd = mbCollateralItems.reduce((sum, item) => {
-            const entered = parseFloat(mbEditAmounts[item.asset] || "0") || 0;
+            const itemId = `${item.asset}-${item.amount}`;
+            if (!mbSelectedIds.has(itemId)) return sum;
             const price = MB_TOKEN_PRICES[item.asset] ?? 1;
-            return sum + entered * price;
+            return sum + item.amount * price;
           }, 0);
+
+          if (totalCollateralUsd <= 0) {
+            toast.error('Select at least one collateral from your margin account.');
+            setIsProcessing(false);
+            return;
+          }
 
           if (leverage <= 1) {
             toast.error('Please set leverage greater than 1x to borrow.');
@@ -408,6 +448,7 @@ export const LeverageAssetsTab = () => {
             if (marginAccountAddress) {
               await refreshBorrowedBalances(marginAccountAddress);
             }
+            resetForm();
           } else {
             toast.error('Borrow failed: ' + result.error);
           }
@@ -526,6 +567,7 @@ export const LeverageAssetsTab = () => {
           }
           console.log('✅ Deposit and borrow successful:', result.hash);
           toast.success('Deposit and borrow successful! Tx: ' + (result.hash ? result.hash.slice(0, 16) + '…' : ''));
+          resetForm();
         } else {
           console.error('❌ Deposit and borrow failed:', result.error);
           
@@ -606,168 +648,69 @@ export const LeverageAssetsTab = () => {
             Deposit
           </motion.h2>
           <section className="flex flex-col gap-[12px]">
-            {/* MB mode: WB-style cards showing margin account collateral balances */}
+            {/* MB mode: pick which margin-account collaterals to leverage */}
             {isMBMode ? (
-              <section className={`${mbCollateralItems.length > 2 ? "max-h-[364px] overflow-y-auto overflow-x-visible pr-[4px]" : ""} thin-scrollbar`}>
-                <AnimatePresence mode="popLayout">
-                  {mbCollateralItems.length > 0 ? (
-                    <ul className="flex flex-col gap-[12px]" role="list">
-                      {mbCollateralItems.map((item, index) => (
-                        <motion.li
-                          key={`${item.asset}-${index}`}
-                          initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                          transition={{ duration: 0.3, ease: "easeOut", delay: index * 0.05 }}
-                          layout
-                        >
-                          <motion.article
-                            className={`relative w-full rounded-2xl p-3 sm:p-4 flex flex-col gap-1.5 sm:gap-2 transition-colors border ${
-                              isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
-                            }`}
-                          >
-                            {/* Row 1: Deposit label + % chips + WB/MB toggle (first card only) */}
-                            <div className="flex items-center justify-between">
-                              <span className={`text-sm font-medium ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>
-                                Deposit
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                {[10, 25, 50, 100].map((pct) => (
-                                  <motion.button
-                                    key={pct}
-                                    type="button"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.93 }}
-                                    transition={{ duration: 0.1 }}
-                                    onClick={() => {
-                                      const val = (item.amount * pct) / 100;
-                                      setMbEditAmounts((prev) => ({ ...prev, [item.asset]: val.toFixed(7) }));
-                                    }}
-                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer border transition-all ${
-                                      isDark
-                                        ? "bg-[#2A2A2A] text-[#A7A7A7] border-[#333333] hover:text-white"
-                                        : "bg-[#F0F0F0] text-[#888888] hover:text-[#555555] border-[#E2E2E2]"
-                                    }`}
-                                  >
-                                    {pct}%
-                                  </motion.button>
-                                ))}
-                                {index === 0 && (
-                                  <div className={`flex items-center rounded-lg p-0.5 ml-1 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
-                                    {BALANCE_TYPE_OPTIONS.map((option) => (
-                                      <motion.button
-                                        key={option}
-                                        type="button"
-                                        onClick={() => {
-                                          const id = collateralList[0]?.id || generateCollateralId();
-                                          handleBalanceTypeChange(id, option);
-                                        }}
-                                        whileTap={{ scale: 0.95 }}
-                                        transition={{ duration: 0.1 }}
-                                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
-                                          selectedBalanceType === option
-                                            ? "bg-[#703AE6] text-white shadow-sm"
-                                            : isDark ? "text-[#777777] hover:text-[#AAAAAA]" : "text-[#888888] hover:text-[#555555]"
-                                        }`}
-                                        aria-pressed={selectedBalanceType === option}
-                                      >
-                                        {option}
-                                      </motion.button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
+              <motion.article
+                className={`relative w-full rounded-2xl p-3 sm:p-4 flex flex-col gap-3 transition-colors border ${
+                  isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
+                }`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                {/* Header: Deposit label + WB/MB toggle */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-sm font-medium ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>
+                    Select collateral from margin account
+                  </span>
+                  <div className={`flex items-center rounded-lg p-0.5 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
+                    {BALANCE_TYPE_OPTIONS.map((option) => (
+                      <motion.button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          const id = collateralList[0]?.id || generateCollateralId();
+                          handleBalanceTypeChange(id, option);
+                        }}
+                        whileTap={{ scale: 0.95 }}
+                        transition={{ duration: 0.1 }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
+                          selectedBalanceType === option
+                            ? "bg-[#703AE6] text-white shadow-sm"
+                            : isDark ? "text-[#777777] hover:text-[#AAAAAA]" : "text-[#888888] hover:text-[#555555]"
+                        }`}
+                        aria-pressed={selectedBalanceType === option}
+                      >
+                        {option}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
 
-                            {/* Row 2: token pill + MB badge + editable amount input */}
-                            <div className="flex items-center justify-between gap-3">
-                              <div className={`flex items-center gap-2 px-3 py-2 rounded-full shrink-0 ${isDark ? "bg-[#333333]" : "bg-[#EEEEEE]"}`}>
-                                {iconPaths[item.asset] && (
-                                  <Image
-                                    src={iconPaths[item.asset]}
-                                    alt={item.asset}
-                                    width={20}
-                                    height={20}
-                                    className="rounded-full"
-                                  />
-                                )}
-                                <span className={`text-[14px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
-                                  {item.asset}
-                                </span>
-                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#703AE6] text-white">
-                                  MB
-                                </span>
-                              </div>
-                              <input
-                                type="text"
-                                value={mbEditAmounts[item.asset] ?? item.amount.toFixed(7)}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === "" || /^[0-9]*\.?[0-9]*$/.test(val)) {
-                                    setMbEditAmounts((prev) => ({ ...prev, [item.asset]: val }));
-                                  }
-                                }}
-                                className={`flex-1 min-w-0 text-right text-[22px] sm:text-[28px] font-semibold bg-transparent outline-none ${
-                                  isDark ? "text-white placeholder:text-white placeholder:opacity-20" : "text-[#111111] placeholder:text-[#111111] placeholder:opacity-20"
-                                }`}
-                                placeholder="0"
-                              />
-                            </div>
-
-                            {/* Row 3: margin account balance + entered USD value */}
-                            <div className="flex items-center justify-between">
-                              <span className={`text-[12px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-                                Balance: {item.amount.toFixed(4)} {item.asset}
-                              </span>
-                              <span className={`text-[12px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
-                                ≈ ${((parseFloat(mbEditAmounts[item.asset] || "0") || 0) * (MB_TOKEN_PRICES[item.asset] ?? 1)).toFixed(2)} USD
-                              </span>
-                            </div>
-                          </motion.article>
-                        </motion.li>
-                      ))}
-                    </ul>
-                  ) : (
-                    /* No collateral — still show card with WB/MB toggle */
-                    <motion.article
-                      className={`relative w-full rounded-2xl p-3 sm:p-4 flex flex-col gap-1.5 sm:gap-2 transition-colors border ${
-                        isDark ? "bg-[#1A1A1A] border-[#2A2A2A]" : "bg-white border-[#EEEEEE]"
-                      }`}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className={`text-sm font-medium ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>Deposit</span>
-                        <div className={`flex items-center rounded-lg p-0.5 ${isDark ? "bg-[#2A2A2A]" : "bg-[#F0F0F0]"}`}>
-                          {BALANCE_TYPE_OPTIONS.map((option) => (
-                            <motion.button
-                              key={option}
-                              type="button"
-                              onClick={() => {
-                                const id = collateralList[0]?.id || generateCollateralId();
-                                handleBalanceTypeChange(id, option);
-                              }}
-                              whileTap={{ scale: 0.95 }}
-                              transition={{ duration: 0.1 }}
-                              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer transition-all ${
-                                selectedBalanceType === option
-                                  ? "bg-[#703AE6] text-white shadow-sm"
-                                  : isDark ? "text-[#777777] hover:text-[#AAAAAA]" : "text-[#888888] hover:text-[#555555]"
-                              }`}
-                              aria-pressed={selectedBalanceType === option}
-                            >
-                              {option}
-                            </motion.button>
-                          ))}
-                        </div>
-                      </div>
-                      <p className={`text-center text-sm py-2 ${isDark ? "text-[#777777]" : "text-[#AAAAAA]"}`}>
-                        No collateral in your margin account. Switch to WB to deposit first.
-                      </p>
-                    </motion.article>
-                  )}
-                </AnimatePresence>
-              </section>
+                {/* Selection grid (or empty state) */}
+                {mbCollateralItems.length > 0 ? (
+                  <>
+                    <MBSelectionGrid
+                      items={mbCollateralItems}
+                      selectedIds={mbSelectedIds}
+                      mode="Deposit"
+                      onToggle={handleMbToggleSelection}
+                      onRadioSelect={() => {}}
+                    />
+                    <div className="flex items-center justify-between pt-1">
+                      <span className={`text-[12px] font-medium ${isDark ? "text-[#777777]" : "text-[#A7A7A7]"}`}>
+                        {mbSelectedIds.size} of {mbCollateralItems.length} selected
+                      </span>
+                      <span className={`text-[12px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
+                        ≈ ${mbSelectedUsd.toFixed(2)} USD
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <p className={`text-center text-sm py-2 ${isDark ? "text-[#777777]" : "text-[#AAAAAA]"}`}>
+                    No collateral in your margin account. Switch to WB to deposit first.
+                  </p>
+                )}
+              </motion.article>
             ) : (
               <section 
                 className={`${collateralList.length>2?"max-h-[364px] overflow-y-auto overflow-x-visible pr-[4px]":""}  thin-scrollbar `}

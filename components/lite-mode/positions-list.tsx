@@ -129,7 +129,7 @@ export const PositionsList = ({ positions, onSelect }: PositionsListProps) => {
                   ${p.collateralUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </span>
                 <span className={`text-[11px] ${subMuted}`}>
-                  {p.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
+                  {p.collateralAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
                   {p.collateralAsset}
                 </span>
               </div>

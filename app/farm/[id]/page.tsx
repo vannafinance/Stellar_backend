@@ -79,10 +79,10 @@ const FarmHeaderStats = memo(function FarmHeaderStats({
       ];
     }
     return [
-      { id: "supplyApy", name: "Supply APY", amount: statsLoading ? "..." : reserveData ? `${reserveData.supplyAPY}%` : "N/A" },
-      { id: "borrowApy", name: "Borrow APY", amount: statsLoading ? "..." : reserveData ? `${reserveData.borrowAPY}%` : "N/A" },
-      { id: "utilization", name: "Utilization Rate", amount: statsLoading ? "..." : reserveData ? `${reserveData.utilizationRate}%` : "N/A" },
-      { id: "totalSupply", name: "Total Pool Supply", amount: statsLoading ? "..." : reserveData ? `${parseFloat(reserveData.totalSupply).toLocaleString()} ${tokenSymbol}` : "N/A" },
+      { id: "supplyApy", name: "Supply APY", amount: statsLoading ? "..." : reserveData ? `${(parseFloat(reserveData.supplyAPY) || 0).toFixed(2)}%` : "N/A" },
+      { id: "borrowApy", name: "Borrow APY", amount: statsLoading ? "..." : reserveData ? `${(parseFloat(reserveData.borrowAPY) || 0).toFixed(2)}%` : "N/A" },
+      { id: "utilization", name: "Utilization Rate", amount: statsLoading ? "..." : reserveData ? `${(parseFloat(reserveData.utilizationRate) || 0).toFixed(2)}%` : "N/A" },
+      { id: "totalSupply", name: "Total Pool Supply", amount: statsLoading ? "..." : reserveData ? `${parseFloat(reserveData.totalSupply).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${tokenSymbol}` : "N/A" },
     ];
   }, [isSoroswapEarly, ssStats, ssStatsLoading, ssTokenA, ssTokenB, reserveData, statsLoading, tokenSymbol]);
 
@@ -204,21 +204,26 @@ export default function FarmDetailPage() {
   // Chart heading
   const chartHeading = useMemo(() => {
     if (!tokenSymbol) return 'My Supply Position';
-    const bRate = reserveData?.bRate ?? '—';
+    const bRateNum = parseFloat(reserveData?.bRate ?? '0');
+    const bRate = reserveData?.bRate ? bRateNum.toFixed(2) : '—';
     return `1 b${tokenSymbol} = ${bRate} ${tokenSymbol}`;
   }, [tokenSymbol, reserveData]);
 
   // Current Position table
   const currentPositionBody = useMemo(() => {
     if (!tokenSymbol || myBTokens === 0) return { rows: [] };
+    const bTokens = (parseFloat(myPosition?.bTokenBalance ?? '0') || 0).toFixed(2);
+    const underlying = (parseFloat(myPosition?.underlyingValue ?? '0') || 0).toFixed(2);
+    const apy = reserveData ? (parseFloat(reserveData.supplyAPY) || 0).toFixed(2) : '—';
+    const bRate = reserveData?.bRate ? (parseFloat(reserveData.bRate) || 0).toFixed(2) : '—';
     return {
       rows: [{
         cell: [
           { chain: tokenSymbol, title: tokenSymbol, tags: ['Blend', 'Supply'] },
-          { title: `${myPosition?.bTokenBalance ?? '0'} b${tokenSymbol}` },
-          { title: `${myPosition?.underlyingValue ?? '0'} ${tokenSymbol}` },
-          { title: reserveData ? `${reserveData.supplyAPY}%` : '—' },
-          { title: reserveData?.bRate ?? '—' },
+          { title: `${bTokens} b${tokenSymbol}` },
+          { title: `${underlying} ${tokenSymbol}` },
+          { title: reserveData ? `${apy}%` : '—' },
+          { title: bRate },
         ],
       }],
     };
@@ -229,7 +234,7 @@ export default function FarmDetailPage() {
     const normalizedOnchain = events.map((ev) => ({
       timestamp: ev.timestamp ?? 0,
       action: ev.type === "supply" ? "add" : "remove",
-      amountDisplay: `${ev.underlyingAmount} ${ev.tokenSymbol}`,
+      amountDisplay: `${(parseFloat(String(ev.underlyingAmount ?? '0')) || 0).toFixed(2)} ${ev.tokenSymbol}`,
       txHash: ev.txHash ?? "",
     }));
 
@@ -280,12 +285,12 @@ export default function FarmDetailPage() {
   const analyticsItems = useMemo(() => {
     if (!reserveData) return items;
     return [
-      { heading: 'Supply APY', mainInfo: `${reserveData.supplyAPY}%`, subInfo: 'Annual yield on supplied assets', tooltip: 'Net APY after backstop fee' },
-      { heading: 'Borrow APY', mainInfo: `${reserveData.borrowAPY}%`, subInfo: 'Annual cost to borrow', tooltip: 'Current variable borrow rate' },
-      { heading: 'Utilization', mainInfo: `${reserveData.utilizationRate}%`, subInfo: 'Borrowed / Total Supply', tooltip: 'Pool utilization rate' },
-      { heading: 'Total Supply', mainInfo: `${parseFloat(reserveData.totalSupply).toLocaleString()} ${tokenSymbol}`, subInfo: 'Total underlying supplied', tooltip: 'Sum of all deposits in the pool' },
-      { heading: 'Total Borrow', mainInfo: `${parseFloat(reserveData.totalBorrow).toLocaleString()} ${tokenSymbol}`, subInfo: 'Total underlying borrowed', tooltip: 'Sum of all borrows from the pool' },
-      { heading: 'b-Rate', mainInfo: reserveData.bRate, subInfo: `1 b${tokenSymbol} = ${reserveData.bRate} ${tokenSymbol}`, tooltip: 'b-token to underlying exchange rate' },
+      { heading: 'Supply APY', mainInfo: `${(parseFloat(reserveData.supplyAPY) || 0).toFixed(2)}%`, subInfo: 'Annual yield on supplied assets', tooltip: 'Net APY after backstop fee' },
+      { heading: 'Borrow APY', mainInfo: `${(parseFloat(reserveData.borrowAPY) || 0).toFixed(2)}%`, subInfo: 'Annual cost to borrow', tooltip: 'Current variable borrow rate' },
+      { heading: 'Utilization', mainInfo: `${(parseFloat(reserveData.utilizationRate) || 0).toFixed(2)}%`, subInfo: 'Borrowed / Total Supply', tooltip: 'Pool utilization rate' },
+      { heading: 'Total Supply', mainInfo: `${parseFloat(reserveData.totalSupply).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${tokenSymbol}`, subInfo: 'Total underlying supplied', tooltip: 'Sum of all deposits in the pool' },
+      { heading: 'Total Borrow', mainInfo: `${parseFloat(reserveData.totalBorrow).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${tokenSymbol}`, subInfo: 'Total underlying borrowed', tooltip: 'Sum of all borrows from the pool' },
+      { heading: 'b-Rate', mainInfo: (parseFloat(reserveData.bRate) || 0).toFixed(2), subInfo: `1 b${tokenSymbol} = ${(parseFloat(reserveData.bRate) || 0).toFixed(2)} ${tokenSymbol}`, tooltip: 'b-token to underlying exchange rate' },
     ];
   }, [reserveData, tokenSymbol]);
 
@@ -411,7 +416,7 @@ export default function FarmDetailPage() {
     { heading: `${poolTokenB} Reserve`, mainInfo: `${parseFloat(aqStats?.reserveB ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} ${poolTokenB}`, subInfo: `Current ${poolTokenB} reserve in pool`, tooltip: `Total ${poolTokenB} held by the Aquarius pool` },
     { heading: 'Fee Rate', mainInfo: aqStats?.feeFraction ?? '—', subInfo: 'Swap fee per trade', tooltip: 'Fee split between LPs' },
     { heading: 'Total LP Shares', mainInfo: parseFloat(aqStats?.totalShares ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 }), subInfo: 'Total outstanding LP tokens', tooltip: 'Sum of all LP shares minted' },
-    { heading: 'Your LP Balance', mainInfo: myLpBalance.toFixed(4), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
+    { heading: 'Your LP Balance', mainInfo: myLpBalance.toFixed(2), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
   ], [aqStats, myLpBalance, poolTokenA, poolTokenB]);
 
   // ── Soroswap computed values ──
@@ -561,7 +566,7 @@ export default function FarmDetailPage() {
     if (isSoroswapEarly) {
       return {
         heading: "My LP Position",
-        uptrend: mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(4)} LP shares` : undefined,
+        uptrend: mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(2)} LP shares` : undefined,
         data: ssChartData,
       };
     }
@@ -569,14 +574,14 @@ export default function FarmDetailPage() {
     if (isAquariusEarly) {
       return {
         heading: "My LP Position",
-        uptrend: myLpBalance > 0 ? `${myLpBalance.toFixed(4)} LP shares` : undefined,
+        uptrend: myLpBalance > 0 ? `${myLpBalance.toFixed(2)} LP shares` : undefined,
         data: aqChartData,
       };
     }
 
     return {
       heading: chartHeading,
-      uptrend: myUnderlying > 0 ? `${myUnderlying.toFixed(4)} ${tokenSymbol} supplied` : undefined,
+      uptrend: myUnderlying > 0 ? `${myUnderlying.toFixed(2)} ${tokenSymbol} supplied` : undefined,
       data: chartLiveData,
     };
   }, [
@@ -598,7 +603,7 @@ export default function FarmDetailPage() {
     { heading: `${ssTokenB} Reserve`, mainInfo: `${parseFloat(ssStats?.reserveUSDC ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} ${ssTokenB}`, subInfo: `Current ${ssTokenB} reserve in pool`, tooltip: `Total ${ssTokenB} held by the Soroswap pool` },
     { heading: 'Fee Rate', mainInfo: ssStats?.feeFraction ?? '—', subInfo: 'Swap fee per trade', tooltip: 'Fee split between LPs' },
     { heading: 'Total LP Shares', mainInfo: parseFloat(ssStats?.totalShares ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 }), subInfo: 'Total outstanding LP tokens', tooltip: 'Sum of all LP shares minted' },
-    { heading: 'Your LP Balance', mainInfo: mySSLpBalance.toFixed(4), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
+    { heading: 'Your LP Balance', mainInfo: mySSLpBalance.toFixed(2), subInfo: 'Your margin account LP shares', tooltip: 'LP tokens held by your margin account' },
   ], [ssStats, mySSLpBalance, ssTokenA, ssTokenB]);
 
   const findRowFromId = useCallback((searchId: string) => {
@@ -694,8 +699,8 @@ export default function FarmDetailPage() {
   const handleUsdcRangeChange = useCallback((min: number, max: number) => { setUsdcRangeMin(min); setUsdcRangeMax(max); }, []);
   const handleEthRangeChange = useCallback((min: number, max: number) => { setEthRangeMin(min); setEthRangeMax(max); }, []);
 
-  const minPrice = useMemo(() => ethRangeMin === 0 ? "0.0000" : (usdcRangeMin / ethRangeMin).toFixed(4), [usdcRangeMin, ethRangeMin]);
-  const maxPrice = useMemo(() => ethRangeMax === 0 ? "0.0000" : (usdcRangeMax / ethRangeMax).toFixed(4), [usdcRangeMax, ethRangeMax]);
+  const minPrice = useMemo(() => ethRangeMin === 0 ? "0.0000" : (usdcRangeMin / ethRangeMin).toFixed(2), [usdcRangeMin, ethRangeMin]);
+  const maxPrice = useMemo(() => ethRangeMax === 0 ? "0.0000" : (usdcRangeMax / ethRangeMax).toFixed(2), [usdcRangeMax, ethRangeMax]);
   const [minPriceInput, setMinPriceInput] = useState(minPrice);
   const [maxPriceInput, setMaxPriceInput] = useState(maxPrice);
   useEffect(() => { setMinPriceInput(minPrice); setMaxPriceInput(maxPrice); }, [minPrice, maxPrice]);
@@ -849,9 +854,9 @@ export default function FarmDetailPage() {
                 ) : (
                   <div className={`w-full flex flex-col gap-6 rounded-2xl border p-4 sm:p-6 ${isDark ? "bg-[#111111] border-[#2A2A2A]" : "bg-[#F7F7F7] border-[#E8E8E8]"}`}>
                     {isSoroswapEarly ? (
-                      <Chart type="farm" heading="My LP Position" uptrend={mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(4)} LP shares` : undefined} customData={ssChartData.length > 0 ? ssChartData : undefined} />
+                      <Chart type="farm" heading="My LP Position" uptrend={mySSLpBalance > 0 ? `${mySSLpBalance.toFixed(2)} LP shares` : undefined} customData={ssChartData.length > 0 ? ssChartData : undefined} />
                     ) : (
-                      <Chart type="farm" heading="My LP Position" uptrend={myLpBalance > 0 ? `${myLpBalance.toFixed(4)} LP shares` : undefined} customData={aqChartData.length > 0 ? aqChartData : undefined} />
+                      <Chart type="farm" heading="My LP Position" uptrend={myLpBalance > 0 ? `${myLpBalance.toFixed(2)} LP shares` : undefined} customData={aqChartData.length > 0 ? aqChartData : undefined} />
                     )}
                     <Table filterDropdownPosition="right" tableBodyBackground={isDark ? "bg-[#222222]" : "bg-white"}
                       heading={{ heading: "Your Transactions", tabsItems: [{ id: "current-position", label: "Current Position" }, { id: "position-history", label: "Position History" }], tabType: "solid" }}

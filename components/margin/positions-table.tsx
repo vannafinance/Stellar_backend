@@ -256,7 +256,7 @@ export const Positionstable = ({
 
         {/* Amount */}
         <div className={`w-full flex items-center py-[16px] px-[12px] text-[13px] font-medium ${isDark ? "text-white" : ""}`}>
-          {item.amount}
+          {(parseFloat(String(item.amount ?? '0')) || 0).toFixed(2)}
         </div>
 
         {/* Tx Hash */}

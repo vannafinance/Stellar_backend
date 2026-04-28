@@ -61,7 +61,7 @@ export async function closePosition(params: ClosePositionParams): Promise<OneCli
     // ── Step 1: Withdraw from yield pool ──────────────────────────────────
     if (poolType === 'single') {
       const poolToken = poolTokens[0] as TokenAsset;
-      step(`Step 1/2: Withdrawing ${withdrawAmt.toFixed(4)} ${poolToken} from ${poolProtocol}...`);
+      step(`Step 1/2: Withdrawing ${withdrawAmt.toFixed(2)} ${poolToken} from ${poolProtocol}...`);
       const r = await BlendService.withdrawFromBlendPool(
         userAddress, marginAccountAddress, poolToken, withdrawAmt
       );
@@ -78,7 +78,7 @@ export async function closePosition(params: ClosePositionParams): Promise<OneCli
 
     // ── Step 2: Repay Vanna loan ──────────────────────────────────────────
     if (repayAmt > 0) {
-      step(`Step 2/2: Repaying ${repayAmt.toFixed(4)} ${borrowAsset} to Vanna...`);
+      step(`Step 2/2: Repaying ${repayAmt.toFixed(2)} ${borrowAsset} to Vanna...`);
       const repayWad = toWad(repayAmt);
       const r = await MarginAccountService.repayLoan(marginAccountAddress, borrowAsset, repayWad);
       if (!r.success) return { success: false, error: `Repay failed: ${r.error}` };
@@ -151,7 +151,7 @@ export async function executeOneClickStrategy(
     if (scenario === 'same-asset') {
       step(
         leverage > 1
-          ? `Step 1/2: Depositing ${collateralAmount} ${collateralAsset} and borrowing ${borrowAmount.toFixed(4)} ${collateralAsset}...`
+          ? `Step 1/2: Depositing ${collateralAmount} ${collateralAsset} and borrowing ${borrowAmount.toFixed(2)} ${collateralAsset}...`
           : `Step 1/1: Depositing ${collateralAmount} ${collateralAsset} as collateral...`
       );
       const result = await MarginAccountService.depositAndBorrow(
@@ -175,7 +175,7 @@ export async function executeOneClickStrategy(
       }
 
       if (leverage > 1 && borrowAmount > 0) {
-        step(`Step 2/${totalSteps}: Borrowing ${borrowAmount.toFixed(4)} ${borrowAsset} from Vanna...`);
+        step(`Step 2/${totalSteps}: Borrowing ${borrowAmount.toFixed(2)} ${borrowAsset} from Vanna...`);
         const borrowResult = await MarginAccountService.borrowTokens(
           marginAccountAddress,
           borrowAsset,
@@ -195,7 +195,7 @@ export async function executeOneClickStrategy(
       if (scenario === 'same-asset') {
         const total = collateralAmount + borrowAmount;
         const stepLabel = leverage > 1 ? '2/2' : '1/1';
-        step(`Step ${stepLabel}: Deploying ${total.toFixed(4)} ${poolToken} to ${poolProtocol}...`);
+        step(`Step ${stepLabel}: Deploying ${total.toFixed(2)} ${poolToken} to ${poolProtocol}...`);
         const r = await BlendService.depositToBlendPool(
           userAddress, marginAccountAddress, poolToken, total
         );
@@ -205,13 +205,13 @@ export async function executeOneClickStrategy(
       if (scenario === 'cross-asset-keep') {
         const totalSteps = borrowAmount > 0 ? 4 : 2;
         if (borrowAmount > 0) {
-          step(`Step 3/${totalSteps}: Deploying ${borrowAmount.toFixed(4)} ${borrowAsset} to ${poolProtocol} ${borrowAsset} pool...`);
+          step(`Step 3/${totalSteps}: Deploying ${borrowAmount.toFixed(2)} ${borrowAsset} to ${poolProtocol} ${borrowAsset} pool...`);
           const r1 = await BlendService.depositToBlendPool(
             userAddress, marginAccountAddress, borrowAsset, borrowAmount
           );
           if (!r1.success) return { success: false, error: `Deploy ${borrowAsset} failed: ${r1.error}` };
         }
-        step(`Step ${totalSteps}/${totalSteps}: Deploying ${collateralAmount.toFixed(4)} ${collateralAsset} to ${poolProtocol} ${collateralAsset} pool...`);
+        step(`Step ${totalSteps}/${totalSteps}: Deploying ${collateralAmount.toFixed(2)} ${collateralAsset} to ${poolProtocol} ${collateralAsset} pool...`);
         const r2 = await BlendService.depositToBlendPool(
           userAddress, marginAccountAddress, collateralAsset, collateralAmount
         );
@@ -219,7 +219,7 @@ export async function executeOneClickStrategy(
       }
 
       if (scenario === 'cross-asset-swap') {
-        step(`Step 3/4: Swapping ${collateralAmount.toFixed(4)} ${collateralAsset} → ${poolToken} via Soroswap...`);
+        step(`Step 3/4: Swapping ${collateralAmount.toFixed(2)} ${collateralAsset} → ${poolToken} via Soroswap...`);
         const swapResult = await SoroswapService.swapFromMargin(
           userAddress, marginAccountAddress, collateralAsset, collateralAmount
         );
@@ -230,7 +230,7 @@ export async function executeOneClickStrategy(
           collateralAmount * (prices[collateralAsset] / (prices[poolToken] || 1)) * 0.99;
         const totalPoolToken = borrowAmount + swappedTokens;
 
-        step(`Step 4/4: Deploying ~${totalPoolToken.toFixed(4)} ${poolToken} to ${poolProtocol}...`);
+        step(`Step 4/4: Deploying ~${totalPoolToken.toFixed(2)} ${poolToken} to ${poolProtocol}...`);
         const r = await BlendService.depositToBlendPool(
           userAddress, marginAccountAddress, poolToken, totalPoolToken
         );
@@ -251,7 +251,7 @@ export async function executeOneClickStrategy(
         const otherNative =
           halfNative * (prices[collateralAsset] / (prices[otherAsset] || 1)) * 0.99;
 
-        step(`Step 2/3: Swapping ${halfNative.toFixed(4)} ${collateralAsset} → ${otherAsset}...`);
+        step(`Step 2/3: Swapping ${halfNative.toFixed(2)} ${collateralAsset} → ${otherAsset}...`);
         const swapResult = await SoroswapService.swapFromMargin(
           userAddress, marginAccountAddress, collateralAsset, halfNative
         );

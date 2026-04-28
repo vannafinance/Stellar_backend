@@ -7,6 +7,7 @@ import { ASSET_TYPES, AssetType } from "@/lib/stellar-utils";
 import { useUserStore } from "@/store/user";
 import { useTheme } from "@/contexts/theme-context";
 import toast from "react-hot-toast";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 interface WithdrawModalProps {
   isOpen: boolean;
@@ -72,7 +73,7 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
 
   const setPercentage = (percent: number) => {
     const currentBalance = parseFloat(availableBalance) || 0;
-    setAmount((currentBalance * percent).toFixed(7));
+    setAmount((currentBalance * percent).toFixed(2));
   };
 
   const withdrawAssets: AssetType[] = [
@@ -197,7 +198,7 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
                     Available to withdraw
                   </span>
                   <span className={`text-[16px] font-bold ${isDark ? "text-white" : "text-[#0f172a]"}`}>
-                    {availableBalance}{" "}
+                    {(parseFloat(String(availableBalance)) || 0).toFixed(2)}{" "}
                     <span className={`text-[13px] font-medium ${isDark ? "text-[#A0A0A0]" : "text-[#6b7280]"}`}>
                       {cfg.label}
                     </span>
@@ -216,13 +217,15 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
                     : "bg-[#FAFAFA] border-[#E5E7EB] focus-within:border-[#703AE6]"
                 }`}>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => {
+                      const sanitized = validateAmountChange(e.target.value);
+                      if (sanitized === null) return;
+                      setAmount(sanitized);
+                    }}
                     placeholder="0.00"
-                    step="0.0000001"
-                    min="0"
-                    max={availableBalance}
                     className={`flex-1 bg-transparent text-[20px] font-bold outline-none min-w-0 ${
                       isDark ? "text-white placeholder-[#444]" : "text-[#0f172a] placeholder-[#D1D5DB]"
                     }`}

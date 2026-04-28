@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useBlendStore } from "@/store/blend-store";
 import { appendFarmHistory, buildFarmPoolKey } from "@/lib/farm-history";
 import toast from "react-hot-toast";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 const SUPPORTED_TOKENS = ["XLM", "USDC"] as const;
 type TokenSymbol = (typeof SUPPORTED_TOKENS)[number];
@@ -145,7 +146,7 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
     setSelectedPercentage(pct);
     const balance = parseFloat(blendBalance);
     if (!isNaN(balance) && balance > 0) {
-      setValue(((balance * pct) / 100).toFixed(7));
+      setValue(((balance * pct) / 100).toFixed(2));
     }
   };
 
@@ -173,7 +174,7 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
         poolKey: buildFarmPoolKey(selectedToken),
         marginAccountAddress,
         action: "remove",
-        amountDisplay: `${amount.toFixed(4)} ${selectedToken}`,
+        amountDisplay: `${amount.toFixed(2)} ${selectedToken}`,
         txHash: result.hash ?? "",
       });
       toast.success(`Withdrawal successful! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
@@ -260,7 +261,7 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
           poolKey: buildFarmPoolKey(tokenA, tokenB),
           marginAccountAddress,
           action: "remove",
-          amountDisplay: `${amount.toFixed(4)} LP`,
+          amountDisplay: `${amount.toFixed(2)} LP`,
           txHash: result.hash ?? "",
         });
         toast.success(`Liquidity removed! Tx: ${result.hash ? result.hash.slice(0, 16) + '…' : ''}`);
@@ -309,7 +310,7 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
             }`}>
               {loadingLpBalance
                 ? "Loading..."
-                : `${parseFloat(lpBalance).toFixed(4)} LP`}
+                : `${parseFloat(lpBalance).toFixed(2)} LP`}
             </span>
           </div>
         </div>
@@ -320,17 +321,19 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
           <div className="w-full h-fit flex flex-col gap-[16px]">
             <div className="flex flex-col gap-[6px]">
               <input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 placeholder="0"
-                className={`w-full h-fit text-[20px] font-semibold placeholder:opacity-20 outline-none border-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                className={`w-full h-fit text-[20px] font-semibold placeholder:opacity-20 outline-none border-none bg-transparent ${
                   isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"
                 }`}
                 value={value}
                 onChange={(e) => {
-                  setValue(e.target.value);
+                  const sanitized = validateAmountChange(e.target.value);
+                  if (sanitized === null) return;
+                  setValue(sanitized);
                   setSelectedPercentage(0);
                 }}
-                min="0"
               />
               <div className={`text-[11px] font-medium ${
                 isDark ? "text-[#919191]" : "text-[#76737B]"
@@ -351,7 +354,7 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
                     setSelectedPercentage(pct);
                     const balance = parseFloat(lpBalance);
                     if (!isNaN(balance) && balance > 0) {
-                      setValue(((balance * pct) / 100).toFixed(7));
+                      setValue(((balance * pct) / 100).toFixed(2));
                     }
                   }}
                   className={`px-[10px] py-[6px] rounded-[8px] text-[12px] font-semibold ${
@@ -402,10 +405,16 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
         <div className="flex items-center gap-2 px-3 pt-3 pb-2">
           <input
             type="text"
+            inputMode="decimal"
             placeholder="0"
             className={`flex-1 min-w-0 bg-transparent outline-none text-[20px] font-semibold placeholder:opacity-20 ${isDark ? "text-white placeholder:text-white" : "text-[#111111] placeholder:text-[#111111]"}`}
             value={value}
-            onChange={(e) => { setValue(e.target.value); setSelectedPercentage(0); }}
+            onChange={(e) => {
+              const sanitized = validateAmountChange(e.target.value);
+              if (sanitized === null) return;
+              setValue(sanitized);
+              setSelectedPercentage(0);
+            }}
             disabled={txStatus === "loading"}
           />
           {/* Token dropdown pill */}
@@ -465,7 +474,7 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
             ))}
           </div>
           <span className={`text-[11px] font-medium shrink-0 ${isDark ? "text-[#555555]" : "text-[#AAAAAA]"}`}>
-            Available: {loadingBalance ? "..." : totalLiquidity.toLocaleString()} {token}
+            Available: {loadingBalance ? "..." : totalLiquidity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {token}
           </span>
         </div>
       </div>

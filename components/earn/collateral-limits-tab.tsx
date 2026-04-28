@@ -53,7 +53,7 @@ export const CollateralLimitsTab = () => {
           },
           {
             percentage: supplyUsage,
-            value: `${supply.toLocaleString(undefined, { maximumFractionDigits: 3 })} of ${capLabel}`,
+            value: `${supply.toLocaleString(undefined, { maximumFractionDigits: 2 })} of ${capLabel}`,
           },
         ],
       };

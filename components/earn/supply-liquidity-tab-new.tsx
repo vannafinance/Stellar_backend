@@ -15,6 +15,7 @@ import { useSupplyLiquidity, usePoolData } from "@/hooks/use-earn";
 import { AssetType } from "@/lib/stellar-utils";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
+import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
 const POOL_OPTIONS = ["XLM", "BLUSDC", "AqUSDC", "SoUSDC"] as const;
 
@@ -94,7 +95,7 @@ export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
     setSelectedPercentage(percent);
     if (availableBalance > 0) {
       const calculatedAmount = (availableBalance * percent) / 100;
-      setAmount(calculatedAmount.toFixed(7).replace(/\.?0+$/, ""));
+      setAmount(calculatedAmount.toFixed(2).replace(/\.?0+$/, ""));
     }
   };
 
@@ -259,11 +260,15 @@ export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
             <label htmlFor="supply-amount" className="sr-only">Supply Amount</label>
             <input
               id="supply-amount"
-              onChange={(e) => { setAmount(e.target.value); setSelectedPercentage(0); }}
+              onChange={(e) => {
+                const sanitized = validateAmountChange(e.target.value);
+                if (sanitized === null) return;
+                setAmount(sanitized);
+                setSelectedPercentage(0);
+              }}
               value={amount}
-              type="number"
-              step="any"
-              min="0"
+              type="text"
+              inputMode="decimal"
               placeholder="0"
               disabled={isLoading}
               className={`w-full text-right text-[28px] font-semibold bg-transparent outline-none placeholder:opacity-20 ${
@@ -301,7 +306,7 @@ export const SupplyLiquidityTab = memo(function SupplyLiquidityTab() {
             className={`text-[10px] font-medium whitespace-nowrap overflow-hidden text-ellipsis min-w-0 ${
               isDark ? "text-[#777777]" : "text-[#A7A7A7]"
             }`}
-            title={userAddress ? `Balance: ${availableBalance.toFixed(7)} ${selectedOption}` : undefined}
+            title={userAddress ? `Balance: ${availableBalance.toFixed(2)} ${selectedOption}` : undefined}
           >
             Bal: {userAddress ? `${availableBalance.toFixed(2)} ${selectedOption}` : `-- ${selectedOption}`}
           </span>
