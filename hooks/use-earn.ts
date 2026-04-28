@@ -25,11 +25,12 @@ const calculateBorrowAPY = (utilizationRate: string) => {
   return (4.0 + utilization * 15).toFixed(2);
 };
 
-const calculateExchangeRateFromPool = (availableLiquidity: string, vTokenSupply: string) => {
-  const liquidity = parseFloat(availableLiquidity) || 0;
+const calculateExchangeRateFromPool = (poolLiquidity: string, vTokenSupply: string) => {
+  const liquidity = parseFloat(poolLiquidity) || 0;
   const supply = parseFloat(vTokenSupply) || 0;
 
-  // Mirror contract bootstrap behavior: if pool or vToken supply is zero, use 1:1.
+  // Keep frontend math aligned with current contract conversion:
+  // vToken <-> asset uses pool liquidity (cash) against live vToken supply.
   if (liquidity <= 0 || supply <= 0) return '1';
   return (liquidity / supply).toFixed(7);
 };
