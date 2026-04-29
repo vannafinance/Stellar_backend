@@ -444,12 +444,12 @@ export const refreshBorrowedBalances = async (
         }
       });
 
-      Object.entries(dedupedBorrowed).forEach(([token, { amount, usdValue }]) => {
-        // Use fetched usdValue if non-zero, otherwise compute from token price
-        const fetchedUsd = parseFloat(usdValue);
+      Object.entries(dedupedBorrowed).forEach(([token, { amount }]) => {
+        // Always compute USD from TOKEN_PRICES — the upstream getCurrentBorrowedBalances
+        // sets usdValue to a 1:1 placeholder (token amount as USD), which inflates
+        // XLM debt 10× and tanks the displayed HF / Net Available Collateral.
         const price = TOKEN_PRICES[token] ?? 1;
-        const computed = parseFloat(amount) * price;
-        const usd = fetchedUsd > 0 ? fetchedUsd : computed;
+        const usd = parseFloat(amount) * price;
         totalBorrowedValue += usd;
         borrowedBalances[token] = { amount, usdValue: usd.toFixed(2) };
       });

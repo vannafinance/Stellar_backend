@@ -147,39 +147,39 @@ export async function executeOneClickStrategy(
 
   try {
     // ── Atomic path: Blend single-asset + same-asset scenario in one tx ──────
+    // Backed by AccountManager::deposit_borrow_and_deploy_blend, which collapses
+    // the entire open-position flow into one Soroban op = one wallet signature.
+    // Falls back to the split deposit/borrow/deploy path on simulation failure
+    // so the user is never blocked.
     if (
       poolType === 'single' &&
       scenario === 'same-asset' &&
       poolProtocol.toLowerCase().includes('blend')
     ) {
-      // Soroban host currently enforces a single operation per tx in this flow.
-      // Keep atomic mode behind a feature gate so production users are not blocked.
-      const atomicEnabled = process.env.NEXT_PUBLIC_ENABLE_ATOMIC_BLEND_OPEN_POSITION === 'true';
-      if (atomicEnabled) {
-        const total = collateralAmount + borrowAmount;
-        step(
-          leverage > 1
-            ? `Step 1/1: Depositing ${collateralAmount} ${collateralAsset}, borrowing ${borrowAmount.toFixed(4)} ${collateralAsset}, and deploying ${total.toFixed(4)} ${collateralAsset} to ${poolProtocol}...`
-            : `Step 1/1: Depositing ${collateralAmount} ${collateralAsset} and deploying ${total.toFixed(4)} ${collateralAsset} to ${poolProtocol}...`
-        );
+      const total = collateralAmount + borrowAmount;
+      step(
+        leverage > 1
+          ? `Step 1/1: Depositing ${collateralAmount} ${collateralAsset}, borrowing ${borrowAmount.toFixed(4)} ${collateralAsset}, and deploying ${total.toFixed(4)} ${collateralAsset} to ${poolProtocol}...`
+          : `Step 1/1: Depositing ${collateralAmount} ${collateralAsset} and deploying ${total.toFixed(4)} ${collateralAsset} to ${poolProtocol}...`
+      );
 
-        const atomicResult = await MarginAccountService.depositBorrowAndDeployBlendAtomic(
-          marginAccountAddress,
-          collateralAmount,
-          leverage > 1 ? borrowAmount : 0,
-          collateralAsset
-        );
+      const atomicResult = await MarginAccountService.depositBorrowAndDeployBlendAtomic(
+        marginAccountAddress,
+        collateralAmount,
+        leverage > 1 ? borrowAmount : 0,
+        collateralAsset
+      );
 
-        if (atomicResult.success) {
-          return { success: true, hash: atomicResult.hash };
-        }
-
-        const shouldFallbackToSplit =
-          (atomicResult.error || '').toLowerCase().includes('more than one operation');
-        if (!shouldFallbackToSplit) {
-          return { success: false, error: atomicResult.error };
-        }
+      if (atomicResult.success) {
+        return { success: true, hash: atomicResult.hash };
       }
+
+      // Soroban's per-tx CPU budget (~100M instructions) is sometimes too tight
+      // for the full 3-call chain on populated pools. The split deposit/borrow
+      // /deploy flow uses ~50M each and reliably fits, so always fall through —
+      // the user just signs twice instead of once. Errors are already swallowed
+      // and downgraded to console.warn inside depositBorrowAndDeployBlendAtomic.
+      console.info('[OneClick] atomic flow not used; falling back to 2-tx split');
     }
 
     // ── Phase 1: Deposit collateral + borrow ────────────────────────────────
