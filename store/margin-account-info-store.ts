@@ -486,30 +486,53 @@ export const refreshBorrowedBalances = async (
     const effectiveDebtValue =
       totalBorrowedValue > USD_DUST_EPSILON ? totalBorrowedValue : 0;
 
+    // Borrowed funds physically live in the smart_account until they're
+    // deployed elsewhere, so for solvency they're an asset on the balance
+    // sheet. Mirror the contract's borrow-time check (risk_engine.rs:141-145):
+    //   HF_check = (collateral + borrow_value) / (debt + borrow_value)
+    // For ongoing display this becomes (collateral + debt) / debt — collateral
+    // is the unencumbered deposit, +debt is the borrowed funds sitting in the
+    // account. Without this, a 3x leverage position shows HF = 0.5 even though
+    // the borrow check passed at 1.5, which is the number users expect to see.
+    //
+    // If the user has tracking-tokens (Blend deploy already happened), those
+    // are already accounted for inside collateralBalances and we must NOT add
+    // the borrowed value again — would double-count.
+    const hasTrackingTokenCollateral = Object.keys(collateralBalances).some((sym) => {
+      const upper = sym.toUpperCase();
+      return upper.startsWith('BLEND_') || upper.endsWith('_LP') || upper.includes('AQUARIUS') || upper.includes('SOROSWAP');
+    });
+    const grossCollateralValue = hasTrackingTokenCollateral
+      ? totalCollateralValue
+      : totalCollateralValue + effectiveDebtValue;
+
     const avgHealthFactor =
       effectiveDebtValue > 0
-        ? totalCollateralValue / effectiveDebtValue
-        : totalCollateralValue > 0
+        ? grossCollateralValue / effectiveDebtValue
+        : grossCollateralValue > 0
           ? HEALTH_FACTOR_INFINITY_SENTINEL
           : 0;
 
     //  Collateral Left Before Liquidation:
-    //    = totalCollateral - (totalDebt × LIQUIDATION_THRESHOLD)
+    //    = grossCollateral - (totalDebt × LIQUIDATION_THRESHOLD)
     //    i.e. how much collateral value can fall before HF hits 1.1
     const collateralLeftBeforeLiquidation = Math.max(
       0,
-      totalCollateralValue - effectiveDebtValue * LIQUIDATION_THRESHOLD
+      grossCollateralValue - effectiveDebtValue * LIQUIDATION_THRESHOLD
     );
 
-    //  Net Available Collateral = collateral - debt (unencumbered equity)
-    const netAvailableCollateral = Math.max(0, totalCollateralValue - effectiveDebtValue);
+    // Net Available Collateral = unencumbered equity (deposit not backing debt).
+    // For a leveraged position this equals the user's initial collateral —
+    // the borrowed assets sit in the account but they're owed, not free.
+    const netAvailableCollateral = Math.max(0, totalCollateralValue);
 
-    //  Total Value = net equity (collateral minus debt)
-    const totalValue = netAvailableCollateral;
+    //  Total Value = net equity (collateral minus debt). When the user is
+    // self-financed (debt = 0) this is just their collateral.
+    const totalValue = Math.max(0, grossCollateralValue - effectiveDebtValue);
 
     //  Debt limit = maximum safe debt at liquidation threshold
-    const debtLimit = totalCollateralValue > 0
-      ? totalCollateralValue / LIQUIDATION_THRESHOLD
+    const debtLimit = grossCollateralValue > 0
+      ? grossCollateralValue / LIQUIDATION_THRESHOLD
       : 0;
 
     //  Borrow rate: use a flat 6.5% placeholder (matches lending pool borrow APY)
