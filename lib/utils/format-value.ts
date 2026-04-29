@@ -70,17 +70,33 @@ export function formatValue(
       break;
 
     case "time-minutes":
+      // 0 here means "no scheduled liquidation" (no debt or healthy position).
+      // Showing "0m" looks like the user is about to be liquidated, which is
+      // exactly the opposite. Render "—" instead.
+      if (numValue <= 0) {
+        return "—";
+      }
       formatted = formatNumber(numValue, 0);
       suffix = "m";
       break;
 
     case "time-hours":
+      if (numValue <= 0) {
+        return "—";
+      }
       formatted = formatNumber(numValue, 0);
       suffix = "h";
       break;
 
     case "health-factor":
-      formatted = formatNumber(numValue, 1);
+      // The store uses 999 as the "infinite HF" sentinel for zero-debt
+      // positions — render it as ∞ instead of a meaningless "999.0".
+      // Anything > 100 is also effectively infinite from a risk perspective.
+      if (numValue >= 100) {
+        formatted = "∞";
+      } else {
+        formatted = formatNumber(numValue, 2);
+      }
       suffix = "";
       break;
 

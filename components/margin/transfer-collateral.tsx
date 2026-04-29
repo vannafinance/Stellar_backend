@@ -210,8 +210,11 @@ export const TransferCollateral = () => {
     setPercentage(item);
     const baseBalance = selectedTransferType === "WB" ? maxExecutableWithdraw : maxTransferableBalance;
     const calculatedAmount = (baseBalance * item) / 100;
-    setValueInput(calculatedAmount.toFixed(2));
-    setValueInUsd(calculatedAmount * 1); // Placeholder for price conversion
+    // Floor to 2 decimals so toFixed rounding can't push the displayed amount
+    // above the actual max — see handleMaxValueClick comment for the gotcha.
+    const safeAmount = Math.floor(calculatedAmount * 100) / 100;
+    setValueInput(safeAmount.toFixed(2));
+    setValueInUsd(safeAmount);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -223,8 +226,12 @@ export const TransferCollateral = () => {
 
   const handleMaxValueClick = () => {
     const targetMax = selectedTransferType === "WB" ? maxExecutableWithdraw : maxTransferableBalance;
-    setValueInput(targetMax.toFixed(2));
-    setValueInUsd(targetMax);
+    // Floor to 2 decimals — toFixed(2) rounds 509.998964 → "510.00", which then
+    // parses back to 510 and trips the (input > max + epsilon) validation. Floor
+    // guarantees the displayed value is always ≤ the real max.
+    const safeMax = Math.floor(targetMax * 100) / 100;
+    setValueInput(safeMax.toFixed(2));
+    setValueInUsd(safeMax);
   };
 
   const handleTransferClick = async () => {
@@ -253,20 +260,20 @@ export const TransferCollateral = () => {
       selectedTransferType === "WB" &&
       Number(valueInput) > maxExecutableWithdraw + XLM_TRANSFER_EPSILON
     ) {
-      if (totalBorrowedValue <= XLM_TRANSFER_EPSILON) {
+      // Treat near-zero debt (< 0.01 USD) as effectively no debt — leftover
+      // dust from rounding shouldn't make us lecture the user about safety.
+      const hasMeaningfulDebt = totalBorrowedValue > 0.01;
+      const safeMaxDisplay = (Math.floor(maxExecutableWithdraw * 100) / 100).toFixed(2);
+      if (!hasMeaningfulDebt) {
         toast.error(
-          `Full withdrawal is failing due to rounding/state dust. Try up to ${maxExecutableWithdraw.toFixed(2)} ${selectedCurrency}.`
+          `Max transferable right now: ${safeMaxDisplay} ${selectedCurrency}. (A small reserve is kept to avoid on-chain rounding failures.)`
         );
       } else if (maxExecutableWithdraw > 0) {
         toast.error(
-          `Unsafe withdrawal for current debt/health factor. Max you can transfer now: ${maxExecutableWithdraw.toFixed(2)} ${selectedCurrency}.`
+          `Unsafe withdrawal for current debt/health factor. Max you can transfer now: ${safeMaxDisplay} ${selectedCurrency}.`
         );
       } else {
-        toast.error(
-          totalBorrowedValue <= XLM_TRANSFER_EPSILON
-            ? "Full withdrawal is currently failing on-chain. Please retry with a slightly smaller amount."
-            : "Unsafe withdrawal for current debt/health factor. Repay some debt first."
-        );
+        toast.error("Unsafe withdrawal for current debt/health factor. Repay some debt first.");
       }
       return;
     }
@@ -303,24 +310,32 @@ export const TransferCollateral = () => {
         setValueInput("");
         setValueInUsd(0);
       } else {
+        // The on-chain call failed at the entered amount, so the "safe max"
+        // shown in the toast must be lower than what the user just tried —
+        // showing maxExecutableWithdraw (the frontend's optimistic estimate)
+        // is misleading because that's the same number that just failed.
+        const entered = Number(valueInput) || 0;
+        const steppedDown = Math.max(0, entered - XLM_MARGIN_WITHDRAW_BUFFER);
+        const safeFloor = Math.floor(steppedDown * 100) / 100;
+        const safeMaxAfterFailure = Math.max(0, Math.min(maxExecutableWithdraw, safeFloor));
+
         if (
           selectedTransferType === "WB" &&
           normalizeContractTokenSymbol(selectedCurrency) === "XLM" &&
-          totalBorrowedValue <= XLM_TRANSFER_EPSILON
+          totalBorrowedValue <= XLM_TRANSFER_EPSILON &&
+          safeMaxAfterFailure > 0
         ) {
-          const entered = Number(valueInput) || 0;
-          const steppedDown = Math.max(0, entered - XLM_MARGIN_WITHDRAW_BUFFER);
-          const nextSuggested = Math.min(maxExecutableWithdraw, steppedDown);
-          if (nextSuggested > 0) {
-            setValueInput(nextSuggested.toFixed(2));
-            setValueInUsd(nextSuggested);
-          }
+          setValueInput(safeMaxAfterFailure.toFixed(2));
+          setValueInUsd(safeMaxAfterFailure);
         }
-        toast.error(getFriendlyTransferError(result.error, maxExecutableWithdraw));
+        toast.error(getFriendlyTransferError(result.error, safeMaxAfterFailure));
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Transfer failed";
-      toast.error(getFriendlyTransferError(message, maxExecutableWithdraw));
+      const entered = Number(valueInput) || 0;
+      const safeFloor = Math.floor(Math.max(0, entered - XLM_MARGIN_WITHDRAW_BUFFER) * 100) / 100;
+      const safeMaxAfterFailure = Math.max(0, Math.min(maxExecutableWithdraw, safeFloor));
+      toast.error(getFriendlyTransferError(message, safeMaxAfterFailure));
     } finally {
       setIsLoading(false);
     }

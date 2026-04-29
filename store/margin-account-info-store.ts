@@ -29,7 +29,11 @@ const TOKEN_PRICES: Record<string, number> = {
 // Account is liquidatable when: (totalCollateral / totalDebt) < 1.1
 const LIQUIDATION_THRESHOLD = 1.1;
 const HEALTH_FACTOR_INFINITY_SENTINEL = 999;
-const USD_DUST_EPSILON = 1e-6;
+// Sub-cent residuals (interest dust, rounding remainders from a fully-repaid
+// loan) shouldn't poison the HF / borrow-rate / time-to-liquidation displays
+// by pretending the user still has real debt. A penny is a sane floor: below
+// this we treat the position as having zero debt for UI calculations.
+const USD_DUST_EPSILON = 0.01;
 
 const canonicalMarginToken = (token: string): string => {
   const normalized = token.toUpperCase();
@@ -535,8 +539,10 @@ export const refreshBorrowedBalances = async (
       ? grossCollateralValue / LIQUIDATION_THRESHOLD
       : 0;
 
-    //  Borrow rate: use a flat 6.5% placeholder (matches lending pool borrow APY)
-    const borrowRate = totalBorrowedValue > 0 ? 6.5 : 0;
+    //  Borrow rate: use a flat 6.5% placeholder (matches lending pool borrow APY).
+    // Gate on effectiveDebtValue so dust residuals don't show 6.5% on a fully
+    // repaid position.
+    const borrowRate = effectiveDebtValue > 0 ? 6.5 : 0;
 
     useMarginAccountInfoStore.getState().set({
       borrowedBalances,
