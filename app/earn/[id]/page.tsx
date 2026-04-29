@@ -18,8 +18,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { setSelectedPool, useSelectedPoolStore } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { usePoolData } from "@/hooks/use-earn";
-
-const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0 };
+import { useTokenPrices } from "@/contexts/price-context";
 
 const fmt = (n: number, decimals = 4) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M`
@@ -28,12 +27,13 @@ const fmt = (n: number, decimals = 4) =>
 
 const EarnHeaderStats = memo(function EarnHeaderStats({ assetTitle }: { assetTitle: string }) {
   const { pools } = usePoolData();
+  const { getPrice } = useTokenPrices();
 
   const items = useMemo(() => {
     const asset = toInternalAsset(assetTitle);
     const displayAsset = toDisplayAsset(assetTitle);
     const pool = pools[asset as keyof typeof pools];
-    const price = TOKEN_PRICES[asset] ?? 1;
+    const price = getPrice(asset);
 
     const totalSupply = parseFloat(pool?.totalSupply || '0');
     const availableLiquidity = parseFloat(pool?.availableLiquidity || '0');
@@ -46,7 +46,7 @@ const EarnHeaderStats = memo(function EarnHeaderStats({ assetTitle }: { assetTit
       { id: "3", name: "Utilization Rate", amount: `${utilizationRate.toFixed(2)}%` },
       { id: "4", name: "Supply APY", amount: `${supplyAPY.toFixed(2)}%` },
     ];
-  }, [pools, assetTitle]);
+  }, [pools, assetTitle, getPrice]);
 
   return <AccountStatsGhost items={items} />;
 });

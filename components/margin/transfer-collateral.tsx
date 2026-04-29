@@ -6,6 +6,7 @@ import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { DetailsPanel } from "../ui/details-panel";
 import { Button } from "../ui/button";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
@@ -18,15 +19,10 @@ const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
 const XLM_MARGIN_WITHDRAW_BUFFER = 5;
 const LIQUIDATION_THRESHOLD = 1.1;
-const TOKEN_PRICES: Record<string, number> = {
-  XLM: 0.10,
-  USDC: 1.0,
-  AQUSDC: 1.0,
-  SOUSDC: 1.0,
-};
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const normalizeContractTokenSymbol = (symbol: string) =>
     symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
       ? "USDC"
@@ -56,7 +52,7 @@ export const TransferCollateral = () => {
     normalizeContractTokenSymbol(selectedCurrency),
     sourceBalance
   );
-  const selectedTokenPrice = TOKEN_PRICES[normalizeContractTokenSymbol(selectedCurrency)] ?? 1;
+  const selectedTokenPrice = getPrice(normalizeContractTokenSymbol(selectedCurrency));
   // USD value of the balance shown on the right side of the input row,
   // which mirrors `sourceBalance` (wallet for MB transfers, margin for WB).
   const sourceBalanceInUsd = sourceBalance * selectedTokenPrice;

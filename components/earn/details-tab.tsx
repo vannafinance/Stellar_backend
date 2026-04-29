@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { StatsCard } from "../ui/stats-card";
 import { formatValue } from "@/lib/utils/format-value";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { usePoolData } from "@/hooks/use-earn";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
@@ -58,6 +59,7 @@ const getAddresses = (selectedAssetKey: string, selectedAssetLabel: string) => {
 
 export const Details = () => {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const selectedAssetKey = toInternalAsset(selectedAsset);
   const selectedAssetLabel = toDisplayAsset(selectedAssetKey);
@@ -65,18 +67,17 @@ export const Details = () => {
 
   const selectedPool = pools[selectedAssetKey as keyof typeof pools];
   const addresses = getAddresses(selectedAssetKey, selectedAssetLabel);
+  const assetPrice = getPrice(selectedAssetKey);
 
   const totalSupplied = useMemo(() => {
     const supply = parseFloat(selectedPool?.totalSupply || '0');
-    const price = selectedAssetKey === 'XLM' ? 0.1 : 1;
-    return { inToken: supply, inUsd: supply * price };
-  }, [selectedPool, selectedAssetKey]);
+    return { inToken: supply, inUsd: supply * assetPrice };
+  }, [selectedPool, assetPrice]);
 
   const totalBorrowed = useMemo(() => {
     const borrowed = parseFloat(selectedPool?.totalBorrowed || '0');
-    const price = selectedAssetKey === 'XLM' ? 0.1 : 1;
-    return { inToken: borrowed, inUsd: borrowed * price };
-  }, [selectedPool, selectedAssetKey]);
+    return { inToken: borrowed, inUsd: borrowed * assetPrice };
+  }, [selectedPool, assetPrice]);
 
   const borrowedPercent = Math.min(Math.max(parseFloat(selectedPool?.utilizationRate || '0') || 0, 0), 100);
   const suppliedPercent = totalSupplied.inToken > 0 ? (100 - borrowedPercent) : 0;
@@ -85,7 +86,7 @@ export const Details = () => {
     {
       heading: "Available Liquidity",
       mainInfo: `${formatValue(parseFloat(selectedPool?.availableLiquidity || '0'), { type: "number", useLargeFormat: true })} ${selectedAssetLabel}`,
-      subInfo: `$${formatValue(parseFloat(selectedPool?.availableLiquidity || '0') * (selectedAssetKey === 'XLM' ? 0.1 : 1), { type: "number", useLargeFormat: true })}`,
+      subInfo: `$${formatValue(parseFloat(selectedPool?.availableLiquidity || '0') * assetPrice, { type: "number", useLargeFormat: true })}`,
       tooltip: `Total ${selectedAssetLabel} available for borrowing`,
     },
     {
@@ -112,7 +113,7 @@ export const Details = () => {
     },
     {
       heading: "Oracle Price",
-      mainInfo: selectedAssetKey === 'XLM' ? "$0.10" : "$1.00",
+      mainInfo: `$${assetPrice.toFixed(assetPrice < 1 ? 4 : 2)}`,
       tooltip: `Current oracle price of ${selectedAssetLabel}`,
     },
     {
@@ -120,7 +121,7 @@ export const Details = () => {
       mainInfo: selectedPool?.exchangeRate || '1.0000',
       tooltip: `Exchange rate between v${selectedAssetLabel} and ${selectedAssetLabel}`,
     },
-  ], [selectedPool, selectedAssetKey, selectedAssetLabel, totalSupplied.inToken]);
+  ], [selectedPool, selectedAssetKey, selectedAssetLabel, totalSupplied.inToken, assetPrice]);
 
   return (
     <section className={`w-full h-fit flex flex-col gap-[14px] rounded-[16px] border-[1px] ${

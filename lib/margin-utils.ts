@@ -2,6 +2,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { getAddress, signTransaction } from '@stellar/freighter-api';
 import { CONTRACT_ADDRESSES, NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from './stellar-utils';
 import { BlendService } from './blend-utils';
+import { getTokenPriceUsdSync } from './prices';
 
 // Types
 export interface MarginAccount {
@@ -1661,9 +1662,8 @@ export class MarginAccountService {
             const balanceWad = StellarSdk.scValToNative(balanceResult.result.retval) as string;
             const balanceNumber = parseFloat(balanceWad) / Math.pow(10, 18); // Convert from WAD
             
-            // For now, assume 1:1 USD conversion (you can enhance this with actual price feeds)
             if (balanceNumber > 0) {
-              const usdValue = balanceNumber.toFixed(2);
+              const usdValue = (balanceNumber * getTokenPriceUsdSync(token)).toFixed(2);
               borrowedBalances[token] = {
                 amount: balanceNumber.toFixed(6),
                 usdValue
@@ -1802,7 +1802,7 @@ export class MarginAccountService {
             
             balances[tokenSymbol] = {
               amount: balanceInToken.toFixed(7),
-              usdValue: (balanceInToken * 1).toFixed(2) // Placeholder for price conversion
+              usdValue: (balanceInToken * getTokenPriceUsdSync(tokenSymbol)).toFixed(2)
             };
           }
         } catch (error) {

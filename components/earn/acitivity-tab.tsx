@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { usePoolData, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
@@ -61,10 +62,6 @@ const toInternalAsset = (value: string): string => {
   return value.toUpperCase();
 };
 
-const TOKEN_PRICES: Record<string, number> = {
-  XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0,
-};
-
 const normalizeTimestamp = (value: number | string | undefined): number => {
   const ts = Number(value ?? 0);
   if (!Number.isFinite(ts) || ts <= 0) return 0;
@@ -73,6 +70,7 @@ const normalizeTimestamp = (value: number | string | undefined): number => {
 
 export const ActivityTab = () => {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const { transactions: recentTransactions } = useEarnTransactions();
   const { pools } = usePoolData();
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
@@ -112,7 +110,7 @@ export const ActivityTab = () => {
   const userDistributionBody = useMemo(() => {
     const pool = pools[assetKey as keyof typeof pools];
     const totalSupply = parseFloat(pool?.totalSupply || '0');
-    const price = TOKEN_PRICES[assetKey] ?? 1;
+    const price = getPrice(assetKey);
     const usdValue = totalSupply * price;
 
     return {
@@ -134,7 +132,7 @@ export const ActivityTab = () => {
         },
       ],
     };
-  }, [pools, assetKey, displaySymbol]);
+  }, [pools, assetKey, displaySymbol, getPrice]);
 
   // Format transactions for table
   const txTableBody = useMemo(() => {
@@ -168,7 +166,7 @@ export const ActivityTab = () => {
           {
             icon: iconPaths[DISPLAY_SYMBOL[assetKey] ?? assetKey] || iconPaths[assetKey] || `/icons/usdc-icon.svg`,
             title: `${(parseFloat(tx.amount) || 0).toFixed(2)} ${DISPLAY_SYMBOL[assetKey] ?? assetKey}`,
-            description: `$${(parseFloat(tx.amount) * (TOKEN_PRICES[assetKey] ?? 1)).toFixed(2)}`,
+            description: `$${(parseFloat(tx.amount) * getPrice(assetKey)).toFixed(2)}`,
           },
           {
             title: tx.status ?? 'success',
@@ -182,7 +180,7 @@ export const ActivityTab = () => {
         ],
       })),
     };
-  }, [filteredTransactions, assetKey]);
+  }, [filteredTransactions, assetKey, getPrice]);
 
   return (
     <section

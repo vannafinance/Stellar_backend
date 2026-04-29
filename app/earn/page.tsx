@@ -11,9 +11,8 @@ import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { setSelectedPool } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { usePoolData, useUserPositions } from "@/hooks/use-earn";
+import { useTokenPrices } from "@/contexts/price-context";
 
-// USD prices for testnet tokens
-const TOKEN_PRICES: Record<string, number> = { XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0 };
 const HISTORY_MAX_ITEMS = 3000;
 const ALL_ASSETS = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
 
@@ -220,6 +219,7 @@ export default function Earn() {
   const setSelectedVault = useEarnVaultStore((state) => state.set);
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("vaults");
+  const { getPrice } = useTokenPrices();
 
   // Live data from on-chain contracts (auto-refreshes every 30s)
   const { pools, isLoading: poolsLoading } = usePoolData();
@@ -239,7 +239,7 @@ export default function Earn() {
   const { totalDepositedUSD, annualEarnings } = useMemo(() => {
     const totalUSD = ALL_ASSETS.reduce((sum, asset) => {
       const deposited = parseFloat(userPositions[asset]?.deposited || "0");
-      return sum + deposited * (TOKEN_PRICES[asset] ?? 1.0);
+      return sum + deposited * getPrice(asset);
     }, 0);
     let weightedAPY = 0;
     let weightTotal = 0;
@@ -256,7 +256,7 @@ export default function Earn() {
       totalDepositedUSD: totalUSD,
       annualEarnings: annual,
     };
-  }, [userPositions, pools]);
+  }, [userPositions, pools, getPrice]);
 
   useEffect(() => {
     if (!userAddress) {

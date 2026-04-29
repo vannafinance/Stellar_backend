@@ -13,6 +13,7 @@ import {
   BALANCE_TYPE_OPTIONS,
 } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { useUserStore } from "@/store/user";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
@@ -31,6 +32,7 @@ interface Collateral {
 
 const CollateralComponent = (props: Collateral) => {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const getTokenBalanceKey = (symbol: string) => {
     if (symbol === "BLUSDC" || symbol === "BLEND_USDC") return "BLEND_USDC";
     if (symbol === "AqUSDC" || symbol === "AquiresUSDC") return "AQUARIUS_USDC";
@@ -88,25 +90,14 @@ const CollateralComponent = (props: Collateral) => {
     }
   }, [isEditing, props.collaterals?.amount, props.collaterals?.amountInUsd, props.collaterals?.asset, props.collaterals?.balanceType]);
 
-  // USD price lookup (testnet prices)
-  const TOKEN_PRICES: Record<string, number> = {
-    XLM: 0.10,
-    BLUSDC: 1.00,
-    AqUSDC: 1.00,
-    SoUSDC: 1.00,
-    USDC: 1.00,
-    AQUSDC: 1.00,
-    SOUSDC: 1.00,
-  };
-
-  // Calculate USD value from input using token price
+  // Calculate USD value from input using live token price
   useEffect(() => {
     if (isEditing && valueInput) {
       const amount = parseFloat(valueInput) || 0;
-      const price = TOKEN_PRICES[selectedCurrency] ?? 1;
+      const price = getPrice(selectedCurrency);
       setValueInUsd((amount * price).toFixed(2));
     }
-  }, [valueInput, isEditing, selectedCurrency]);
+  }, [valueInput, isEditing, selectedCurrency, getPrice]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const sanitized = validateAmountChange(e.target.value);
@@ -458,9 +449,11 @@ const CollateralComponent = (props: Collateral) => {
                   }`}
                 >
                   Balance:{" "}
-                  {collateral.balanceType.toLowerCase() === "wb"
-                    ? String(tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0")
-                    : collateral.unifiedBalance}{" "}
+                  {(parseFloat(String(
+                    collateral.balanceType.toLowerCase() === "wb"
+                      ? tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0"
+                      : collateral.unifiedBalance
+                  )) || 0).toFixed(2)}{" "}
                   {collateral.asset}
                 </span>
                 <span

@@ -1,5 +1,6 @@
 import createNewStore from "@/zustand/index";
 import { MarginAccountService, type MarginAccount } from "@/lib/margin-utils";
+import { getTokenPriceUsdSync } from "@/lib/prices";
 
 // ────────────────────────────────────────────────────────────────────
 // Rate-limiting / request-dedup gates.
@@ -15,15 +16,10 @@ const inflightCheckByUser = new Map<string, Promise<void>>();
 const lastRefreshByAccount = new Map<string, number>();
 const inflightRefreshByAccount = new Map<string, Promise<void>>();
 
-// Approximate USD prices for testnet display (XLM oracle price ≈ $0.10)
-const TOKEN_PRICES: Record<string, number> = {
-  XLM: 0.10,
-  BLUSDC: 1.00,
-  AQUSDC: 1.00,
-  SOUSDC: 1.00,
-  USDC: 1.00,
-  EURC: 1.00,
-};
+// USD prices come from the live price service (CoinGecko for XLM, $1.00 for
+// USD-pegged variants). Resolved per-call so freshly fetched values land in
+// store totals on the next refresh.
+const tokenPriceUsd = (token: string): number => getTokenPriceUsdSync(token);
 
 // Liquidation threshold from RiskEngine contract: BALANCE_TO_BORROW_THRESHOLD = 1.1 * WAD
 // Account is liquidatable when: (totalCollateral / totalDebt) < 1.1
@@ -441,9 +437,9 @@ export const refreshBorrowedBalances = async (
       });
 
       Object.entries(dedupedBorrowed).forEach(([token, { amount, usdValue }]) => {
-        // Use fetched usdValue if non-zero, otherwise compute from token price
+        // Use fetched usdValue if non-zero, otherwise compute from live price
         const fetchedUsd = parseFloat(usdValue);
-        const price = TOKEN_PRICES[token] ?? 1;
+        const price = tokenPriceUsd(token);
         const computed = parseFloat(amount) * price;
         const usd = fetchedUsd > 0 ? fetchedUsd : computed;
         totalBorrowedValue += usd;
@@ -463,7 +459,7 @@ export const refreshBorrowedBalances = async (
       });
 
       Object.entries(dedupedCollateral).forEach(([token, amount]) => {
-        const price = TOKEN_PRICES[token] ?? 1;
+        const price = tokenPriceUsd(token);
         const tokenAmount = parseFloat(amount);
         const usd = tokenAmount * price;
         totalCollateralValue += usd;

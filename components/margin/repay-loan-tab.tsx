@@ -8,6 +8,7 @@ import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
 import { Dropdown } from "../ui/dropdown";
 import { Popup } from "@/components/ui/popup";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { appendMarginHistory } from "@/lib/margin-history";
 import { getAddress } from "@stellar/freighter-api";
@@ -35,6 +36,7 @@ const toDropdownAsset = (raw: string | undefined): string | null => {
 
 export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const normalizeContractTokenSymbol = (symbol: string) =>
     symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
       ? "BLUSDC"
@@ -71,18 +73,7 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
   }, [prefilledAsset]);
   const [currentDebtWad, setCurrentDebtWad] = useState<string>('0');
 
-  // USD price lookup (testnet prices) — keyed by normalized contract symbol,
-  // matching the convention used in borrow-box.tsx and transfer-collateral.tsx.
-  const TOKEN_PRICES: Record<string, number> = {
-    XLM: 0.10,
-    BLUSDC: 1.00,
-    AQUSDC: 1.00,
-    SOUSDC: 1.00,
-    USDC: 1.00,
-    EURC: 1.00,
-  };
-  const selectedTokenPrice =
-    TOKEN_PRICES[normalizeContractTokenSymbol(selectedRepayCurrency)] ?? 1;
+  const selectedTokenPrice = getPrice(normalizeContractTokenSymbol(selectedRepayCurrency));
   const repayAmountInUsd = repayAmount * selectedTokenPrice;
 
   // Popup visibility states

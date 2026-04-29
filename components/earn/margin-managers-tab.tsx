@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { usePoolData } from "@/hooks/use-earn";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { useUserStore } from "@/store/user";
@@ -18,6 +19,7 @@ const shortenAddr = (addr: string) =>
 
 export const MarginManagersTab = () => {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const { pools, isLoading } = usePoolData();
   const userAddress = useUserStore((state) => state.address);
 
@@ -26,7 +28,7 @@ export const MarginManagersTab = () => {
       rows: Object.entries(STELLAR_POOLS).map(([asset, config], index) => {
         const pool = pools[asset as keyof typeof pools];
         const supply = parseFloat(pool?.totalSupply || '0');
-        const price = asset === 'XLM' ? 0.1 : 1;
+        const price = getPrice(asset);
 
         return {
           cell: [
@@ -45,7 +47,7 @@ export const MarginManagersTab = () => {
         };
       }),
     };
-  }, [pools]);
+  }, [pools, getPrice]);
 
   if (!userAddress) {
     return (

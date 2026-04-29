@@ -4,6 +4,7 @@ import { useState, useMemo, memo } from "react";
 import { Chart } from "./chart";
 import { Table } from "./table";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { usePoolData, useUserPositions, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
@@ -47,13 +48,9 @@ const toIsoDate = (timestamp: number): string => {
   return new Date(timestamp).toISOString().split("T")[0];
 };
 
-// USD price lookup
-const TOKEN_PRICES: Record<string, number> = {
-  XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0,
-};
-
 export const YourPositions = memo(function YourPositions() {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const [activeTab, setActiveTab] = useState<string>("current-positions");
   const [chartNow] = useState<number>(() => Date.now());
 
@@ -74,7 +71,7 @@ export const YourPositions = memo(function YourPositions() {
   const deposited = parseFloat(userPosition?.deposited || '0');
   const hasPosition = deposited > 0;
 
-  const price = TOKEN_PRICES[assetKey] ?? 1;
+  const price = getPrice(assetKey);
   const vTokenBalance = parseFloat(userPosition?.vTokenBalance || '0');
 
   const positionTableHeadings = [
