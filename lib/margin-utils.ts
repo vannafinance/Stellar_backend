@@ -2082,34 +2082,21 @@ export class MarginAccountService {
       const sourceAccount = await server.getAccount(userAddress.address);
       const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.ACCOUNT_MANAGER);
 
-      let txBuilder = new StellarSdk.TransactionBuilder(sourceAccount, {
+      // Single Soroban op calling the contract-side wrapper that does
+      // deposit_collateral_tokens + borrow + execute(blend) internally.
+      // Soroban allows only one host-function op per Stellar tx, so the
+      // collapsed flow has to live behind a single contract function.
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
         fee: (parseInt(StellarSdk.BASE_FEE) * 120).toString(),
         networkPassphrase: NETWORK_PASSPHRASE,
-      }).addOperation(
-        contract.call(
-          'deposit_collateral_tokens',
-          StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
-          StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' }),
-          StellarSdk.nativeToScVal(depositAmountWad, { type: 'u256' })
-        )
-      );
-
-      if (borrowAmountWadBigInt > BigInt(0)) {
-        txBuilder = txBuilder.addOperation(
-          contract.call(
-            'borrow',
-            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
-            StellarSdk.nativeToScVal(borrowAmountWadBigInt.toString(), { type: 'u256' }),
-            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' })
-          )
-        );
-      }
-
-      const transaction = txBuilder
+      })
         .addOperation(
           contract.call(
-            'execute',
+            'deposit_borrow_and_deploy_blend',
             StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+            StellarSdk.nativeToScVal(depositAmountWad, { type: 'u256' }),
+            StellarSdk.nativeToScVal(borrowAmountWadBigInt.toString(), { type: 'u256' }),
+            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' }),
             StellarSdk.xdr.ScVal.scvBytes(callBytes)
           )
         )
@@ -2144,7 +2131,17 @@ export class MarginAccountService {
         error: `Atomic strategy failed with status: ${finalResult.status}`,
       };
     } catch (error: any) {
-      console.error('❌ Atomic Blend open-position error:', error);
+      // Soroban currently caps a single tx at ~100M CPU instructions, and the
+      // chained deposit→borrow→Blend deploy can exceed that on populated pools.
+      // Use console.warn (not error) so the Next.js dev overlay stays quiet —
+      // the caller in one-click-strategy.ts has a 2-tx fallback that runs next.
+      const msg = String(error?.message || error || '');
+      const isBudget = msg.includes('Budget, ExceededLimit') || msg.includes('budget') || msg.includes('Budget');
+      if (isBudget) {
+        console.warn('[Atomic Blend] tx exceeded Soroban budget — falling back to split flow');
+      } else {
+        console.warn('[Atomic Blend] open-position pre-flight failed; falling back to split flow:', msg);
+      }
       return {
         success: false,
         error: this.formatUserFacingContractError(error, 'generic'),
