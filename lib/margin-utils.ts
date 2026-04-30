@@ -2162,42 +2162,59 @@ export class MarginAccountService {
   }
 
   /**
-   * Combined deposit and borrow operation (leverage). Calls the contract's
-   * `deposit_and_borrow` wrapper so the user signs once instead of twice.
-   * Falls through to deposit-only when multiplier <= 1.
+   * Combined deposit and borrow operation (leverage). Single wallet signature.
+   *
+   *  - Same-asset (deposit XLM, borrow XLM): calls the contract's
+   *    `deposit_and_borrow(smart_account, deposit_wad, borrow_wad, token)` wrapper.
+   *  - Cross-asset (deposit XLM, borrow BLUSDC): calls the contract's
+   *    `deposit_and_borrow_cross(smart_account, deposit_wad, deposit_token,
+   *    borrow_wad, borrow_token)` wrapper.
+   *
+   * `borrowAmount` is computed by the caller — for same-asset leverage it's
+   * `depositAmount × (multiplier - 1)`. For cross-asset the caller supplies an
+   * explicit borrow amount in `borrow_token` units (USD-equivalent priced by
+   * the caller).
    */
   static async depositAndBorrow(
     marginAccountAddress: string,
     depositAmount: number,
     multiplier: number,
-    tokenSymbol: string = 'XLM'
+    tokenSymbol: string = 'XLM',
+    options?: { borrowTokenSymbol?: string; borrowAmountTokens?: number }
   ): Promise<{ success: boolean; hash?: string; error?: string }> {
     try {
-      const contractTokenSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      const contractDepositSymbol = this.normalizeContractTokenSymbol(tokenSymbol);
+      const contractBorrowSymbol = options?.borrowTokenSymbol
+        ? this.normalizeContractTokenSymbol(options.borrowTokenSymbol)
+        : contractDepositSymbol;
+      const isCrossAsset = contractDepositSymbol !== contractBorrowSymbol;
 
-      console.log('🚀 deposit_and_borrow (single tx):', {
-        marginAccountAddress, depositAmount, multiplier, tokenSymbol: contractTokenSymbol,
+      console.log(`🚀 ${isCrossAsset ? 'deposit_and_borrow_cross' : 'deposit_and_borrow'} (single tx):`, {
+        marginAccountAddress, depositAmount, multiplier,
+        depositToken: contractDepositSymbol, borrowToken: contractBorrowSymbol,
       });
 
       const depositAmountWad = (BigInt(Math.floor(depositAmount * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
-      const borrowAmountTokens = multiplier > 1 ? depositAmount * (multiplier - 1) : 0;
+      const borrowAmountTokens = options?.borrowAmountTokens != null
+        ? options.borrowAmountTokens
+        : (multiplier > 1 ? depositAmount * (multiplier - 1) : 0);
       const borrowAmountWad = (BigInt(Math.floor(borrowAmountTokens * 1_000_000)) * BigInt(1_000_000_000_000)).toString();
 
       // Pre-flight checks (cheap reads, surface admin/config issues before signing)
-      const configCheck = await this.isTokenConfigured(contractTokenSymbol);
+      const configCheck = await this.isTokenConfigured(contractDepositSymbol);
       if (!configCheck.configured) {
         return {
           success: false,
           error: `⚠️ Configuration Issue: ${configCheck.error}\n\n` +
-                 `The ${contractTokenSymbol} token contract address needs to be set in the Registry contract.\n` +
+                 `The ${contractDepositSymbol} token contract address needs to be set in the Registry contract.\n` +
                  `Please contact the admin to configure the new Registry deployment.`,
         };
       }
-      const isCollateralAllowed = await this.isCollateralAllowed(contractTokenSymbol);
+      const isCollateralAllowed = await this.isCollateralAllowed(contractDepositSymbol);
       if (!isCollateralAllowed) {
         return {
           success: false,
-          error: `${contractTokenSymbol} is not allowed as collateral. Please ask the contract admin to enable this token first.`,
+          error: `${contractDepositSymbol} is not allowed as collateral. Please ask the contract admin to enable this token first.`,
         };
       }
 
@@ -2210,21 +2227,30 @@ export class MarginAccountService {
       const sourceAccount = await server.getAccount(userAddress.address);
       const contract = new StellarSdk.Contract(CONTRACT_ADDRESSES.ACCOUNT_MANAGER);
 
-      // Argument order matches account_manager.rs:
-      //   deposit_and_borrow(smart_account, deposit_amount_wad, borrow_amount_wad, token_symbol)
-      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
-        fee: (parseInt(StellarSdk.BASE_FEE) * 50).toString(),
-        networkPassphrase: NETWORK_PASSPHRASE,
-      })
-        .addOperation(
-          contract.call(
+      // Pick the matching contract function based on whether deposit and
+      // borrow tokens are the same. Argument orders match account_manager.rs.
+      const operation = isCrossAsset
+        ? contract.call(
+            'deposit_and_borrow_cross',
+            StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
+            StellarSdk.nativeToScVal(depositAmountWad, { type: 'u256' }),
+            StellarSdk.nativeToScVal(contractDepositSymbol, { type: 'symbol' }),
+            StellarSdk.nativeToScVal(borrowAmountWad, { type: 'u256' }),
+            StellarSdk.nativeToScVal(contractBorrowSymbol, { type: 'symbol' })
+          )
+        : contract.call(
             'deposit_and_borrow',
             StellarSdk.nativeToScVal(marginAccountAddress, { type: 'address' }),
             StellarSdk.nativeToScVal(depositAmountWad, { type: 'u256' }),
             StellarSdk.nativeToScVal(borrowAmountWad, { type: 'u256' }),
-            StellarSdk.nativeToScVal(contractTokenSymbol, { type: 'symbol' })
-          )
-        )
+            StellarSdk.nativeToScVal(contractDepositSymbol, { type: 'symbol' })
+          );
+
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: (parseInt(StellarSdk.BASE_FEE) * 50).toString(),
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(operation)
         .setTimeout(60)
         .build();
 
