@@ -16,15 +16,38 @@ export interface SvgChartProps {
   chartId?: string;
 }
 
+// Format X-axis tick label so it scales with the actual date range. A 4-day
+// span shouldn't print "Apr Apr Apr Apr" — that's what users were seeing
+// when all data points landed in the same month.
 const fmtXLabel = (dateStr: string, allDates: string[]) => {
   const d = new Date(dateStr);
-  const years = new Set(allDates.map((s) => new Date(s).getFullYear()));
-  if (years.size > 1) {
-    const month = d.toLocaleString("en-US", { month: "short" });
-    const year = d.getFullYear();
-    return month === "Jan" ? String(year) : month;
+  if (allDates.length < 2) {
+    return d.toLocaleString("en-US", { month: "short", day: "numeric" });
   }
-  return d.toLocaleString("en-US", { month: "short" });
+  const sorted = [...allDates].map((s) => new Date(s).getTime()).sort((a, b) => a - b);
+  const spanMs = sorted[sorted.length - 1] - sorted[0];
+  const oneDay = 24 * 60 * 60 * 1000;
+  const spanDays = spanMs / oneDay;
+
+  if (spanDays > 365) {
+    const month = d.toLocaleString("en-US", { month: "short" });
+    const yearShort = String(d.getFullYear()).slice(-2);
+    return `${month} '${yearShort}`;
+  }
+  if (spanDays > 90) {
+    return d.toLocaleString("en-US", { month: "short" });
+  }
+  if (spanDays > 1) {
+    return d.toLocaleString("en-US", { month: "short", day: "numeric" });
+  }
+  // Sub-day spans: include date so labels don't look like "12:41 AM" floating
+  // without context. Mirrors how mature DEXes label intraday charts.
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 };
 
 export const SvgChart = ({

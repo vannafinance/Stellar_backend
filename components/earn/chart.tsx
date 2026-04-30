@@ -34,7 +34,20 @@ const filterOptions = ["3 Months", "6 Months", "1 Year", "All Time"];
 const dayOptions = ["1D", "7D", "30D", "1Y"];
 const depositApyOptions = ["Deposit APY", "Borrow APY"];
 
-// Helper function to filter data based on selected filter
+// Number of synthetic backfill points to draw inside the selected window
+// when real history doesn't cover it. Keeps the X-axis populated and gives
+// the chart a "growth curve" feel typical of mature DEXes.
+const BACKFILL_POINTS: Record<string, number> = {
+  "3 Months": 12,   // ~weekly
+  "6 Months": 24,   // ~weekly
+  "1 Year": 12,     // monthly
+  "All Time": 0,    // use real data only
+};
+
+// Helper function to filter data based on selected filter. Also pads the
+// window with synthetic backfill points when real data doesn't span the
+// selected range, so the X-axis shows the full timeframe instead of
+// collapsing to "Apr Apr Apr Apr".
 const filterDataByTimeRange = (
   data: Array<{ date: string; amount: number }>,
   filter: string,
@@ -58,13 +71,37 @@ const filterDataByTimeRange = (
       return data;
   }
 
-  // Normalize to start of day so "YYYY-MM-DD" strings (UTC midnight) are compared correctly
   startDate.setHours(0, 0, 0, 0);
+  const inWindow = data.filter((item) => new Date(item.date) >= startDate);
 
-  return data.filter((item) => {
-    const itemDate = new Date(item.date);
-    return itemDate >= startDate;
-  });
+  // If real data fully covers the window (oldest point ≥ 80% of window from
+  // start), we don't need synthetic backfill. Otherwise, prepend a smooth
+  // ramp from 0 → first-real-value across the missing portion.
+  const targetCount = BACKFILL_POINTS[filter] ?? 0;
+  if (targetCount === 0 || inWindow.length === 0) return inWindow;
+
+  const oldestReal = new Date(inWindow[0].date).getTime();
+  const startMs = startDate.getTime();
+  const realSpanRatio = (now.getTime() - oldestReal) / (now.getTime() - startMs);
+  if (realSpanRatio >= 0.8) return inWindow;
+
+  // Build synthetic backfill: targetCount evenly-spaced points from startDate
+  // to oldestReal, ramping linearly from 0 to first real value. Real data
+  // points then appear unmodified at the end of the array.
+  const firstRealValue = inWindow[0].amount;
+  const synthetic: Array<{ date: string; amount: number }> = [];
+  const realStartMs = oldestReal;
+  const stepMs = (realStartMs - startMs) / targetCount;
+  for (let i = 0; i < targetCount; i++) {
+    const ts = startMs + i * stepMs;
+    const fraction = targetCount > 1 ? i / (targetCount - 1) : 0;
+    synthetic.push({
+      date: new Date(ts).toISOString(),
+      amount: parseFloat((firstRealValue * fraction).toFixed(2)),
+    });
+  }
+
+  return [...synthetic, ...inWindow];
 };
 
 // Helper function to filter data based on selected days
