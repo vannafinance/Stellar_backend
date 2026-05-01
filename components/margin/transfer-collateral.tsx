@@ -11,6 +11,7 @@ import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
 import { appendMarginHistory } from "@/lib/margin-history";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useUserStore } from "@/store/user";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
@@ -49,6 +50,22 @@ export const TransferCollateral = () => {
   const [isLoading, setIsLoading] = useState(false);
   const totalCollateralValue = useMarginAccountInfoStore((state) => state.totalCollateralValue);
   const totalBorrowedValue = useMarginAccountInfoStore((state) => state.totalBorrowedValue);
+  // Subscribe to global wallet state — local user/balance state is loaded once
+  // on mount via Freighter, so without this hook the component keeps showing
+  // the previous wallet's margin and wallet balances after disconnect.
+  const globalIsConnected = useUserStore((state) => state.isConnected);
+  const globalAddress = useUserStore((state) => state.address);
+  useEffect(() => {
+    if (!globalIsConnected || !globalAddress) {
+      setUserAddress("");
+      setMarginAccount("");
+      setMarginAccountBalance(0);
+      setWalletBalance(0);
+      setValueInput("");
+      setValueInUsd(0);
+      setPercentage(0);
+    }
+  }, [globalIsConnected, globalAddress]);
 
   const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
   const maxTransferableBalance = computeMaxTransferableBalance(

@@ -13,6 +13,7 @@ import { appendMarginHistory } from "@/lib/margin-history";
 import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
 import { refreshBorrowedBalances as refreshMarginStoreBorrowedBalances } from "@/store/margin-account-info-store";
+import { useUserStore } from "@/store/user";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
@@ -69,6 +70,22 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
       setSelectedRepayPercentage(0);
     }
   }, [prefilledAsset]);
+
+  // Reset local state on wallet disconnect — without this, the previous
+  // user's outstanding-debt and available-balance numbers stay rendered
+  // even though the global wallet store has been cleared.
+  const globalIsConnected = useUserStore((state) => state.isConnected);
+  const globalAddress = useUserStore((state) => state.address);
+  useEffect(() => {
+    if (!globalIsConnected || !globalAddress) {
+      setUserAddress("");
+      setMarginAccount("");
+      setRepayStats({ netOutstandingAmountToPay: 0, availableBalance: 0 });
+      setRepayAmount(0);
+      setSelectedRepayPercentage(0);
+      setCurrentDebtWad('0');
+    }
+  }, [globalIsConnected, globalAddress]);
   const [currentDebtWad, setCurrentDebtWad] = useState<string>('0');
 
   // USD price lookup (testnet prices) — keyed by normalized contract symbol,

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { WalletService, ContractService, AssetType, ASSET_TYPES } from '@/lib/stellar-utils';
 import { useUserStore } from '@/store/user';
+import { clearMarginAccount } from '@/store/margin-account-info-store';
 
 export const useWallet = () => {
   const address = useUserStore((state) => state.address);
@@ -157,10 +158,11 @@ export const useWallet = () => {
 
   const disconnectWallet = useCallback(() => {
     console.log('Disconnecting wallet (keeping margin account data in localStorage)');
-    
-    // Don't clear localStorage - margin accounts should persist across wallet connections
-    // Only clear the in-memory state
-    
+
+    // Don't clear localStorage - margin accounts should persist across wallet
+    // connections (the address-stored mapping is keyed by user pubkey).
+    // But DO reset in-memory state so the UI doesn't keep showing the
+    // previous wallet's totals (HF, collateral, debt, etc.) after disconnect.
     useUserStore.getState().set({
       address: null,
       isConnected: false,
@@ -170,6 +172,9 @@ export const useWallet = () => {
       manuallyDisconnected: true, // Mark as manually disconnected to prevent auto-reconnect
       isLoading: false,
     });
+    // Clear cached margin-account stats so the margin page renders zeros
+    // instead of the old user's HF / collateral / debt.
+    clearMarginAccount();
     setIsLoading(false);
     setMessage({ type: 'info', text: 'Wallet disconnected' });
   }, []);

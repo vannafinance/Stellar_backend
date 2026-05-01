@@ -102,10 +102,8 @@ export const useMarginAccountInfoStore = createNewStore(initialState, {
   devTools: true,
   persist: {
     name: "margin-account-info-store",
-    version: 2,
+    version: 3,
     migrate: (persistedState: any, _version: number) => {
-      // Always reset loading states and balance data on version change —
-      // balances are fetched fresh from the blockchain on every page load.
       return {
         ...persistedState,
         isCreatingAccount: false,
@@ -116,9 +114,16 @@ export const useMarginAccountInfoStore = createNewStore(initialState, {
         totalCollateralValue: 0,
         totalValue: 0,
         avgHealthFactor: 0,
-        // Keep hasMarginAccount and marginAccountAddress persisted
       };
     },
+    // Persist only the account identity. Balances and derived metrics must be
+    // re-fetched from the chain on every load — otherwise a previous wallet's
+    // residual entries (e.g. a 40 XLM borrow from a different test session)
+    // bleed into a freshly connected wallet's UI until the async refresh lands.
+    partialize: (state) => ({
+      hasMarginAccount: state.hasMarginAccount,
+      marginAccountAddress: state.marginAccountAddress,
+    }),
   },
 });
 
