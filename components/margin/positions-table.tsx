@@ -102,21 +102,22 @@ export const Positionstable = ({
         ? parseFloat((totalCollateralValue / equity).toFixed(2))
         : 1;
 
+    // A margin account is ONE leveraged position even when collateral and
+    // borrow are different assets (e.g. deposit XLM, borrow BLUSDC). The old
+    // logic filtered the borrows-list down to only debts that matched the
+    // current row's collateral symbol — that hid every cross-asset borrow.
+    // Now each collateral row shows the full borrow list; with a single
+    // collateral (the typical case) you see exactly your real debt.
+    const hasAnyDebt = borrowedArray.length > 0;
     return collateralEntries.map(([token, bal], idx) => {
-      const collateralCanonical = canonicalToken(token);
-      const positionBorrowed = borrowedArray.filter(
-        (b) => canonicalToken(b.assetData.asset) === collateralCanonical
-      );
-      const hasDebt = positionBorrowed.length > 0;
-
       return {
         positionId: idx + 1,
         collateral: { asset: token, amount: parseFloat(bal.amount).toFixed(2) },
         collateralUsdValue: parseFloat(bal.usdValue),
-        borrowed: positionBorrowed,
+        borrowed: borrowedArray,
         leverage,
         interestAccrued: 0,
-        isOpen: hasDebt,
+        isOpen: hasAnyDebt,
         user: '',
       };
     });

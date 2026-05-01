@@ -631,22 +631,39 @@ export const LeverageAssetsTab = () => {
 
         const normalizedBorrowToken = normalizeContractTokenSymbol(borrowToken || wbDeposits[0]?.asset || "XLM");
 
-        // Fast path: single-collateral, same-asset borrow → use the atomic
-        // deposit_and_borrow contract method (one wallet signature instead of two).
-        const canUseAtomic =
-          wbDeposits.length === 1 &&
-          (multiplier <= 1 || wbDeposits[0].asset === normalizedBorrowToken);
+        // Fast path: single-collateral → use the atomic contract method
+        // (deposit_and_borrow for same-asset, deposit_and_borrow_cross for
+        // cross-asset). One wallet signature instead of two in either case.
+        const canUseAtomic = wbDeposits.length === 1;
+        const isCrossAsset = wbDeposits[0]?.asset !== normalizedBorrowToken;
 
         const depositHashes: string[] = [];
         let borrowHash = "";
 
         if (canUseAtomic) {
           const item = wbDeposits[0];
+          // For cross-asset borrow, convert the leverage USD target into the
+          // borrow token's units using the same flat price map the rest of
+          // the page uses. Same-asset case lets MarginAccountService compute
+          // the borrow amount from the multiplier.
+          const borrowOptions = isCrossAsset && multiplier > 1
+            ? (() => {
+                const depositUsd = item.amount * (MB_TOKEN_PRICES[item.asset] ?? 1);
+                const borrowUsd = depositUsd * (multiplier - 1);
+                const borrowPrice = MB_TOKEN_PRICES[normalizedBorrowToken] ?? 1;
+                return {
+                  borrowTokenSymbol: normalizedBorrowToken,
+                  borrowAmountTokens: borrowPrice > 0 ? borrowUsd / borrowPrice : 0,
+                };
+              })()
+            : undefined;
+
           const atomicResult = await MarginAccountService.depositAndBorrow(
             marginAccountAddress!,
             item.amount,
             multiplier,
-            item.asset
+            item.asset,
+            borrowOptions
           );
           if (!atomicResult.success) {
             if (atomicResult.error?.includes('not allowed as collateral') || atomicResult.error?.includes('Max asset cap')) {

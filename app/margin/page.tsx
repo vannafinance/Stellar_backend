@@ -140,7 +140,11 @@ const Margin = () => {
       collateralLeftBeforeLiquidation,
       netAvailableCollateral,
       netAmountBorrowed: totalBorrowedValue,
-      netProfitAndLoss: totalValue,
+      // Realised P&L is 0 until proper deposit-history accounting is wired up;
+      // showing totalValue here misled users into reading their own equity as
+      // "profit". Once we track per-user cost basis we can compute
+      //   P&L = current_collateral_value - cumulative_deposits + cumulative_withdrawals
+      netProfitAndLoss: 0,
     };
   }, [
     avgHealthFactor,

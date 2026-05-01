@@ -74,6 +74,7 @@ export default function createNewStore<S>(
           name: string;
           version: number;
           migrate?: (persistedState: any, version: number) => S;
+          partialize?: (state: StoreState<S>) => Partial<StoreState<S>>;
         };
   }
 ) {
@@ -97,6 +98,9 @@ export default function createNewStore<S>(
         persistOptions.version = options.persist.version;
         if (options.persist.migrate) {
           persistOptions.migrate = options.persist.migrate;
+        }
+        if (options.persist.partialize) {
+          persistOptions.partialize = options.persist.partialize;
         }
       }
       input = persist(input, persistOptions);
