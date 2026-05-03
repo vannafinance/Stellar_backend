@@ -424,9 +424,8 @@ export const OneClickStrategy = () => {
         >
           {/* ── POOL SELECTOR ── */}
           <div className={`w-full border rounded-t-xl p-4 sm:p-5 ${cardBg}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-2 h-2 rounded-full bg-gradient shrink-0" />
-              <h3 className={`text-[13px] font-semibold leading-5 ${headingText}`}>Yield Pool</h3>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h3 className={`text-[12px] font-bold uppercase tracking-[0.6px] ${headingText}`}>Yield Pool</h3>
               <span className={`text-[10px] font-semibold uppercase tracking-[0.5px] px-2 py-0.5 rounded-full ${isDark ? "bg-[#2C2C2C] text-[#919191]" : "bg-[#F4F4F4] text-[#76737B]"}`}>
                 {selectedPool.protocol}
               </span>
