@@ -14,17 +14,12 @@ import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
 const XLM_MARGIN_WITHDRAW_BUFFER = 5;
 const LIQUIDATION_THRESHOLD = 1.1;
-const TOKEN_PRICES: Record<string, number> = {
-  XLM: 0.10,
-  USDC: 1.0,
-  AQUSDC: 1.0,
-  SOUSDC: 1.0,
-};
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
@@ -67,13 +62,14 @@ export const TransferCollateral = () => {
     }
   }, [globalIsConnected, globalAddress]);
 
+  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
   const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
   const maxTransferableBalance = computeMaxTransferableBalance(
     selectedTransferType,
     normalizeContractTokenSymbol(selectedCurrency),
     sourceBalance
   );
-  const selectedTokenPrice = TOKEN_PRICES[normalizeContractTokenSymbol(selectedCurrency)] ?? 1;
+  const selectedTokenPrice = tokenPrices[normalizeContractTokenSymbol(selectedCurrency)] ?? 1;
   // USD value of the balance shown on the right side of the input row,
   // which mirrors `sourceBalance` (wallet for MB transfers, margin for WB).
   const sourceBalanceInUsd = sourceBalance * selectedTokenPrice;

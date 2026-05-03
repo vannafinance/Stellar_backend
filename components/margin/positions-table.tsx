@@ -8,6 +8,7 @@ import { TABLE_ROW_HEADINGS, COIN_ICONS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
 import { useShallow } from "zustand/shallow";
 import { useMarginHistory } from "@/hooks/use-margin";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 interface PositionstableProps {
   onRepayClick?: (asset?: string) => void;
@@ -16,6 +17,8 @@ interface PositionstableProps {
 
 const ITEMS_PER_PAGE = 5;
 const BORROW_DUST_EPSILON = 1e-6;
+
+const PRICEABLE_TOKENS = ['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC'];
 
 const canonicalToken = (token: string): string => {
   const normalized = token.toUpperCase();
@@ -38,6 +41,12 @@ const formatTokenName = (asset: string): string => {
   return asset;
 };
 
+const formatInterestUsd = (value: number): string => {
+  if (!Number.isFinite(value) || value <= 0) return "$0";
+  if (value < 0.01) return "<$0.01";
+  return `$${value.toFixed(2)}`;
+};
+
 export const Positionstable = ({
   onRepayClick,
   onOpenPositionClick,
@@ -58,6 +67,9 @@ export const Positionstable = ({
       hasMarginAccount: state.hasMarginAccount,
     })),
   );
+
+  const { history } = useMarginHistory();
+  const tokenPrices = useTokenPrices(PRICEABLE_TOKENS);
 
   const positions = useMemo<Position[]>(() => {
     const collateralEntries = (Object.entries(collateralBalances) as [string, BorrowedBalance][]).filter(
@@ -96,11 +108,45 @@ export const Positionstable = ({
         usdValue: parseFloat(bal.usdValue),
       }));
 
-    const equity = totalCollateralValue - totalBorrowedValue;
+    // Leverage = total exposure / user equity. The user's equity is what they
+    // actually deposited (totalCollateralValue); the borrow proceeds sit as
+    // additional exposure on top. So 10 USD coll + 20 USD borrow → 3x.
     const leverage =
-      totalCollateralValue > 0 && equity > 0
-        ? parseFloat((totalCollateralValue / equity).toFixed(2))
+      totalCollateralValue > 0
+        ? Math.max(
+            1,
+            parseFloat(((totalCollateralValue + totalBorrowedValue) / totalCollateralValue).toFixed(2))
+          )
         : 1;
+
+    // Interest accrued = current debt − net principal still owed, in USD.
+    // Net principal per token = sum(borrow events) − sum(repay events). The
+    // pool's b_rate accrual makes current debt drift above net principal; that
+    // drift is the user-visible interest. Negative diffs (e.g. when local
+    // history is incomplete) are clamped to 0 so we never show "credit".
+    const netPrincipalByToken: Record<string, number> = {};
+    for (const item of history) {
+      const canonical = canonicalToken(item.asset || '');
+      const amt = parseFloat(String(item.amount ?? '0')) || 0;
+      if (!Number.isFinite(amt) || amt <= 0) continue;
+      if (item.type === 'borrow') {
+        netPrincipalByToken[canonical] = (netPrincipalByToken[canonical] ?? 0) + amt;
+      } else if (item.type === 'repay') {
+        netPrincipalByToken[canonical] = (netPrincipalByToken[canonical] ?? 0) - amt;
+      }
+    }
+
+    let interestAccruedUsd = 0;
+    for (const [, bal] of dedupedBorrowed) {
+      const canonical = canonicalToken(bal.token);
+      const currentAmt = parseFloat(bal.balance.amount || '0');
+      const principalAmt = Math.max(0, netPrincipalByToken[canonical] ?? 0);
+      const diff = currentAmt - principalAmt;
+      if (diff > 0) {
+        const price = tokenPrices[canonical] ?? 1;
+        interestAccruedUsd += diff * price;
+      }
+    }
 
     // A margin account is ONE leveraged position even when collateral and
     // borrow are different assets (e.g. deposit XLM, borrow BLUSDC). The old
@@ -116,14 +162,12 @@ export const Positionstable = ({
         collateralUsdValue: parseFloat(bal.usdValue),
         borrowed: borrowedArray,
         leverage,
-        interestAccrued: 0,
+        interestAccrued: hasAnyDebt ? parseFloat(interestAccruedUsd.toFixed(4)) : 0,
         isOpen: hasAnyDebt,
         user: '',
       };
     });
-  }, [collateralBalances, borrowedBalances, totalCollateralValue, totalBorrowedValue]);
-
-  const { history } = useMarginHistory();
+  }, [collateralBalances, borrowedBalances, totalCollateralValue, totalBorrowedValue, history, tokenPrices]);
 
   const [activeTab, setActiveTab] = useState<string>("currentPositions");
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -422,7 +466,7 @@ export const Positionstable = ({
                 fill={isDark ? "#FFFFFF" : "black"}
               />
             </svg>
-            ${item.interestAccrued}
+            {formatInterestUsd(item.interestAccrued)}
           </>
         ) : (
           <span className={isDark ? "text-[#666666]" : "text-[#A0A0A0]"}>
@@ -542,7 +586,7 @@ export const Positionstable = ({
           </div>
           <div>
             <p className={lbl}>Interest Accrued</p>
-            <p className={val}>{item.interestAccrued > 0 ? `$${item.interestAccrued}` : "$0"}</p>
+            <p className={val}>{formatInterestUsd(item.interestAccrued)}</p>
           </div>
         </div>
 

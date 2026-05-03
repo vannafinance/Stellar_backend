@@ -22,7 +22,6 @@ export const COIN_ICONS: Record<string, string> = {
   AQUSDC: "/icons/usdc-icon.svg",
   SOUSDC: "/icons/usdc-icon.svg",
   USDC: "/icons/usdc-icon.svg",
-  EURC: "/icons/usdc-icon.svg",
 };
 
 // ============================================

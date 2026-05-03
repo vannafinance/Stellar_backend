@@ -15,6 +15,7 @@ import {
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 interface Collateral {
   id?: string;
@@ -88,25 +89,27 @@ const CollateralComponent = (props: Collateral) => {
     }
   }, [isEditing, props.collaterals?.amount, props.collaterals?.amountInUsd, props.collaterals?.asset, props.collaterals?.balanceType]);
 
-  // USD price lookup (testnet prices)
-  const TOKEN_PRICES: Record<string, number> = {
-    XLM: 0.10,
-    BLUSDC: 1.00,
-    AqUSDC: 1.00,
-    SoUSDC: 1.00,
-    USDC: 1.00,
-    AQUSDC: 1.00,
-    SOUSDC: 1.00,
+  // Live oracle-backed prices. AqUSDC / SoUSDC fall through the canonicalize
+  // step inside oracle-price.ts (alias → USDC), so we only request the base
+  // symbols and then look the selection up directly.
+  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
+  const priceFor = (symbol: string): number => {
+    const upper = symbol.toUpperCase();
+    if (upper === 'AQUSDC' || upper === 'SOUSDC' || upper === 'BLUSDC' || upper === 'USDC') {
+      return tokenPrices[upper] ?? tokenPrices.USDC ?? 1;
+    }
+    return tokenPrices[upper] ?? 1;
   };
 
   // Calculate USD value from input using token price
   useEffect(() => {
     if (isEditing && valueInput) {
       const amount = parseFloat(valueInput) || 0;
-      const price = TOKEN_PRICES[selectedCurrency] ?? 1;
+      const price = priceFor(selectedCurrency);
       setValueInUsd((amount * price).toFixed(2));
     }
-  }, [valueInput, isEditing, selectedCurrency]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valueInput, isEditing, selectedCurrency, tokenPrices]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const sanitized = validateAmountChange(e.target.value);

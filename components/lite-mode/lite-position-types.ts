@@ -1,4 +1,5 @@
 import { calcNetApr, calcEarningsUsd } from "./lite-position-math";
+import { getCachedTokenPrice } from "@/lib/oracle-price";
 
 export type LitePositionStatus = "active" | "risky" | "liquidation";
 
@@ -171,7 +172,9 @@ const POOL_INFO: Record<string, { protocol: string; poolVersion: string; poolTyp
   BLUSDC: { protocol: "Blend",  poolVersion: "V1",  poolType: "single", tokens: ["USDC"],       supplyApr: 8.1,  vannaFeeApr: 5.0, liquidationLtv: 86 },
 };
 
-const TOKEN_PRICES: Record<string, number> = { XLM: 1.0, USDC: 1.0, BLUSDC: 1.0 };
+// Replaced static map with the shared oracle cache: callers (lite-home.tsx)
+// already trigger refresh via the margin store, so the cache is warm by the
+// time this builder runs.
 
 export function buildRealPositions(
   borrowedBalances: Record<string, { amount: string; usdValue: string }>,
@@ -207,7 +210,7 @@ export function buildRealPositions(
     // Single-asset Blend pools (XLM, USDC) are same-asset: the user deposits and
     // borrows the same token, so collateral = borrow token.
     const collateralAsset = token;
-    const collateralPrice = TOKEN_PRICES[collateralAsset] ?? 1.0;
+    const collateralPrice = getCachedTokenPrice(collateralAsset);
     const collateralAmount = collateralUsd / collateralPrice;
 
     const leverage = collateralUsd > 0 ? (collateralUsd + borrowUsd) / collateralUsd : 1;

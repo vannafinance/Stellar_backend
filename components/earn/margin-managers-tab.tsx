@@ -6,6 +6,14 @@ import { useTheme } from "@/contexts/theme-context";
 import { usePoolData } from "@/hooks/use-earn";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { useUserStore } from "@/store/user";
+import { useTokenPrices } from "@/hooks/use-token-prices";
+
+const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
+  XLM: 'XLM',
+  USDC: 'USDC',
+  AQUARIUS_USDC: 'USDC',
+  SOROSWAP_USDC: 'USDC',
+};
 
 const tableHeadings = [
   { label: "Margin Manager", id: "margin-manager" },
@@ -20,13 +28,14 @@ export const MarginManagersTab = () => {
   const { isDark } = useTheme();
   const { pools, isLoading } = usePoolData();
   const userAddress = useUserStore((state) => state.address);
+  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
 
   const tableBody = useMemo(() => {
     return {
       rows: Object.entries(STELLAR_POOLS).map(([asset, config], index) => {
         const pool = pools[asset as keyof typeof pools];
         const supply = parseFloat(pool?.totalSupply || '0');
-        const price = asset === 'XLM' ? 0.1 : 1;
+        const price = tokenPrices[PRICE_TOKEN_FOR_ASSET[asset] ?? asset] ?? 1;
 
         return {
           cell: [
@@ -45,7 +54,7 @@ export const MarginManagersTab = () => {
         };
       }),
     };
-  }, [pools]);
+  }, [pools, tokenPrices]);
 
   if (!userAddress) {
     return (

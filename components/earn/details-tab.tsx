@@ -8,6 +8,15 @@ import { usePoolData } from "@/hooks/use-earn";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
+import { useTokenPrices } from "@/hooks/use-token-prices";
+
+// Earn pool keys → oracle symbol (Aquarius/Soroswap USDC peg via alias).
+const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
+  XLM: 'XLM',
+  USDC: 'USDC',
+  AQUARIUS_USDC: 'USDC',
+  SOROSWAP_USDC: 'USDC',
+};
 
 // Static export for use in other pages (e.g. farm detail page)
 export const items = [
@@ -65,18 +74,18 @@ export const Details = () => {
 
   const selectedPool = pools[selectedAssetKey as keyof typeof pools];
   const addresses = getAddresses(selectedAssetKey, selectedAssetLabel);
+  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
+  const oraclePrice = tokenPrices[PRICE_TOKEN_FOR_ASSET[selectedAssetKey] ?? selectedAssetKey] ?? 1;
 
   const totalSupplied = useMemo(() => {
     const supply = parseFloat(selectedPool?.totalSupply || '0');
-    const price = selectedAssetKey === 'XLM' ? 0.1 : 1;
-    return { inToken: supply, inUsd: supply * price };
-  }, [selectedPool, selectedAssetKey]);
+    return { inToken: supply, inUsd: supply * oraclePrice };
+  }, [selectedPool, oraclePrice]);
 
   const totalBorrowed = useMemo(() => {
     const borrowed = parseFloat(selectedPool?.totalBorrowed || '0');
-    const price = selectedAssetKey === 'XLM' ? 0.1 : 1;
-    return { inToken: borrowed, inUsd: borrowed * price };
-  }, [selectedPool, selectedAssetKey]);
+    return { inToken: borrowed, inUsd: borrowed * oraclePrice };
+  }, [selectedPool, oraclePrice]);
 
   const borrowedPercent = Math.min(Math.max(parseFloat(selectedPool?.utilizationRate || '0') || 0, 0), 100);
   const suppliedPercent = totalSupplied.inToken > 0 ? (100 - borrowedPercent) : 0;
@@ -85,7 +94,7 @@ export const Details = () => {
     {
       heading: "Available Liquidity",
       mainInfo: `${formatValue(parseFloat(selectedPool?.availableLiquidity || '0'), { type: "number", useLargeFormat: true })} ${selectedAssetLabel}`,
-      subInfo: `$${formatValue(parseFloat(selectedPool?.availableLiquidity || '0') * (selectedAssetKey === 'XLM' ? 0.1 : 1), { type: "number", useLargeFormat: true })}`,
+      subInfo: `$${formatValue(parseFloat(selectedPool?.availableLiquidity || '0') * oraclePrice, { type: "number", useLargeFormat: true })}`,
       tooltip: `Total ${selectedAssetLabel} available for borrowing`,
     },
     {
@@ -112,7 +121,7 @@ export const Details = () => {
     },
     {
       heading: "Oracle Price",
-      mainInfo: selectedAssetKey === 'XLM' ? "$0.10" : "$1.00",
+      mainInfo: `$${oraclePrice.toFixed(oraclePrice < 1 ? 4 : 2)}`,
       tooltip: `Current oracle price of ${selectedAssetLabel}`,
     },
     {
@@ -120,7 +129,7 @@ export const Details = () => {
       mainInfo: selectedPool?.exchangeRate || '1.0000',
       tooltip: `Exchange rate between v${selectedAssetLabel} and ${selectedAssetLabel}`,
     },
-  ], [selectedPool, selectedAssetKey, selectedAssetLabel, totalSupplied.inToken]);
+  ], [selectedPool, selectedAssetKey, selectedAssetLabel, totalSupplied.inToken, oraclePrice]);
 
   return (
     <section className={`w-full h-fit flex flex-col gap-[14px] rounded-[16px] border-[1px] ${

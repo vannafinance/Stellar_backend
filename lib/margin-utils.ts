@@ -2,6 +2,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { getAddress, signTransaction } from '@stellar/freighter-api';
 import { CONTRACT_ADDRESSES, NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from './stellar-utils';
 import { BlendService } from './blend-utils';
+import { fetchTokenPrice } from './oracle-price';
 
 // Types
 export interface MarginAccount {
@@ -1661,20 +1662,11 @@ export class MarginAccountService {
             const balanceWad = StellarSdk.scValToNative(balanceResult.result.retval) as string;
             const balanceNumber = parseFloat(balanceWad) / Math.pow(10, 18); // Convert from WAD
 
-            // Approximate USD using the same testnet price map the store uses,
-            // so callers that don't recompute (e.g. event-based displays) still
-            // see XLM debt scaled at $0.10 instead of a 1:1 placeholder that
-            // inflates Total Borrowed and tanks the displayed Health Factor.
-            const TOKEN_USD_PRICES: Record<string, number> = {
-              XLM: 0.10,
-              USDC: 1.00,
-              BLUSDC: 1.00,
-              AQUSDC: 1.00,
-              SOUSDC: 1.00,
-              EURC: 1.00,
-            };
             if (balanceNumber > 0) {
-              const price = TOKEN_USD_PRICES[token] ?? 1;
+              // USD value comes straight from the on-chain Reflector oracle so
+              // event-based callers that don't run the store's recompute still
+              // see live prices instead of a 1:1 placeholder.
+              const price = await fetchTokenPrice(token);
               const usdValue = (balanceNumber * price).toFixed(2);
               borrowedBalances[token] = {
                 amount: balanceNumber.toFixed(6),
@@ -1786,7 +1778,7 @@ export class MarginAccountService {
       const balances: Record<string, { amount: string; usdValue: string }> = {};
 
       // Query collateral balances for each token
-      for (const tokenSymbol of ['XLM', 'BLUSDC', 'AQUSDC', 'SOUSDC', 'USDC', 'EURC']) {
+      for (const tokenSymbol of ['XLM', 'BLUSDC', 'AQUSDC', 'SOUSDC', 'USDC']) {
         try {
           const userAddress = await getAddress();
           if (userAddress.error) continue;

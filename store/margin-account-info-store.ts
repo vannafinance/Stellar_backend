@@ -1,5 +1,6 @@
 import createNewStore from "@/zustand/index";
 import { MarginAccountService, type MarginAccount } from "@/lib/margin-utils";
+import { fetchTokenPrices, getCachedTokenPrice } from "@/lib/oracle-price";
 
 // ────────────────────────────────────────────────────────────────────
 // Rate-limiting / request-dedup gates.
@@ -15,15 +16,12 @@ const inflightCheckByUser = new Map<string, Promise<void>>();
 const lastRefreshByAccount = new Map<string, number>();
 const inflightRefreshByAccount = new Map<string, Promise<void>>();
 
-// Approximate USD prices for testnet display (XLM oracle price ≈ $0.10)
-const TOKEN_PRICES: Record<string, number> = {
-  XLM: 0.10,
-  BLUSDC: 1.00,
-  AQUSDC: 1.00,
-  SOUSDC: 1.00,
-  USDC: 1.00,
-  EURC: 1.00,
-};
+// Live token prices via the on-chain Reflector oracle. The cached helper
+// returns the most recently fetched price (or a static fallback the very
+// first time) so synchronous reducers stay synchronous; refresh paths await
+// `fetchTokenPrices` to keep the cache warm before recomputing USD totals.
+const PRICEABLE_TOKENS = ['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC'] as const;
+const tokenPrice = (token: string): number => getCachedTokenPrice(token);
 
 // Liquidation threshold from RiskEngine contract: BALANCE_TO_BORROW_THRESHOLD = 1.1 * WAD
 // Account is liquidatable when: (totalCollateral / totalDebt) < 1.1
@@ -431,10 +429,13 @@ export const refreshBorrowedBalances = async (
   try {
     useMarginAccountInfoStore.getState().set({ isLoadingBorrowedBalances: true });
 
-    // Fetch borrowed balances AND collateral balances in parallel
+    // Fetch borrowed balances, collateral balances, and live oracle prices in
+    // parallel. The oracle warm-up is what makes downstream `tokenPrice()`
+    // calls return real-time values instead of static fallbacks.
     const [borrowedResult, collateralResult] = await Promise.all([
       MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress),
       MarginAccountService.getCollateralBalances(marginAccountAddress),
+      fetchTokenPrices([...PRICEABLE_TOKENS]),
     ]);
 
     let totalBorrowedValue = 0;
@@ -454,10 +455,11 @@ export const refreshBorrowedBalances = async (
       });
 
       Object.entries(dedupedBorrowed).forEach(([token, { amount }]) => {
-        // Always compute USD from TOKEN_PRICES — the upstream getCurrentBorrowedBalances
-        // sets usdValue to a 1:1 placeholder (token amount as USD), which inflates
-        // XLM debt 10× and tanks the displayed HF / Net Available Collateral.
-        const price = TOKEN_PRICES[token] ?? 1;
+        // Always recompute USD from the live oracle cache. The upstream
+        // getCurrentBorrowedBalances sometimes returns a 1:1 placeholder
+        // (token amount as USD) which would make XLM debt look 10× too big
+        // and tank the displayed Health Factor / Net Available Collateral.
+        const price = tokenPrice(token);
         const usd = parseFloat(amount) * price;
         totalBorrowedValue += usd;
         borrowedBalances[token] = { amount, usdValue: usd.toFixed(2) };
@@ -476,7 +478,7 @@ export const refreshBorrowedBalances = async (
       });
 
       Object.entries(dedupedCollateral).forEach(([token, amount]) => {
-        const price = TOKEN_PRICES[token] ?? 1;
+        const price = tokenPrice(token);
         const tokenAmount = parseFloat(amount);
         const usd = tokenAmount * price;
         totalCollateralValue += usd;

@@ -8,6 +8,7 @@ import { usePoolData, useUserPositions, useEarnTransactions } from "@/hooks/use-
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
 import { getEarnHistoryByAsset } from "@/lib/earn-history";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 const tabs = [
   { id: "current-positions", label: "Current Position" },
@@ -47,9 +48,13 @@ const toIsoDate = (timestamp: number): string => {
   return new Date(timestamp).toISOString().split("T")[0];
 };
 
-// USD price lookup
-const TOKEN_PRICES: Record<string, number> = {
-  XLM: 0.1, USDC: 1.0, AQUARIUS_USDC: 1.0, SOROSWAP_USDC: 1.0,
+// AQUARIUS_USDC / SOROSWAP_USDC have no separate Reflector entry; they peg
+// to USDC via the alias map inside oracle-price.ts.
+const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
+  XLM: 'XLM',
+  USDC: 'USDC',
+  AQUARIUS_USDC: 'USDC',
+  SOROSWAP_USDC: 'USDC',
 };
 
 export const YourPositions = memo(function YourPositions() {
@@ -74,7 +79,8 @@ export const YourPositions = memo(function YourPositions() {
   const deposited = parseFloat(userPosition?.deposited || '0');
   const hasPosition = deposited > 0;
 
-  const price = TOKEN_PRICES[assetKey] ?? 1;
+  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
+  const price = tokenPrices[PRICE_TOKEN_FOR_ASSET[assetKey] ?? assetKey] ?? 1;
   const vTokenBalance = parseFloat(userPosition?.vTokenBalance || '0');
 
   const positionTableHeadings = [

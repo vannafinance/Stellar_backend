@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { MAX_LEVERAGE, MODE_CONFIG } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 type Mode = "Deposit" | "Borrow";
 
@@ -28,14 +29,7 @@ export const BorrowBox = ({
   onTokenChange,
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
-  const TOKEN_PRICES: Record<string, number> = {
-    XLM: 0.10,
-    BLUSDC: 1.00,
-    AQUSDC: 1.00,
-    SOUSDC: 1.00,
-    USDC: 1.00,
-    EURC: 1.00,
-  };
+  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
 
   const getCollateralBalanceKey = (symbol: string) => {
     if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";
@@ -64,7 +58,7 @@ export const BorrowBox = ({
 
   const selectedToken = selectedOptions[0] || DropdownOptions[0];
   const selectedCollateralKey = getCollateralBalanceKey(selectedToken);
-  const selectedTokenPrice = TOKEN_PRICES[selectedCollateralKey] ?? 1;
+  const selectedTokenPrice = tokenPrices[selectedCollateralKey] ?? 1;
 
   // Borrow preview based on selected leverage: borrow = deposit * (leverage - 1)
   // totalDeposit is in USD, so divide by token price to get the token amount to display.

@@ -1,0 +1,144 @@
+import * as StellarSdk from '@stellar/stellar-sdk';
+import { CONTRACT_ADDRESSES, NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from './stellar-utils';
+
+// Tokens without their own oracle entry are priced off a base symbol that
+// represents the same underlying USD value (Blend / Aquarius / Soroswap USDC
+// all peg to USDC, and any future Blend XLM tracking token tracks XLM).
+const PRICE_ALIASES: Record<string, string> = {
+  BLUSDC: 'USDC',
+  BLEND_USDC: 'USDC',
+  AQUSDC: 'USDC',
+  AQUARIUS_USDC: 'USDC',
+  SOUSDC: 'USDC',
+  SOROSWAP_USDC: 'USDC',
+  BLXLM: 'XLM',
+  BLEND_XLM: 'XLM',
+};
+
+// Static fallbacks used only when the oracle is unreachable on first probe
+// (network hiccup before any cache entry exists). Once we have a real price
+// it overrides this. Numbers reflect the long-run testnet prices.
+const FALLBACK_PRICES: Record<string, number> = {
+  XLM: 0.16,
+  USDC: 1.0,
+};
+
+const PRICE_TTL_MS = 30_000;
+// On error we cache the fallback briefly so a flaky RPC doesn't trigger a
+// flood of retries from every component on the page.
+const ERROR_TTL_MS = 5_000;
+
+interface CacheEntry {
+  price: number;
+  expiresAt: number;
+  fetchedAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<number>>();
+const subscribers = new Set<() => void>();
+
+const resolveSymbol = (token: string): string => {
+  const u = (token || '').toUpperCase().trim();
+  return PRICE_ALIASES[u] ?? u;
+};
+
+const notify = () => {
+  for (const cb of subscribers) {
+    try { cb(); } catch { /* ignore subscriber errors */ }
+  }
+};
+
+// We need a funded G-account to source simulation transactions. We use the
+// connected wallet when available and fall back to the testnet deployer key
+// for unauthenticated reads (e.g. landing-page price probes before connect).
+const FALLBACK_SOURCE = 'GAUVY7FNDKVWRMW3SYEMX6QMFSWQDKC6XIPJJKAMOEMLZPAI7XZPDV3D';
+
+async function buildSimulationTx(
+  server: StellarSdk.rpc.Server,
+  symbol: string
+): Promise<StellarSdk.Transaction> {
+  let sourceAddr = FALLBACK_SOURCE;
+  try {
+    const { getAddress } = await import('@stellar/freighter-api');
+    const got = await getAddress();
+    if (!got.error && got.address) sourceAddr = got.address;
+  } catch {
+    // Freighter unavailable in SSR / non-browser — use the fallback source.
+  }
+  const src = await server.getAccount(sourceAddr);
+  const c = new StellarSdk.Contract(CONTRACT_ADDRESSES.ORACLE);
+  return new StellarSdk.TransactionBuilder(src, {
+    fee: '100',
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(c.call('get_price_latest', StellarSdk.nativeToScVal(symbol, { type: 'symbol' })))
+    .setTimeout(30)
+    .build();
+}
+
+async function fetchOnce(symbol: string): Promise<number> {
+  const fallback = FALLBACK_PRICES[symbol] ?? 1;
+  try {
+    const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+    const tx = await buildSimulationTx(server, symbol);
+    const r = await server.simulateTransaction(tx);
+    if (!('result' in r) || !r.result?.retval) throw new Error('oracle simulation returned no result');
+    const native = StellarSdk.scValToNative(r.result.retval) as [bigint | string | number, number];
+    const rawPrice = native[0];
+    const decimals = Number(native[1] ?? 14);
+    const priceStr = typeof rawPrice === 'bigint' ? rawPrice.toString() : String(rawPrice);
+    const price = Number(priceStr) / Math.pow(10, decimals);
+    if (!Number.isFinite(price) || price <= 0) throw new Error('oracle returned non-positive price');
+    cache.set(symbol, { price, expiresAt: Date.now() + PRICE_TTL_MS, fetchedAt: Date.now() });
+    notify();
+    return price;
+  } catch {
+    const existing = cache.get(symbol);
+    const cachedPrice = existing?.price ?? fallback;
+    cache.set(symbol, { price: cachedPrice, expiresAt: Date.now() + ERROR_TTL_MS, fetchedAt: existing?.fetchedAt ?? 0 });
+    return cachedPrice;
+  }
+}
+
+export async function fetchTokenPrice(token: string): Promise<number> {
+  const symbol = resolveSymbol(token);
+  const cached = cache.get(symbol);
+  if (cached && cached.expiresAt > Date.now()) return cached.price;
+  const ongoing = inflight.get(symbol);
+  if (ongoing) return ongoing;
+  const p = fetchOnce(symbol).finally(() => inflight.delete(symbol));
+  inflight.set(symbol, p);
+  return p;
+}
+
+export async function fetchTokenPrices(tokens: string[]): Promise<Record<string, number>> {
+  const unique = Array.from(new Set(tokens.map((t) => (t || '').toUpperCase().trim()).filter(Boolean)));
+  const entries = await Promise.all(
+    unique.map(async (t) => [t, await fetchTokenPrice(t)] as const)
+  );
+  return Object.fromEntries(entries);
+}
+
+// Synchronous read for places that can't await (render paths, formatters).
+// Returns the last cached price even if expired, falling back to the static
+// table only when nothing has ever been fetched for this symbol.
+export function getCachedTokenPrice(token: string): number {
+  const symbol = resolveSymbol(token);
+  const cached = cache.get(symbol);
+  if (cached && cached.price > 0) return cached.price;
+  return FALLBACK_PRICES[symbol] ?? 1;
+}
+
+// Kick off background refreshes for a known set of symbols without awaiting.
+// Useful from non-React contexts (stores, page roots) to warm the cache.
+export function primeTokenPrices(tokens: string[]): void {
+  for (const t of tokens) {
+    void fetchTokenPrice(t);
+  }
+}
+
+export function subscribePriceUpdates(cb: () => void): () => void {
+  subscribers.add(cb);
+  return () => { subscribers.delete(cb); };
+}

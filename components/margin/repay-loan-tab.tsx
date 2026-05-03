@@ -14,6 +14,7 @@ import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
 import { refreshBorrowedBalances as refreshMarginStoreBorrowedBalances } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
@@ -88,18 +89,11 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
   }, [globalIsConnected, globalAddress]);
   const [currentDebtWad, setCurrentDebtWad] = useState<string>('0');
 
-  // USD price lookup (testnet prices) — keyed by normalized contract symbol,
-  // matching the convention used in borrow-box.tsx and transfer-collateral.tsx.
-  const TOKEN_PRICES: Record<string, number> = {
-    XLM: 0.10,
-    BLUSDC: 1.00,
-    AQUSDC: 1.00,
-    SOUSDC: 1.00,
-    USDC: 1.00,
-    EURC: 1.00,
-  };
+  // Live USD prices via the on-chain Reflector oracle (XLM/USDC) with
+  // BLUSDC/AQUSDC/SOUSDC aliased to USDC inside the oracle module.
+  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
   const selectedTokenPrice =
-    TOKEN_PRICES[normalizeContractTokenSymbol(selectedRepayCurrency)] ?? 1;
+    tokenPrices[normalizeContractTokenSymbol(selectedRepayCurrency)] ?? 1;
   const repayAmountInUsd = repayAmount * selectedTokenPrice;
 
   // Popup visibility states
