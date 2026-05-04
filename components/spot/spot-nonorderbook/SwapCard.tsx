@@ -67,6 +67,21 @@ const SOROSWAP_STELLAR_TOKENS: Token[] = [
   },
 ];
 
+// Format a swap amount with adaptive precision (up to 7 decimals, trim trailing zeros).
+// Matches how Aquarius/Soroswap display amounts (e.g. 0.6960407 instead of 0.70).
+function formatSwapAmount(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  return n.toFixed(7).replace(/\.?0+$/, "") || "0";
+}
+
+// Format a price/rate with adaptive precision. Smaller rates need more decimals
+// to be meaningful (e.g. 0.0696041 USDC per XLM).
+function formatSwapRate(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  const decimals = n >= 1 ? 4 : n >= 0.01 ? 6 : 7;
+  return n.toFixed(decimals).replace(/\.?0+$/, "") || "0";
+}
+
 function deriveSwapButtonState(
   isWalletConnected: boolean,
   tokenIn: Token | null,
@@ -399,27 +414,24 @@ export const SwapCard = ({
     // Show the loading affordance immediately so the UI feels responsive even
     // though the actual fetch is delayed by the debounce window.
     setIsQuoteLoading(true);
-    const timer = setTimeout(() => {
+    AquariusService.getSwapQuote(
+      parseFloat(amountIn),
+      tokenIn.symbol as "XLM" | "USDC",
+      userAddress,
+    ).then((quote) => {
       if (cancelled) return;
-      AquariusService.getSwapQuote(
-        parseFloat(amountIn),
-        tokenIn.symbol as "XLM" | "USDC",
-        userAddress,
-      ).then((quote) => {
-        if (cancelled) return;
-        if (quote && parseFloat(quote) > 0) {
-          const outNum = parseFloat(quote);
-          setAmountOut(outNum.toFixed(2));
-          setExchangeRate(
-            `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
-          );
-        } else {
-          setAmountOut("");
-          setExchangeRate(null);
-        }
-      }).finally(() => { if (!cancelled) setIsQuoteLoading(false); });
-    }, QUOTE_DEBOUNCE_MS);
-    return () => { cancelled = true; clearTimeout(timer); };
+      if (quote && parseFloat(quote) > 0) {
+        const outNum = parseFloat(quote);
+        setAmountOut(outNum.toFixed(2));
+        setExchangeRate(
+          `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
+        );
+      } else {
+        setAmountOut("");
+        setExchangeRate(null);
+      }
+    }).finally(() => { if (!cancelled) setIsQuoteLoading(false); });
+    return () => { cancelled = true; };
   }, [amountIn, tokenIn?.id, isAquarius, userAddress]);
 
   // Auto-fetch quote when amountIn changes (Soroswap)

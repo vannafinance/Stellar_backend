@@ -109,10 +109,14 @@ const toChartData = (
   key: "totalDepositedUSD" | "earnedYieldUSD"
 ): Array<{ date: string; amount: number }> => {
   if (snapshots.length === 0) return [];
+  // Earned yield on testnet/short timeframes is often well under $0.01.
+  // Rounding to 2 decimals would flatten the chart to zero, so keep more
+  // precision for earnings while keeping deposits at 2 decimals.
+  const decimals = key === "earnedYieldUSD" ? 6 : 2;
   const points = snapshots
     .map((item) => ({
       date: new Date(item.timestamp).toISOString(),
-      amount: parseFloat((item[key] || 0).toFixed(2)),
+      amount: parseFloat((item[key] || 0).toFixed(decimals)),
     }))
     .filter((item) => Number.isFinite(item.amount));
 
@@ -311,10 +315,12 @@ export default function Earn() {
       setOverviewHistory((prev) => {
         const now = Date.now();
         const roundedDeposited = parseFloat(totalDepositedUSD.toFixed(2));
-        const roundedEarned = parseFloat(earnedYieldUSD.toFixed(4));
+        const roundedEarned = parseFloat(earnedYieldUSD.toFixed(6));
         const last = prev[prev.length - 1];
         const depositedChanged = !last || Math.abs(last.totalDepositedUSD - roundedDeposited) >= 0.01;
-        const earnedChanged = !last || Math.abs(last.earnedYieldUSD - roundedEarned) >= 0.01;
+        // Earned yield can grow by sub-cent amounts per snapshot (especially on
+        // testnet). Use a much smaller threshold so micro-yield still registers.
+        const earnedChanged = !last || Math.abs(last.earnedYieldUSD - roundedEarned) >= 0.000001;
         // Throttle: even when values change every 30s oracle tick, don't push
         // a new chart point more than once per minute. This is what stops the
         // long-range chart shape from visibly reshaping every refresh.
@@ -485,10 +491,18 @@ export default function Earn() {
           <article className="flex-1 min-w-0">
             <CollapsibleChart
               label="Net Earnings"
-              statValue={`$${(liveEarnedYieldData.length > 0
-                ? liveEarnedYieldData[liveEarnedYieldData.length - 1].amount
-                : 0
-              ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              statValue={(() => {
+                const v = liveEarnedYieldData.length > 0
+                  ? liveEarnedYieldData[liveEarnedYieldData.length - 1].amount
+                  : 0;
+                // Below $0.01, show more decimals so micro-yield is visible
+                // instead of collapsing to "$0.00".
+                const max = v > 0 && v < 0.01 ? 6 : 2;
+                return `$${v.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: max,
+                })}`;
+              })()}
               chartProps={{
                 type: "net-apy",
                 customData: liveEarnedYieldData,

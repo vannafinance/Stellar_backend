@@ -12,6 +12,7 @@ import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/marg
 import type { LitePosition } from "./lite-position-types";
 import { calcExitPreview } from "./lite-position-math";
 import { closePosition } from "@/lib/one-click-strategy";
+import { applyLiteExit } from "@/lib/lite-positions";
 
 function parseContractError(msg: string): string {
   if (!msg) return "Transaction failed. Please try again.";
@@ -154,6 +155,10 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
         onStep: (msg) => setTxModal((p) => ({ ...p, message: msg })),
       });
       if (!result.success) throw new Error(parseContractError(result.error ?? ""));
+      // Drop / scale the Lite registry record to match the on-chain state.
+      // Without this the Position tab keeps showing the original numbers
+      // even after a 100% close, which looks like the close failed.
+      applyLiteExit(position.id, exitPct);
       setTxModal({
         open: true, status: "success",
         title: exitPct === 100 ? "Position Closed" : `${exitPct}% Exit Complete`,

@@ -16,6 +16,11 @@ interface PositionstableProps {
 }
 
 const ITEMS_PER_PAGE = 5;
+// Match the store's USD-denominated dust floor. A previously-repaid loan
+// often leaves a sub-cent residual that rounds to "0.00 XLM" in the UI but
+// would still pass an amount-only filter — keeping the Repay button hot
+// when there's nothing real left to repay.
+const BORROW_DUST_USD = 0.01;
 const BORROW_DUST_EPSILON = 1e-6;
 
 const PRICEABLE_TOKENS = ['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC'];
@@ -82,7 +87,12 @@ export const Positionstable = ({
 
     for (const [token, bal] of borrowedEntries) {
       const amount = parseFloat(bal.amount || '0');
-      if (!(amount > BORROW_DUST_EPSILON)) continue;
+      const usd = parseFloat(bal.usdValue || '0');
+      // Drop dust by both axes: the token amount must be non-zero AND the
+      // USD value must clear the cent floor. Either alone leaks: a 0.001
+      // XLM dust passes the amount check but is worth $0; a $0.005 amount
+      // passes the USD check but is below the cent floor.
+      if (!(amount > BORROW_DUST_EPSILON) || !(usd > BORROW_DUST_USD)) continue;
 
       const canonical = canonicalToken(token);
       const existing = dedupedBorrowed.get(canonical);
@@ -173,13 +183,14 @@ export const Positionstable = ({
   const [currentPage, setCurrentPage] = useState<number>(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filter positions based on active tab
+  // Current Positions = anything the user currently has collateral on (the
+  // `positions` array is already keyed off non-zero collateral entries, so
+  // every row qualifies). Rows with no real borrow render the Repay button
+  // in disabled gray rather than dropping into the History tab — which is
+  // a separate view that lists margin transaction events, not positions.
   const filteredPositions = useMemo(() => {
-    if (activeTab === "currentPositions") {
-      return positions.filter((pos: Position) => pos.borrowed.length > 0);
-    } else {
-      return positions.filter((pos: Position) => pos.borrowed.length === 0);
-    }
+    if (activeTab === "currentPositions") return positions;
+    return [];
   }, [positions, activeTab]);
 
   // Calculate pagination
@@ -483,21 +494,21 @@ export const Positionstable = ({
         viewport={{ once: true }}
         transition={{ duration: 0.3, delay: idx * 0.08 + 0.3 }}
       >
-        {item.isOpen && item.borrowed.length > 0 ? (
-          <div className="w-fit">
-            <Button
-              size="small"
-              type="gradient"
-              disabled={false}
-              text="Repay"
-              onClick={() => onRepayClick?.(item.borrowed[0]?.assetData.asset)}
-            />
-          </div>
-        ) : (
-          <span className={`text-[12px] font-medium ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>
-            Repaid
-          </span>
-        )}
+        {(() => {
+          const totalBorrowUsd = item.borrowed.reduce((s, b) => s + (b.usdValue || 0), 0);
+          const canRepay = item.borrowed.length > 0 && totalBorrowUsd > BORROW_DUST_USD;
+          return (
+            <div className="w-fit">
+              <Button
+                size="small"
+                type="gradient"
+                disabled={!canRepay}
+                text="Repay"
+                onClick={() => canRepay && onRepayClick?.(item.borrowed[0]?.assetData.asset)}
+              />
+            </div>
+          );
+        })()}
       </motion.div>
     </motion.article>
   );
@@ -592,19 +603,19 @@ export const Positionstable = ({
 
         {/* Action */}
         <div className="flex justify-end">
-          {item.isOpen && item.borrowed.length > 0 ? (
-            <Button
-              size="small"
-              type="gradient"
-              disabled={false}
-              text="Repay"
-              onClick={() => onRepayClick?.(item.borrowed[0]?.assetData.asset)}
-            />
-          ) : (
-            <span className={`text-[12px] font-medium ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>
-              Repaid
-            </span>
-          )}
+          {(() => {
+            const totalBorrowUsd = item.borrowed.reduce((s, b) => s + (b.usdValue || 0), 0);
+            const canRepay = item.borrowed.length > 0 && totalBorrowUsd > BORROW_DUST_USD;
+            return (
+              <Button
+                size="small"
+                type="gradient"
+                disabled={!canRepay}
+                text="Repay"
+                onClick={() => canRepay && onRepayClick?.(item.borrowed[0]?.assetData.asset)}
+              />
+            );
+          })()}
         </div>
       </motion.div>
     );

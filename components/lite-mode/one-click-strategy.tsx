@@ -7,6 +7,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { useMarginAccountInfoStore, createMarginAccount } from "@/store/margin-account-info-store";
 import { executeOneClickStrategy } from "@/lib/one-click-strategy";
+import { appendLitePosition } from "@/lib/lite-positions";
 import { iconPaths } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { LeverageSlider } from "@/components/ui/leverage-slider";
@@ -317,6 +318,31 @@ export const OneClickStrategy = () => {
       });
 
       if (!result.success) throw new Error(result.error);
+
+      // Track this deployment in our Lite-only registry. The Position tab
+      // reads from here (not from the margin store's borrowedBalances) so a
+      // user with both Pro borrows and Lite strategies sees them separated.
+      appendLitePosition({
+        marginAccountAddress,
+        poolId: selectedPool.id,
+        poolLabel: collateralAsset,
+        protocol: selectedPool.protocol,
+        poolVersion: selectedPool.poolVersion,
+        poolType: selectedPool.type,
+        poolTokens: selectedPool.tokens,
+        collateralAsset,
+        collateralAmount: collateralNum,
+        collateralUsdAtOpen: collateralUsd,
+        borrowAsset,
+        borrowAmount: borrowedAmount,
+        borrowUsdAtOpen: borrowUsd,
+        leverage,
+        supplyApr: selectedPool.supplyApr,
+        vannaFeeApr: selectedPool.borrowApr,
+        liquidationLtv: 82,
+        isSameAsset: collateralAsset === borrowAsset,
+        txHash: result.hash,
+      });
 
       setTxModal({
         open: true, status: "success",

@@ -1053,8 +1053,54 @@ export class AquariusService {
   }
 
   /**
-   * Get expected output amount from pool reserves.
-   * Tries all available XLM/USDC pools on Aquarius and returns the best (highest) quote.
+   * Ask the Aquarius router for the swap output via its `estimate_swap_routed` view.
+   * Mirrors the exact swaps_chain that `swap_chained` would execute, so the returned
+   * amount is what the actual swap will produce (no off-chain math drift).
+   * Returns human-readable amount (7 decimals), or null if the router rejects/lacks the method.
+   */
+  private static async estimateSwapRouted(
+    tokenInContract: string,
+    amountInStroops: bigint,
+    poolIndexBytes: Buffer,
+  ): Promise<number | null> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      const router = new StellarSdk.Contract(CONTRACT_ADDRESSES.AQUARIUS_ROUTER);
+      const swapsChain = buildSwapsChain(tokenInContract, poolIndexBytes);
+
+      const tx = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          router.call(
+            'estimate_swap_routed',
+            swapsChain,
+            StellarSdk.nativeToScVal(tokenInContract, { type: 'address' }),
+            StellarSdk.nativeToScVal(amountInStroops, { type: 'u128' }),
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+      if (!StellarSdk.rpc.Api.isSimulationSuccess(sim) || !sim.result?.retval) return null;
+
+      const raw = StellarSdk.scValToNative(sim.result.retval) as bigint;
+      const amountOut = Number(raw) / 1e7;
+      return Number.isFinite(amountOut) && amountOut > 0 ? amountOut : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get expected output amount for the swap.
+   * Primary path: ask the Aquarius router (`estimate_swap_routed`) — guarantees the quote
+   *   matches what `swap_chained` will actually return at execution.
+   * Fallback path: read pool reserves and compute the constant-product output locally.
    * Returns the output amount in human-readable form (7 decimals), or null on error.
    */
   static async getSwapQuote(
@@ -1067,19 +1113,25 @@ export class AquariusService {
       const tokenInContract = tokenInSymbol === 'XLM' ? XLM_CONTRACT : CONTRACT_ADDRESSES.AQUARIUS_USDC;
       const amountInStroops = BigInt(Math.round(amountIn * 1e7));
 
-      // Discover all pools for this pair and pick the one giving the best (highest) quote.
-      // This ensures we always match the most liquid Aquarius pool (same as their UI).
       const poolIndices = await AquariusService.getAquariusPoolIndices();
 
       let bestAmount = 0;
       let bestQuote: string | null = null;
 
       for (const poolIndexBytes of poolIndices) {
-        const amount = await AquariusService.getQuotedOutForPoolIndex(
+        // Prefer the router's own estimate; fall back to local math only if router rejects.
+        let amount = await AquariusService.estimateSwapRouted(
           tokenInContract,
           amountInStroops,
           poolIndexBytes,
         );
+        if (amount === null) {
+          amount = await AquariusService.getQuotedOutForPoolIndex(
+            tokenInContract,
+            amountInStroops,
+            poolIndexBytes,
+          );
+        }
         if (amount !== null && amount > bestAmount) {
           bestAmount = amount;
           bestQuote = amount.toFixed(7);
