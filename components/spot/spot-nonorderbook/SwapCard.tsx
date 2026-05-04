@@ -9,6 +9,7 @@ import { MarginAccountService } from "@/lib/margin-utils";
 import { AquariusService } from "@/lib/aquarius-utils";
 import { SoroswapService } from "@/lib/soroswap-utils";
 import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 import { SwapInput } from "./SwapInput";
 import { SwapDirectionButton } from "./SwapDirectionButton";
 import { SwapDetails } from "./SwapDetails";
@@ -123,6 +124,84 @@ export const SwapCard = ({
   // Amount state
   const [amountIn, setAmountIn] = useState("");
   const [amountOut, setAmountOut] = useState("");
+
+  // Live on-chain prices for the active pair, used for the per-input USD echo
+  // and the click-to-swap conversion ratio chip. The hook canonicalises symbols
+  // and refreshes every 30s; AqUSDC / SoUSDC alias to USDC inside oracle-price.ts.
+  const swapTokenPrices = useTokenPrices(
+    [tokenIn?.symbol, tokenOut?.symbol].filter((s): s is string => Boolean(s)),
+  );
+  const tokenInPrice = tokenIn ? swapTokenPrices[tokenIn.symbol.toUpperCase()] ?? 0 : 0;
+  const tokenOutPrice = tokenOut ? swapTokenPrices[tokenOut.symbol.toUpperCase()] ?? 0 : 0;
+
+  const formatUsd = (value: number): string =>
+    value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const amountInUsd = useMemo(() => {
+    const n = parseFloat(amountIn);
+    if (!Number.isFinite(n) || n <= 0 || tokenInPrice <= 0) return null;
+    return formatUsd(n * tokenInPrice);
+  }, [amountIn, tokenInPrice]);
+
+  const amountOutUsd = useMemo(() => {
+    const n = parseFloat(amountOut);
+    if (!Number.isFinite(n) || n <= 0 || tokenOutPrice <= 0) return null;
+    return formatUsd(n * tokenOutPrice);
+  }, [amountOut, tokenOutPrice]);
+
+  // Click-to-flip direction for the displayed exchange-rate row.
+  const [rateInverted, setRateInverted] = useState(false);
+  const handleFlipRate = useCallback(() => setRateInverted((v) => !v), []);
+
+  // Oracle-derived cross rate. We prefer this over the raw DEX quote ratio
+  // because thin testnet liquidity can produce wildly off-fair rates
+  // (e.g. "1 USDC = 0.62 XLM" when fair value is ~6.25 XLM). Falls back to
+  // the quote-derived `exchangeRate` (set below) when oracle data is missing.
+  const formatRate = (value: number): string => {
+    if (!Number.isFinite(value) || value <= 0) return "0";
+    if (value >= 100) return value.toFixed(2);
+    if (value >= 1) return value.toFixed(4);
+    return value.toFixed(6);
+  };
+
+  const oracleExchangeRate = useMemo(() => {
+    if (!tokenIn || !tokenOut) return null;
+    if (tokenInPrice <= 0 || tokenOutPrice <= 0) return null;
+    const rate = rateInverted
+      ? tokenOutPrice / tokenInPrice
+      : tokenInPrice / tokenOutPrice;
+    const fromSymbol = rateInverted ? tokenOut.symbol : tokenIn.symbol;
+    const toSymbol = rateInverted ? tokenIn.symbol : tokenOut.symbol;
+    return `1 ${fromSymbol} = ${formatRate(rate)} ${toSymbol}`;
+  }, [tokenIn, tokenOut, tokenInPrice, tokenOutPrice, rateInverted]);
+
+  // Price impact = how far the executed swap rate diverges from oracle truth.
+  //   impact_pct = (in_usd - out_usd) / in_usd * 100
+  // A small positive number is normal (LP fee + tiny slippage).
+  // Anything >3% is a red flag, >5% blocks the swap with a warning banner.
+  const priceImpactInfo = useMemo<{
+    pct: number | null;
+    label: string | null;
+    level: "low" | "medium" | "high" | null;
+  }>(() => {
+    const inUsd = parseFloat(amountIn) * tokenInPrice;
+    const outUsd = parseFloat(amountOut) * tokenOutPrice;
+    if (
+      !Number.isFinite(inUsd) ||
+      !Number.isFinite(outUsd) ||
+      inUsd <= 0 ||
+      outUsd <= 0
+    ) {
+      return { pct: null, label: null, level: null };
+    }
+    const pct = ((inUsd - outUsd) / inUsd) * 100;
+    const level = pct < 1 ? "low" : pct < 3 ? "medium" : "high";
+    const sign = pct >= 0 ? "-" : "+";
+    return { pct, label: `${sign}${Math.abs(pct).toFixed(2)}%`, level };
+  }, [amountIn, amountOut, tokenInPrice, tokenOutPrice]);
+
+  const isHighPriceImpact =
+    priceImpactInfo.pct !== null && priceImpactInfo.pct > 5;
 
   // Quote state
   const [isQuoteLoading, setIsQuoteLoading] = useState(false);
@@ -304,60 +383,74 @@ export const SwapCard = ({
     setTxStatus("idle");
   }, [tokenInBalance]);
 
+  // Debounce window for quote fetches. Each Soroban simulateTransaction round
+  // trip costs ~1–3s on testnet, so firing on every keystroke creates a queue
+  // of 5–10 in-flight RPC calls for a single typed amount. Wait until the user
+  // pauses for `QUOTE_DEBOUNCE_MS` before asking the DEX.
+  const QUOTE_DEBOUNCE_MS = 400;
+
   // Auto-fetch quote when amountIn changes (Aquarius only)
   useEffect(() => {
     if (!isAquarius || !tokenIn || !amountIn || parseFloat(amountIn) <= 0 || !userAddress) {
-      if (isAquarius) { setAmountOut(""); setExchangeRate(null); }
+      if (isAquarius) { setAmountOut(""); setExchangeRate(null); setIsQuoteLoading(false); }
       return;
     }
     let cancelled = false;
+    // Show the loading affordance immediately so the UI feels responsive even
+    // though the actual fetch is delayed by the debounce window.
     setIsQuoteLoading(true);
-    AquariusService.getSwapQuote(
-      parseFloat(amountIn),
-      tokenIn.symbol as "XLM" | "USDC",
-      userAddress,
-    ).then((quote) => {
+    const timer = setTimeout(() => {
       if (cancelled) return;
-      if (quote && parseFloat(quote) > 0) {
-        const outNum = parseFloat(quote);
-        setAmountOut(outNum.toFixed(2));
-        setExchangeRate(
-          `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
-        );
-      } else {
-        setAmountOut("");
-        setExchangeRate(null);
-      }
-    }).finally(() => { if (!cancelled) setIsQuoteLoading(false); });
-    return () => { cancelled = true; };
+      AquariusService.getSwapQuote(
+        parseFloat(amountIn),
+        tokenIn.symbol as "XLM" | "USDC",
+        userAddress,
+      ).then((quote) => {
+        if (cancelled) return;
+        if (quote && parseFloat(quote) > 0) {
+          const outNum = parseFloat(quote);
+          setAmountOut(outNum.toFixed(2));
+          setExchangeRate(
+            `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
+          );
+        } else {
+          setAmountOut("");
+          setExchangeRate(null);
+        }
+      }).finally(() => { if (!cancelled) setIsQuoteLoading(false); });
+    }, QUOTE_DEBOUNCE_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [amountIn, tokenIn?.id, isAquarius, userAddress]);
 
   // Auto-fetch quote when amountIn changes (Soroswap)
   useEffect(() => {
     if (!isSoroswap || !tokenIn || !amountIn || parseFloat(amountIn) <= 0 || !userAddress) {
-      if (isSoroswap) { setAmountOut(""); setExchangeRate(null); }
+      if (isSoroswap) { setAmountOut(""); setExchangeRate(null); setIsQuoteLoading(false); }
       return;
     }
     let cancelled = false;
     setIsQuoteLoading(true);
-    SoroswapService.getSwapQuote(
-      parseFloat(amountIn),
-      tokenIn.symbol as "XLM" | "USDC",
-      userAddress,
-    ).then((quote) => {
+    const timer = setTimeout(() => {
       if (cancelled) return;
-      if (quote && parseFloat(quote) > 0) {
-        const outNum = parseFloat(quote);
-        setAmountOut(outNum.toFixed(2));
-        setExchangeRate(
-          `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
-        );
-      } else {
-        setAmountOut("");
-        setExchangeRate(null);
-      }
-    }).finally(() => { if (!cancelled) setIsQuoteLoading(false); });
-    return () => { cancelled = true; };
+      SoroswapService.getSwapQuote(
+        parseFloat(amountIn),
+        tokenIn.symbol as "XLM" | "USDC",
+        userAddress,
+      ).then((quote) => {
+        if (cancelled) return;
+        if (quote && parseFloat(quote) > 0) {
+          const outNum = parseFloat(quote);
+          setAmountOut(outNum.toFixed(2));
+          setExchangeRate(
+            `1 ${tokenIn.symbol} = ${(outNum / parseFloat(amountIn)).toFixed(2)} ${tokenOut?.symbol ?? ""}`,
+          );
+        } else {
+          setAmountOut("");
+          setExchangeRate(null);
+        }
+      }).finally(() => { if (!cancelled) setIsQuoteLoading(false); });
+    }, QUOTE_DEBOUNCE_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [amountIn, tokenIn?.id, isSoroswap, userAddress]);
 
   const isActionLoading = isQuoteLoading || txStatus === "loading";
@@ -616,7 +709,7 @@ export const SwapCard = ({
             label="You Pay"
             token={tokenIn}
             amount={amountIn}
-            amountUsd={null}
+            amountUsd={amountInUsd}
             balance={tokenInBalance}
             onTokenSelect={() => setTokenModalTarget("in")}
             onAmountChange={(val) => { setAmountIn(val); setActivePercent(null); setTxStatus("idle"); }}
@@ -637,7 +730,7 @@ export const SwapCard = ({
             label="You Receive"
             token={tokenOut}
             amount={amountOut}
-            amountUsd={null}
+            amountUsd={amountOutUsd}
             balance={tokenOutBalance}
             isReadOnly
             isLoading={isQuoteLoading}
@@ -650,9 +743,11 @@ export const SwapCard = ({
               isVisible={hasQuote}
               isExpanded={isDetailsExpanded}
               onToggleExpand={() => setIsDetailsExpanded((prev) => !prev)}
-              exchangeRate={exchangeRate}
-              priceImpact={null}
-              priceImpactLevel={null}
+              exchangeRate={oracleExchangeRate ?? exchangeRate}
+              onFlipRate={oracleExchangeRate ? handleFlipRate : undefined}
+              quoteRate={oracleExchangeRate && exchangeRate ? exchangeRate : null}
+              priceImpact={priceImpactInfo.label}
+              priceImpactLevel={priceImpactInfo.level}
               slippage={slippageMode === "auto" ? "0.5" : slippage}
               minReceived={minReceived}
               fee="0.30%"
@@ -662,6 +757,27 @@ export const SwapCard = ({
               onEditSlippage={() => setIsSettingsOpen(true)}
             />
           </div>
+
+          {/* High price-impact warning banner — visible when the executed
+              quote diverges materially from the oracle (e.g. thin pool). */}
+          {isHighPriceImpact && (
+            <div
+              className={`mt-2 px-3 py-2 rounded-xl text-[12px] font-semibold flex items-start gap-2 ${
+                isDark ? "bg-[#FC5457]/10 text-[#FC5457] border border-[#FC5457]/30" : "bg-[#FFF1F1] text-[#C62525] border border-[#FFB3B3]"
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 mt-0.5">
+                <path d="M7 1.5L13 12.5H1L7 1.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                <path d="M7 5.5V8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                <circle cx="7" cy="10" r="0.7" fill="currentColor" />
+              </svg>
+              <span>
+                High price impact{priceImpactInfo.label ? ` (${priceImpactInfo.label})` : ""}.
+                You'll receive far less than fair value  this pool's liquidity is too thin
+                for this trade size. Reduce the amount or pick another DEX.
+              </span>
+            </div>
+          )}
 
           {/* No margin account warning (Aquarius margin mode) */}
           {isAquarius && swapMode === "margin" && isWalletConnected && !marginAccountAddress && (

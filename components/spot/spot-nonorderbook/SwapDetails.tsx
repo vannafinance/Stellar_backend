@@ -9,6 +9,11 @@ interface SwapDetailsProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
   exchangeRate: string | null;
+  /** When provided, clicking the rate text flips the direction (A→B ↔ B→A). */
+  onFlipRate?: () => void;
+  /** Actual executed swap rate from the DEX quote — shown alongside the
+   *  oracle-driven rate inside the expanded panel so users can see the gap. */
+  quoteRate?: string | null;
   priceImpact: string | null;
   priceImpactLevel: PriceImpactLevel;
   slippage: string;
@@ -31,6 +36,8 @@ export const SwapDetails = ({
   isExpanded,
   onToggleExpand,
   exchangeRate,
+  onFlipRate,
+  quoteRate,
   priceImpact,
   priceImpactLevel,
   slippage,
@@ -66,11 +73,27 @@ export const SwapDetails = ({
       >
         <div className="flex items-center gap-2">
           {exchangeRate && (
-            <span
-              className={`text-[12px] font-medium leading-[18px] ${isDark ? "text-[#CCCCCC]" : "text-[#555555]"}`}
-            >
-              {exchangeRate}
-            </span>
+            onFlipRate ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFlipRate();
+                }}
+                title="Click to flip direction"
+                className={`text-[12px] font-medium leading-[18px] cursor-pointer transition-colors ${
+                  isDark ? "text-[#CCCCCC] hover:text-white" : "text-[#555555] hover:text-[#111111]"
+                }`}
+              >
+                {exchangeRate}
+              </button>
+            ) : (
+              <span
+                className={`text-[12px] font-medium leading-[18px] ${isDark ? "text-[#CCCCCC]" : "text-[#555555]"}`}
+              >
+                {exchangeRate}
+              </span>
+            )
           )}
           {/* Refresh button */}
           <motion.button
@@ -155,6 +178,18 @@ export const SwapDetails = ({
                       />
                     )}
                   </div>
+                </DetailRow>
+              )}
+
+              {/* Actual quote rate (DEX-executed) — distinct from the
+                  oracle rate shown in the header so users see the spread. */}
+              {quoteRate && (
+                <DetailRow label="Quote Rate" isDark={isDark}>
+                  <span
+                    className={`text-[12px] font-medium leading-[18px] ${isDark ? "text-[#CCCCCC]" : "text-[#555555]"}`}
+                  >
+                    {quoteRate}
+                  </span>
                 </DetailRow>
               )}
 

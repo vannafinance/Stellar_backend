@@ -2,9 +2,11 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { FIELD_FORMAT_MAP, LARGE_FORMAT_FIELDS } from "@/lib/constants/margin";
 import { formatValue, FormatType } from "@/lib/utils/format-value";
 import { useTheme } from "@/contexts/theme-context";
+import { AddressBadge, isStellarContractAddress } from "@/components/ui/address-badge";
 
 interface InfoItem {
   id: string;
@@ -28,11 +30,19 @@ interface InfoProps {
   showExpandable?: boolean;
 }
 
-// Format value using the format helper - defined outside component
+// Format value using the format helper - defined outside component.
+// Returns a ReactNode so address-shaped strings render as a copyable badge,
+// while everything else stays plain text (backwards-compatible).
 const formatFieldValue = (
   id: string,
   value: number | string | null | undefined,
-): string => {
+): ReactNode => {
+  // Stellar contract addresses (56-char strings starting with C) get the
+  // copyable + explorer-link treatment instead of being shown as raw text.
+  if (isStellarContractAddress(value)) {
+    return <AddressBadge address={value} />;
+  }
+
   // If value is already a string, return it directly
   if (typeof value === "string") {
     return value;

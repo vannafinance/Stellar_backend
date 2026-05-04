@@ -4,7 +4,7 @@ import { Carousel } from "@/components/ui/carousel";
 import {
   CAROUSEL_ITEMS,
   MARGIN_ACCOUNT_INFO_ITEMS,
-  MARGIN_ACCOUNT_MORE_DETAILS_ITEMS,
+  MARGIN_ORACLE_LTS_ITEMS,
 } from "@/lib/constants/margin";
 import { motion } from "framer-motion";
 import { useState, useRef, useEffect, useMemo } from "react";
@@ -13,7 +13,9 @@ import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
 import { AccountStats } from "@/components/margin/account-stats";
+import { MarginAccountAddress } from "@/components/margin/margin-account-address";
 import { useMarginAccountInfoStore, checkUserMarginAccount, refreshBorrowedBalances } from "@/store/margin-account-info-store";
+import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { useUserStore } from "@/store/user";
 import { formatValue } from "@/lib/utils/format-value";
 import { ACCOUNT_STATS_ITEMS } from "@/lib/constants/margin";
@@ -91,6 +93,9 @@ export default function Home() {
   const marginAccountAddress = useMarginAccountInfoStore(
     (state) => state.marginAccountAddress
   );
+  const isLoadingBorrowedBalances = useMarginAccountInfoStore(
+    (state) => state.isLoadingBorrowedBalances
+  );
 
   // Check for margin account when user address changes or wallet connects
   useEffect(() => {
@@ -126,17 +131,22 @@ export default function Home() {
       collateralLeftBeforeLiquidation,
       netAvailableCollateral,
       netAmountBorrowed: totalBorrowedValue,
-      netProfitAndLoss: totalValue,
+      // Realised P&L is 0 until proper deposit-history accounting is wired up;
+      // mapping totalValue here misled users into reading their own equity as
+      // "profit". Once we track per-user cost basis we can compute
+      //   P&L = current_collateral_value - cumulative_deposits + cumulative_withdrawals
+      netProfitAndLoss: 0,
     };
   }, [
     avgHealthFactor,
     collateralLeftBeforeLiquidation,
     netAvailableCollateral,
     totalBorrowedValue,
-    totalValue,
   ]);
 
-  // Format data for InfoCard component
+  // Format data for InfoCard component. The address fields below are real
+  // on-chain contract addresses; InfoCard renders them as copyable badges
+  // with a Stellar Expert link via its address-detection logic.
   const marginAccountInfo = {
     totalBorrowedValue,
     totalCollateralValue,
@@ -149,39 +159,66 @@ export default function Home() {
     debtLimit,
     minDebt,
     maxDebt,
+    oracleContract: CONTRACT_ADDRESSES.ORACLE,
+    liquidationThreshold: "1.10x",
+    riskEngine: CONTRACT_ADDRESSES.RISK_ENGINE,
   };
 
-  // Format account stats value - defined outside rendering
+  // Format account stats value with explicit units, following industry
+  // conventions: Health Factor is a bare unitless ratio (Aave/Compound style,
+  // never with ×), USD totals with $ prefix, P&L with signed $ prefix (+/-).
   const formatAccountStatValue = (itemId: string, value: number) => {
     if (itemId === "netHealthFactor") {
       if (value === Infinity || !isFinite(value) || value >= 999) {
         return "∞";
       }
-      return formatValue(value, { type: "health-factor" });
+      return formatValue(value, {
+        type: "health-factor",
+        showZeroAsDash: false,
+      });
     }
-    return formatValue(value, {
+
+    const usdText = formatValue(Math.abs(value), {
       type: "number",
       useLargeFormat: true,
+      showZeroAsDash: false,
     });
+
+    if (itemId === "netProfitAndLoss") {
+      if (value > 0) return `+$${usdText}`;
+      if (value < 0) return `-$${usdText}`;
+      return `$${usdText}`;
+    }
+
+    return `$${usdText}`;
   };
 
-  // Prepare account stats values for AccountStats component
+  // Prepare account stats values for AccountStats component.
+  // While the on-chain refresh is in flight AND we don't yet have any real
+  // data (collateral + debt both 0), render a spinner instead of "$0.00" so
+  // a freshly-connected wallet doesn't briefly look empty during the ~12s
+  // RPC round-trip. Once data lands we keep showing the last-known values
+  // through subsequent polling refreshes (no flicker every 30s).
+  const noDataYet = totalCollateralValue <= 0 && totalBorrowedValue <= 0;
+  const showSpinner = isLoadingBorrowedBalances && noDataYet;
   const accountStatsValues = ACCOUNT_STATS_ITEMS.reduce((acc, item) => {
-    if (!hasMarginAccount && totalCollateralValue <= 0 && totalBorrowedValue <= 0) {
-      acc[item.id] = "-";
+    if (showSpinner) {
+      acc[item.id] = "⟳";
       return acc;
     }
-
-    const value = accountStats[item.id as keyof typeof accountStats] || 0;
-
-    if (value === 0) {
-      acc[item.id] = "-";
-    } else {
-      acc[item.id] = formatAccountStatValue(item.id, value);
-    }
-
+    const value = accountStats[item.id as keyof typeof accountStats] ?? 0;
+    acc[item.id] = formatAccountStatValue(item.id, value);
     return acc;
   }, {} as Record<string, string>);
+
+  // Industry-standard P&L coloring: green when positive, red when negative,
+  // neutral (default) at exactly zero.
+  const accountStatsValueColors = (() => {
+    const pnl = accountStats.netProfitAndLoss ?? 0;
+    if (pnl > 0) return { netProfitAndLoss: "text-emerald-500" };
+    if (pnl < 0) return { netProfitAndLoss: "text-rose-500" };
+    return undefined;
+  })();
 
   if (appMode === "lite") {
     return (
@@ -218,6 +255,7 @@ export default function Home() {
           <AccountStats
             items={ACCOUNT_STATS_ITEMS}
             values={accountStatsValues}
+            valueColors={accountStatsValueColors}
             gridCols="grid-cols-5"
           />
         </motion.section>
@@ -280,13 +318,19 @@ export default function Home() {
                   height={20}
                 />
               </motion.div>
-              <div className="flex flex-col flex-1">
+              <div className="flex flex-col flex-1 min-w-0">
                 <h2 className={`text-[18px] font-bold ${isDark ? "text-white" : ""}`}>
                   Margin Account Info
                 </h2>
                 <p className="w-full text-[13px] font-medium text-[#A3A3A3]">
                   Stay updated details and status.
                 </p>
+                {marginAccountAddress && (
+                  <MarginAccountAddress
+                    address={marginAccountAddress}
+                    className="mt-1"
+                  />
+                )}
               </div>
             </motion.header>
 
@@ -297,18 +341,11 @@ export default function Home() {
               showExpandable={true}
               expandableSections={[
                 {
-                  title: "MORE DETAILS",
-                  headingBold: true,
-                  items: [...MARGIN_ACCOUNT_MORE_DETAILS_ITEMS],
-                  defaultExpanded: true,
-                  delay: 0.1,
-                },
-                {
                   title: "ORACLES AND LTS",
                   headingBold: true,
-                  items: [...MARGIN_ACCOUNT_MORE_DETAILS_ITEMS],
+                  items: [...MARGIN_ORACLE_LTS_ITEMS],
                   defaultExpanded: false,
-                  delay: 0.2,
+                  delay: 0.1,
                 },
               ]}
             />

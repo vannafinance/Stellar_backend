@@ -13,12 +13,12 @@ import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { iconPaths } from "@/lib/constants";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
-import { InfoCard } from "../margin/info-card";
-import { MARGIN_ACCOUNT_INFO_ITEMS } from "@/lib/constants/margin";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { useBlendPoolStats } from "@/hooks/use-farm";
 import { useBlendStore } from "@/store/blend-store";
+import { useTokenPrice } from "@/hooks/use-token-prices";
+import { DepositSummary } from "./deposit-summary";
 import { appendFarmHistory, buildFarmPoolKey } from "@/lib/farm-history";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
@@ -534,20 +534,16 @@ export const AddLiquidity = memo(function AddLiquidity() {
     );
   }
 
-  // Margin account info for InfoCard
-  const marginAccountInfo = {
-    totalBorrowedValue: useMarginAccountInfoStore.getState().totalBorrowedValue,
-    totalCollateralValue: useMarginAccountInfoStore.getState().totalCollateralValue,
-    totalValue: useMarginAccountInfoStore.getState().totalValue,
-    avgHealthFactor: useMarginAccountInfoStore.getState().avgHealthFactor,
-    timeToLiquidation: useMarginAccountInfoStore.getState().timeToLiquidation,
-    borrowRate: useMarginAccountInfoStore.getState().borrowRate,
-    liquidationPremium: useMarginAccountInfoStore.getState().liquidationPremium,
-    liquidationFee: useMarginAccountInfoStore.getState().liquidationFee,
-    debtLimit: useMarginAccountInfoStore.getState().debtLimit,
-    minDebt: useMarginAccountInfoStore.getState().minDebt,
-    maxDebt: useMarginAccountInfoStore.getState().maxDebt,
-  };
+  // Live oracle price for the selected deposit token; powers the
+  // Morpho-style projected-earnings summary below the input.
+  const tokenPriceUsd = useTokenPrice(selectedToken);
+
+  // Pool's supply APY from on-chain Blend reserve config × utilization.
+  // `poolStats[selectedToken]` returns null while loading or on error.
+  const reserveStats = poolStats[selectedToken];
+  const supplyApyPct = reserveStats
+    ? parseFloat(reserveStats.supplyAPY)
+    : null;
 
   // Token selector as inline token pills
   const token = selectedToken;
@@ -651,9 +647,12 @@ export const AddLiquidity = memo(function AddLiquidity() {
 
       <AnimatePresence>
         {parseFloat(value) > 0 && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
-            <InfoCard data={marginAccountInfo} items={[...MARGIN_ACCOUNT_INFO_ITEMS]} />
-          </motion.div>
+          <DepositSummary
+            tokenSymbol={selectedToken}
+            depositAmount={parseFloat(value) || 0}
+            tokenPriceUsd={tokenPriceUsd}
+            supplyApyPct={supplyApyPct}
+          />
         )}
       </AnimatePresence>
 

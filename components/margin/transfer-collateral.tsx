@@ -15,6 +15,7 @@ import { useUserStore } from "@/store/user";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 import { useTokenPrices } from "@/hooks/use-token-prices";
+import { ConversionRatio } from "@/components/ui/conversion-ratio";
 
 const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
@@ -454,9 +455,9 @@ export const TransferCollateral = () => {
 
         {/* Row 3: balance info + USD + Max */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <span
-              className={`text-[12px] font-medium ${
+              className={`text-[12px] font-medium truncate ${
                 isDark ? "text-[#777777]" : "text-[#A7A7A7]"
               }`}
             >
@@ -471,7 +472,7 @@ export const TransferCollateral = () => {
             </span>
             <motion.button
               onClick={handleMaxValueClick}
-              className={`cursor-pointer rounded-md py-0.5 px-2 text-[11px] font-semibold ${
+              className={`cursor-pointer rounded-md py-0.5 px-2 text-[11px] font-semibold shrink-0 ${
                 isDark
                   ? "bg-[#2A1A3E] text-[#A97EFF]"
                   : "bg-[#F1EBFD] text-[#703AE6]"
@@ -482,6 +483,11 @@ export const TransferCollateral = () => {
             >
               Max
             </motion.button>
+            <ConversionRatio
+              tokenSymbol={selectedCurrency}
+              tokenPrice={selectedTokenPrice}
+              variant="inline"
+            />
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span
@@ -568,13 +574,6 @@ export const TransferCollateral = () => {
           text={isLoading ? "Processing..." : "Transfer"}
           size="large"
           type="gradient"
-          disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount && !isOverSourceBalance)}
-          onClick={handleTransferClick}
-        />
-        <Button
-          text="Flash Close"
-          size="large"
-          type="ghost"
           disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount && !isOverSourceBalance)}
           onClick={handleTransferClick}
         />
