@@ -144,9 +144,16 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
 
   const handlePercentageSelect = (pct: number) => {
     setSelectedPercentage(pct);
-    const balance = parseFloat(blendBalance);
+    // Aquarius / Soroswap rows are LP-token positions; their balance lives in
+    // `lpBalance`, not `blendBalance`. Using blendBalance here would overshoot
+    // the LP cap and trigger "Insufficient LP balance" even on a clean 100%.
+    const sourceBalanceStr = (isAquariusPool || isSoroswapPool) ? lpBalance : blendBalance;
+    const balance = parseFloat(sourceBalanceStr);
     if (!isNaN(balance) && balance > 0) {
-      setValue(((balance * pct) / 100).toFixed(2));
+      // For 100% pin to the exact balance string so any trailing-precision
+      // drift (e.g. 8.85 vs 8.8499999) doesn't push the input over the cap.
+      const next = pct === 100 ? sourceBalanceStr : ((balance * pct) / 100).toFixed(2);
+      setValue(next);
     }
   };
 
@@ -241,7 +248,10 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
     const lpAmount = parseFloat(value);
     const lpAvailable = parseFloat(lpBalance);
     const isInputValid = lpAmount > 0 && !isNaN(lpAmount);
-    const isOverBalance = lpAmount > lpAvailable;
+    // Allow a tiny epsilon (1e-7 = one stroop) so float reformatting like
+    // toFixed(2) round-up doesn't tag a legitimate full-balance withdrawal
+    // as "exceeds LP balance".
+    const isOverBalance = lpAmount > lpAvailable + 1e-7;
     const isSubmitDisabled =
       !userAddress ||
       !marginAccountAddress ||
@@ -373,7 +383,14 @@ export const RemoveLiquidity = memo(function RemoveLiquidity() {
                     setSelectedPercentage(pct);
                     const balance = parseFloat(lpBalance);
                     if (!isNaN(balance) && balance > 0) {
-                      setValue(((balance * pct) / 100).toFixed(2));
+                      // 100% pins to the exact balance string so trailing
+                      // precision (e.g. lpBalance "8.8499999" rounded to
+                      // "8.85" via toFixed(2)) doesn't push us above the
+                      // cap and trip "Exceeds LP balance".
+                      const next = pct === 100
+                        ? lpBalance
+                        : ((balance * pct) / 100).toFixed(2);
+                      setValue(next);
                     }
                   }}
                   className={`px-[10px] py-[6px] rounded-[8px] text-[12px] font-semibold ${

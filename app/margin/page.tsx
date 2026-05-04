@@ -415,7 +415,7 @@ const Margin = () => {
             items={ACCOUNT_STATS_ITEMS}
             values={accountStatsValues}
             valueColors={accountStatsValueColors}
-            gridCols="grid-cols-5"
+            gridCols="grid-cols-4"
           />
         </motion.section>
       )}

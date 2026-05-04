@@ -19,7 +19,14 @@ import { ConversionRatio } from "@/components/ui/conversion-ratio";
 
 const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
-const XLM_MARGIN_WITHDRAW_BUFFER = 5;
+// XLM reserved inside the margin smart account. Stellar requires every
+// account to keep a base reserve (0.5 XLM × (2 + sub_entries)). A margin
+// account holds 4 collateral trustlines + persistent contract storage,
+// which costs ~5 XLM in base reserve, plus Soroban storage TTL/rent and
+// b_rate→underlying rounding dust. A 5 XLM buffer was too tight in
+// practice (4 XLM withdraws still failed on-chain); bumping to 8 keeps
+// the margin account safely above all on-chain minimums.
+const XLM_MARGIN_WITHDRAW_BUFFER = 8;
 const LIQUIDATION_THRESHOLD = 1.1;
 
 export const TransferCollateral = () => {
@@ -137,8 +144,15 @@ export const TransferCollateral = () => {
       text.includes("withdraw transaction failed on-chain") ||
       text.includes("withdraw collateral failed with status")
     ) {
-      if (selectedTransferType === "WB" && totalBorrowedValue <= XLM_TRANSFER_EPSILON) {
-        return `Full withdrawal can fail due to on-chain rounding/state dust. Try up to ${maxExecutableWithdraw.toFixed(2)} ${selectedCurrency}.`;
+      if (
+        selectedTransferType === "WB" &&
+        normalizeContractTokenSymbol(selectedCurrency) === "XLM" &&
+        totalBorrowedValue <= XLM_TRANSFER_EPSILON
+      ) {
+        // The margin smart account itself has to keep ~8 XLM on-chain to
+        // satisfy Stellar's base-reserve rule and Soroban storage rent.
+        // Make this explicit so the user stops blaming a phantom debt.
+        return `~${XLM_MARGIN_WITHDRAW_BUFFER} XLM stay locked in the margin account as Stellar base reserve (needed to keep the smart account alive). You can withdraw at most ${maxExecutableWithdraw.toFixed(2)} XLM.`;
       }
       if (typeof maxSafeWithdrawAmount === "number" && maxSafeWithdrawAmount > 0) {
         return `Withdrawal failed on-chain. Max transferable right now: ${maxSafeWithdrawAmount.toFixed(2)} ${selectedCurrency}.`;

@@ -118,15 +118,20 @@ export const Positionstable = ({
         usdValue: parseFloat(bal.usdValue),
       }));
 
-    // Leverage = total exposure / user equity. The user's equity is what they
-    // actually deposited (totalCollateralValue); the borrow proceeds sit as
-    // additional exposure on top. So 10 USD coll + 20 USD borrow → 3x.
+    // Leverage matches the slider semantic in leverage-assets-tab.tsx:
+    //   borrow_amount = own_deposit × (multiplier − 1)
+    // For a fresh position this means debt_USD == own × (m−1), so
+    //   m = 1 + debt_USD / own_USD  ≈  1 + debt / collateral
+    // when borrow proceeds aren't redeposited. This is the same as the
+    // standard "1 + LTV" leverage figure DeFi protocols display, and it
+    // stays finite & ≥ 1 even when debt exceeds collateral (e.g. user
+    // borrowed and withdrew the proceeds, making equity negative). The
+    // earlier collateral/equity formula divided by 0 / went negative in
+    // exactly those cases and fell through to "1x" — which is what
+    // surfaced as the user-reported "leverage shows 1x" bug.
     const leverage =
       totalCollateralValue > 0
-        ? Math.max(
-            1,
-            parseFloat(((totalCollateralValue + totalBorrowedValue) / totalCollateralValue).toFixed(2))
-          )
+        ? parseFloat((1 + totalBorrowedValue / totalCollateralValue).toFixed(2))
         : 1;
 
     // Interest accrued = current debt − net principal still owed, in USD.

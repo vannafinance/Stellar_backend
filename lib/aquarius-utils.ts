@@ -40,6 +40,13 @@ export interface AquariusPoolStats {
   totalShares: string; // total LP shares, human-readable
   feeFraction: string; // e.g., "0.30%"
   feeRaw: number;      // raw fee fraction (30 = 0.30%)
+  // Optional API-sourced fields (populated when stats come from the
+  // Aquarius AMM API; on-chain-only fallback paths leave these undefined).
+  apy?: string;        // base trading APY, decimal string (e.g. "0.0234")
+  totalApy?: string;   // base + incentive + rewards APY, decimal string
+  volumeUsd?: string;  // aggregate USD volume (whatever window the API ships)
+  liquidityUsd?: string; // pool TVL in USD
+  poolType?: string;   // "constant_product" | "stable" | "concentrated"
 }
 
 export interface AquariusLpEvent {
@@ -102,8 +109,17 @@ interface AquariusApiPoolsResponse {
 interface AquariusApiPoolItem {
   address?: string;
   reserves?: [string, string] | string[];
+  // tokens_str is the API's ordered list of token symbols, matching the
+  // alphabetical-by-contract-address sort of `reserves`. We use it to map
+  // each AQUARIUS_POOLS config's token order onto the API's reserve order.
+  tokens_str?: string[];
   fee?: string;
   total_share?: string;
+  apy?: string;            // base trading APY (decimal string)
+  total_apy?: string;      // base + incentives + rewards
+  volume_usd?: string;     // aggregate USD volume
+  liquidity_usd?: string;  // pool TVL in USD
+  pool_type?: string;      // "constant_product" | "stable" | "concentrated"
 }
 
 const toWad = (amount: number): bigint => {
@@ -138,21 +154,53 @@ export class AquariusService {
     const json = (await response.json()) as AquariusApiPoolsResponse;
     const byAddress: Record<string, AquariusPoolStats> = {};
 
+    // The Aquarius API returns reserves as 7-decimal scaled raw strings
+    // (e.g. "1313891897900000" = 131,389,189.79 / 1e7 = 131,389,189.79 USDC),
+    // ordered alphabetically by token contract address — NOT in the order
+    // that AQUARIUS_POOLS configs list their tokens. Without re-ordering,
+    // the reserveA/reserveB labels would be flipped (XLM value shown under
+    // USDC and vice versa). We map by symbol via `tokens_str` so the
+    // returned reserveA always matches AQUARIUS_POOLS config tokens[0].
+    const SCALAR_7 = 1e7;
+    const fromStroop = (raw: string | undefined): string => {
+      const n = parseFloat(raw ?? '0');
+      return Number.isFinite(n) ? (n / SCALAR_7).toFixed(7) : '0';
+    };
+
     for (const pool of json.items ?? []) {
       const address = (pool.address ?? '').trim().toUpperCase();
       if (!address) continue;
 
-      const reserveA = pool.reserves?.[0] ?? '0';
-      const reserveB = pool.reserves?.[1] ?? '0';
-      const totalShare = pool.total_share ?? '0';
+      // Resolve reserves by symbol so config order wins, not API sort order.
+      const apiTokens = (pool.tokens_str ?? []).map((s) => (s || '').toUpperCase());
+      const reservesByToken: Record<string, string> = {};
+      apiTokens.forEach((sym, idx) => {
+        const raw = pool.reserves?.[idx];
+        if (sym && raw !== undefined) reservesByToken[sym] = raw;
+      });
+
+      // Find this pool's AQUARIUS_POOLS config so we can return reserves in
+      // the config's token order. Falls back to raw API order for unknown
+      // pools (so we degrade gracefully instead of returning zeros).
+      const cfg = AQUARIUS_POOLS.find((p) => p.poolAddress.toUpperCase() === address);
+      const [cfgTokenA, cfgTokenB] = cfg?.tokens ?? [apiTokens[0] ?? '', apiTokens[1] ?? ''];
+      const rawA = reservesByToken[cfgTokenA?.toUpperCase()] ?? pool.reserves?.[0];
+      const rawB = reservesByToken[cfgTokenB?.toUpperCase()] ?? pool.reserves?.[1];
+
+      const totalShare = fromStroop(pool.total_share);
       const feeRaw = Math.round((parseFloat(pool.fee ?? '0.003') || 0.003) * 10_000);
 
       byAddress[address] = {
-        reserveA,
-        reserveB,
+        reserveA: fromStroop(rawA),
+        reserveB: fromStroop(rawB),
         totalShares: totalShare,
         feeFraction: `${(feeRaw / 100).toFixed(2)}%`,
         feeRaw,
+        apy: pool.apy,
+        totalApy: pool.total_apy,
+        volumeUsd: pool.volume_usd,
+        liquidityUsd: pool.liquidity_usd,
+        poolType: pool.pool_type,
       };
     }
 

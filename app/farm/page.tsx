@@ -16,6 +16,7 @@ import { useBlendPoolStats, useUserBlendPositions, useAllAquariusPoolStats, useA
 import { useAllSoroswapPoolStats, useSoroswapPoolStats, useSoroswapLpPosition } from "@/hooks/use-soroswap";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { AQUARIUS_POOLS } from "@/lib/aquarius-utils";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 function fmtNum(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) return '0';
@@ -25,10 +26,40 @@ function fmtNum(value: number, decimals = 2): string {
   return value.toFixed(decimals);
 }
 
+// Pretty-print a pool_type from the Aquarius API into UI text. Soroswap is
+// always xy=k (constant product), so its rows hardcode "Constant Product".
+const formatPoolType = (raw?: string): string => {
+  switch ((raw || "").toLowerCase()) {
+    case "constant_product": return "Constant Product";
+    case "stable":           return "Stable";
+    case "concentrated":     return "Concentrated";
+    default:                 return raw ? raw : "—";
+  }
+};
+
+// Format an Aquarius API APY string (decimal, e.g. "0.0234") into "2.34%".
+const formatApyDecimalString = (raw?: string): string => {
+  const n = parseFloat(raw ?? "");
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return `${(n * 100).toFixed(2)}%`;
+};
+
+// Pools to hide from the LP table by default. The user can toggle them on
+// via the "Hide pools" filter (renders as the "All Pools" dropdown).
+// Only XLM/USDC pairs (Soroswap + Aquarius) are useful right now; the
+// other Aquarius testnet pairs have stale/unrelated data.
+const DEFAULT_HIDDEN_POOL_IDS = new Set<string>([
+  "aquarius-xlm-aqua",
+  "aquarius-xlm-usdt",
+]);
+
 export default function FarmPage() {
   const [activeFilterTab, setActiveFilterTab] = useState<string>("lending-single-assets");
   const [activePositionFilterTab, setActivePositionFilterTab] = useState<string>("current-position");
   const [activeTab, setActiveTab] = useState<string>("vaults");
+  // When false (default), DEFAULT_HIDDEN_POOL_IDS are filtered out of the
+  // LP table; the user flips this from the All Pools / Hide pools toggle.
+  const [showHiddenPools, setShowHiddenPools] = useState(false);
   const userAddress = useUserStore((state) => state.address);
   const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
 
@@ -141,31 +172,39 @@ export default function FarmPage() {
     return { rows };
   }, [userPositions, poolStats, mySSLpBalance, ssStats, aqLpPositions, aquariusPools]);
 
-  // Build LP/Multiple Assets table from live Aquarius + Soroswap pool data
+  // Build LP/Multiple Assets table from live Aquarius + Soroswap pool data.
+  // Column order matches farmTableHeadings:
+  //   Pool · DEX · DEX LP TVL · DEX TVL Token 0 · DEX TVL Token 1 ·
+  //   Pool APR · 24h APY · Fees · Pool Type
   const lpTableBody = useMemo(() => {
     const aqRows = aquariusPools.map(({ pool, stats, isLoading }) => {
       const [tokenA, tokenB] = pool.tokens;
       const loading = isLoading;
-      const tvlTitle = stats
-        ? `${fmtNum(parseFloat(stats.reserveA))} ${tokenA}`
-        : loading ? '...' : '0';
-      const tvlDescription = stats
-        ? `+ ${fmtNum(parseFloat(stats.reserveB))} ${tokenB}`
-        : undefined;
-      const fee = stats ? stats.feeFraction : loading ? '...' : '0';
-      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '0';
+      const tvlTokenA = stats ? `${fmtNum(parseFloat(stats.reserveA))} ${tokenA}` : (loading ? '...' : '0');
+      const tvlTokenB = stats ? `${fmtNum(parseFloat(stats.reserveB))} ${tokenB}` : (loading ? '...' : '0');
+      const fee = stats ? stats.feeFraction : (loading ? '...' : '—');
+      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : (loading ? '...' : '0');
+      // Pool APR uses the API's base trading APY (annualised from fees);
+      // 24h APY shows total APY (base + incentives + rewards) which Aquarius
+      // already exposes as a rolling figure on their dashboard.
+      const poolApr = formatApyDecimalString(stats?.apy);
+      const apy24h = formatApyDecimalString(stats?.totalApy);
+      const poolType = formatPoolType(stats?.poolType);
       return {
         id: pool.id,
         cell: [
-          { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius', pool.feeFraction / 100 + '%', 'Testnet'] },
+          // Single DEX name tag below the pool name — gives the row the same
+          // visual height as the single-asset "Blend Supply" rows without
+          // re-introducing the noisy "0.30% / Testnet" badges the user removed.
+          { chain: tokenA, titles: [tokenA, tokenB], tags: ['Aquarius'] },
           { title: 'Aquarius' },
           { title: shares },
-          { title: tvlTitle, description: tvlDescription },
+          { title: tvlTokenA },
+          { title: tvlTokenB },
+          { title: poolApr },
+          { title: apy24h },
           { title: fee },
-          { title: '0' },
-          { title: '0' },
-          { title: '0' },
-          { title: '0' },
+          { title: poolType },
         ],
       };
     });
@@ -173,59 +212,93 @@ export default function FarmPage() {
     const ssRows = soroswapPools.map(({ pool, stats, isLoading }) => {
       const [tokenA, tokenB] = pool.tokens;
       const loading = isLoading;
-      const tvlTitle = stats
-        ? `${fmtNum(parseFloat(stats.reserveXLM))} ${tokenA}`
-        : loading ? '...' : '0';
-      const tvlDescription = stats
-        ? `+ ${fmtNum(parseFloat(stats.reserveUSDC))} ${tokenB}`
-        : undefined;
-      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : loading ? '...' : '0';
+      const tvlTokenA = stats ? `${fmtNum(parseFloat(stats.reserveXLM))} ${tokenA}` : (loading ? '...' : '0');
+      const tvlTokenB = stats ? `${fmtNum(parseFloat(stats.reserveUSDC))} ${tokenB}` : (loading ? '...' : '0');
+      const shares = stats ? `${fmtNum(parseFloat(stats.totalShares))} LP` : (loading ? '...' : '0');
+      const fee = stats ? stats.feeFraction : (loading ? '...' : `${(pool.feeFraction / 100).toFixed(2)}%`);
+      // Soroswap's public testnet API doesn't expose APY/volume yet, so
+      // these stay "—" until we wire it up; pool type is xy=k constant
+      // product across all Soroswap pairs.
       return {
         id: pool.id,
         cell: [
-          { chain: tokenA, titles: [tokenA, tokenB], tags: ['Soroswap', pool.feeFraction / 100 + '%', 'Testnet'] },
+          { chain: tokenA, titles: [tokenA, tokenB], tags: ['Soroswap'] },
           { title: 'Soroswap' },
           { title: shares },
-          { title: tvlTitle, description: tvlDescription },
-          { title: loading ? '...' : stats ? `${pool.feeFraction / 100}%` : '0' },
+          { title: tvlTokenA },
+          { title: tvlTokenB },
+          // Soroswap testnet has no public APR/APY endpoint yet — show 0
+          // instead of "—" until on-chain volume tracking is wired up.
           { title: '0' },
           { title: '0' },
-          { title: '0' },
-          { title: '0' },
+          { title: fee },
+          { title: 'Constant Product' },
         ],
       };
     });
 
-    return { rows: [...ssRows, ...aqRows] };
-  }, [aquariusPools, soroswapPools]);
+    const allRows = [...ssRows, ...aqRows];
+    const visibleRows = showHiddenPools
+      ? allRows
+      : allRows.filter((r) => !DEFAULT_HIDDEN_POOL_IDS.has(r.id));
+    return { rows: visibleRows };
+  }, [aquariusPools, soroswapPools, showHiddenPools]);
 
-  // Live farm stats values — sum across Blend + Soroswap + Aquarius
+  // Live USD prices for the assets that show up in farm positions. Aquarius
+  // pools include AQUA and USDT alongside the XLM/USDC defaults; useTokenPrices
+  // already aliases USDC variants (BLUSDC/AqUSDC/SoUSDC) to the USDC oracle
+  // entry, so we only need to list the canonical symbols.
+  const farmTokenPrices = useTokenPrices(["XLM", "USDC", "AQUA", "USDT"]);
+
+  // Live farm stats values — sum across Blend + Soroswap + Aquarius, in USD
+  // so the header card matches the margin page's dollar-denominated display.
   const farmStatsValues = useMemo(() => {
-    const blendXlm  = parseFloat(userPositions.XLM?.underlyingValue  ?? '0');
-    const blendUsdc = parseFloat(userPositions.USDC?.underlyingValue ?? '0');
+    const xlmPrice  = farmTokenPrices.XLM  ?? 0;
+    const usdcPrice = farmTokenPrices.USDC ?? 1;
+    const aquaPrice = farmTokenPrices.AQUA ?? 0;
+    const usdtPrice = farmTokenPrices.USDT ?? 1;
+    // Aquarius/Soroswap reserves come back symbol-neutral (reserveA/reserveB),
+    // so we look up the price by the configured token symbol per pool.
+    const priceFor = (sym: string): number => {
+      const s = sym.toUpperCase();
+      if (s === "XLM") return xlmPrice;
+      if (s === "USDC" || s === "BLUSDC" || s === "AQUSDC" || s === "SOUSDC") return usdcPrice;
+      if (s === "AQUA") return aquaPrice;
+      if (s === "USDT") return usdtPrice;
+      return 0;
+    };
+
+    const blendXlmUsd  = parseFloat(userPositions.XLM?.underlyingValue  ?? '0') * xlmPrice;
+    const blendUsdcUsd = parseFloat(userPositions.USDC?.underlyingValue ?? '0') * usdcPrice;
 
     const ssTotalShares = parseFloat(ssStats?.totalShares ?? '0');
     const ssRatio = ssTotalShares > 0 ? mySSLpBalance / ssTotalShares : 0;
-    const ssXlm  = ssRatio * parseFloat(ssStats?.reserveXLM  ?? '0');
-    const ssUsdc = ssRatio * parseFloat(ssStats?.reserveUSDC ?? '0');
+    const ssXlmUsd  = ssRatio * parseFloat(ssStats?.reserveXLM  ?? '0') * xlmPrice;
+    const ssUsdcUsd = ssRatio * parseFloat(ssStats?.reserveUSDC ?? '0') * usdcPrice;
 
-    let aqValue = 0;
+    let aqValueUsd = 0;
     aquariusPools.forEach(({ pool, stats }) => {
       const lpBal = parseFloat(aqLpPositions[pool.id] ?? '0');
       if (lpBal > 0 && stats) {
-        const ratio = parseFloat(stats.totalShares) > 0 ? lpBal / parseFloat(stats.totalShares) : 0;
-        aqValue += ratio * (parseFloat(stats.reserveA) + parseFloat(stats.reserveB));
+        const totalShares = parseFloat(stats.totalShares);
+        const ratio = totalShares > 0 ? lpBal / totalShares : 0;
+        const [tokenA, tokenB] = pool.tokens;
+        aqValueUsd +=
+          ratio * parseFloat(stats.reserveA) * priceFor(tokenA) +
+          ratio * parseFloat(stats.reserveB) * priceFor(tokenB);
       }
     });
 
-    const total = blendXlm + blendUsdc + ssXlm + ssUsdc + aqValue;
+    const totalUsd = blendXlmUsd + blendUsdcUsd + ssXlmUsd + ssUsdcUsd + aqValueUsd;
     return {
-      depositTVL: total > 0 ? `${total.toFixed(2)} XLM` : '0',
-      earnings: '0',
+      depositTVL: totalUsd > 0
+        ? `$${totalUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '$0.00',
+      earnings: '$0.00',
       netFarmApy: '0',
       pendingRewards: '0',
     };
-  }, [userPositions, mySSLpBalance, ssStats, aqLpPositions, aquariusPools]);
+  }, [userPositions, mySSLpBalance, ssStats, aqLpPositions, aquariusPools, farmTokenPrices]);
 
 
   // Get filter tab type options based on active tab
@@ -322,6 +395,20 @@ export default function FarmPage() {
 
       {/* Pool Table */}
       <section className="w-full pb-8">
+      {/* Show-hidden-pools toggle: only meaningful on the LP/Multiple Assets
+          tab. By default the table only lists XLM/USDC pools (Soroswap +
+          Aquarius); this toggle reveals XLM/AQUA and XLM/USDT. */}
+      {activeTab === "vaults" && activeFilterTab === "lp-multiple-assets" && (
+        <div className="w-full pb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setShowHiddenPools((v) => !v)}
+            className="text-xs font-medium text-[#703AE6] hover:text-[#5b2cc7] underline-offset-2 hover:underline"
+          >
+            {showHiddenPools ? "Hide extra pools" : "Show all pools"}
+          </button>
+        </div>
+      )}
       <Table
         filterDropdownPosition="left"
         heading={{

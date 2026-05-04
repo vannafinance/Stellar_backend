@@ -691,74 +691,121 @@ export class BlendService {
     }
   }
 
-  /** Parse raw reserve data from scValToNative into BlendReserveData. */
+  /**
+   * Parse raw reserve data from scValToNative into BlendReserveData.
+   *
+   * Mirrors blend-sdk-js' Reserve.estimateInterestRate / estApy logic so our
+   * APYs match testnet.blend.capital exactly:
+   *   - r_base / r_one / r_two / r_three / util are SCALAR_7 fixed-point
+   *   - ir_mod is SCALAR_7 on V2 pools (TestnetV2 etc.); pre-V2 used SCALAR_9
+   *   - curIr (after IR_MOD application) is SCALAR_7 representing the
+   *     ANNUALISED rate — there is no per-ledger conversion to do
+   *   - Borrow APY = daily compound from APR (`(1 + apr/365)^365 - 1`)
+   *   - Supply APY = weekly compound from supply APR
+   *     (`(1 + supplyApr/52)^52 - 1`)
+   */
   static _parseReserveData(reserve: any): BlendReserveData {
     const SCALAR_7 = 1e7;
-    const SCALAR_9 = 1e9;
     const SCALAR_12 = 1e12; // Blend uses 1e12 precision for b_rate and d_rate accumulators
-    const LEDGERS_PER_YEAR = 6_307_200; // 365d * 24h * 3600s / 5s per ledger
 
-    // b_rate and d_rate are stored with SCALAR_12 (1e12) precision in Blend Capital
-    const bRate = Number(reserve.data.b_rate);      // raw, precision 1e12
+    // b_rate and d_rate are stored with SCALAR_12 (1e12) precision
+    const bRate = Number(reserve.data.b_rate);       // raw, precision 1e12
     const bSupply = Number(reserve.data.b_supply);   // b-tokens (7-decimal)
     const dRate = Number(reserve.data.d_rate);       // raw, precision 1e12
     const dSupply = Number(reserve.data.d_supply);   // d-tokens (7-decimal)
-    // ir_mod uses SCALAR_12 precision in Blend (1_000_000_000_000 = 1.0x multiplier)
-    const irMod = Number(reserve.data.ir_mod);       // precision 1e12
+
+    // ir_mod is stored in SCALAR_7 on V2 pools (the only pool version we use
+    // — CONTRACT_ADDRESSES.BLEND_POOL is the TestnetV2 pool). DO NOT magnitude-
+    // detect: at high utilization the dynamic ir_mod can rise well above 1e8
+    // (10x), which would falsely look like a V1 (SCALAR_9) value and crash
+    // the rate by 100x. Hardcoding SCALAR_7 keeps the math correct.
+    const irMod = Number(reserve.data.ir_mod);
+    const IR_MOD_SCALAR = 1e7;
+
     const decimals: number = Number(reserve.config.decimals);
 
-    // IR curve parameters (all in SCALAR_9 units)
+    // IR curve parameters — all SCALAR_7 fixed-point representing annual
+    // rate (e.g. r_one = 500_000 means 5% APR contribution).
     const rBase = Number(reserve.config.r_base);
     const rOne = Number(reserve.config.r_one);
     const rTwo = Number(reserve.config.r_two);
     const rThree = Number(reserve.config.r_three);
-    const targetUtil = Number(reserve.config.util);  // in SCALAR_7
+    const targetUtilRaw = Number(reserve.config.util); // SCALAR_7
 
     // Total underlying supply/borrow for display (human-readable token amounts)
     const totalSupplyRaw = (bSupply / SCALAR_7) * (bRate / SCALAR_12);
     const totalBorrowRaw = (dSupply / SCALAR_7) * (dRate / SCALAR_12);
 
-    // Underlying utilization (for display and supply APR calculation)
+    // Underlying utilization (decimal, e.g. 0.7834)
     const utilization = totalSupplyRaw > 0 ? totalBorrowRaw / totalSupplyRaw : 0;
 
-    // Blend's IR curve uses the UNDERLYING VALUE utilization (matching Blend UI exactly)
-    const utilForIR = utilization;  // totalBorrow / totalSupply (underlying ratio)
-    const targetUtilDecimal = targetUtil / SCALAR_7;          // e.g. 0.75
+    // Blend's IR curve uses underlying utilization directly. All math below
+    // keeps values in SCALAR_7 form to mirror the SDK's FixedMath helpers,
+    // then divides by SCALAR_7 at the end to get a decimal APR.
+    const targetUtilDecimal = targetUtilRaw / SCALAR_7;
+    const FIVE_PCT = 0.05;
+    const NINETY_FIVE_PCT = 0.95;
 
-    // Blend interest rate curve:
-    //   r_* are in SCALAR_9 → convert to decimal first
-    let rateDecimal: number;
-    if (utilForIR <= targetUtilDecimal) {
-      rateDecimal = rBase / SCALAR_9 +
-        (rOne / SCALAR_9) * (targetUtilDecimal > 0 ? utilForIR / targetUtilDecimal : 0);
+    let curIrSCALAR_7: number; // result in SCALAR_7 = annual rate * 1e7
+    if (utilization <= targetUtilDecimal) {
+      // Tier 1: linear from r_base → r_base + r_one as util goes 0 → target
+      const utilScalar = targetUtilDecimal > 0
+        ? (utilization / targetUtilDecimal) * SCALAR_7
+        : 0;
+      const baseRate = (utilScalar * rOne) / SCALAR_7 + rBase;
+      curIrSCALAR_7 = (baseRate * irMod) / IR_MOD_SCALAR;
+    } else if (utilization <= NINETY_FIVE_PCT) {
+      // Tier 2: linear slope through r_two between target and 95%
+      const utilScalar = ((utilization - targetUtilDecimal) /
+        (NINETY_FIVE_PCT - targetUtilDecimal)) * SCALAR_7;
+      const baseRate = (utilScalar * rTwo) / SCALAR_7 + rOne + rBase;
+      curIrSCALAR_7 = (baseRate * irMod) / IR_MOD_SCALAR;
     } else {
-      const extra = (utilForIR - targetUtilDecimal) / (1 - targetUtilDecimal);
-      rateDecimal = rOne / SCALAR_9 +
-        (rTwo / SCALAR_9) * extra +
-        (rThree / SCALAR_9) * extra * extra;
+      // Tier 3: r_three slope on top of the irMod-adjusted (r_base+r_one+r_two)
+      // intersection. The SDK does NOT apply irMod to the r_three excess.
+      const utilScalar = ((utilization - NINETY_FIVE_PCT) / FIVE_PCT) * SCALAR_7;
+      const extraRate = (utilScalar * rThree) / SCALAR_7;
+      const intersection = ((rTwo + rOne + rBase) * irMod) / IR_MOD_SCALAR;
+      curIrSCALAR_7 = extraRate + intersection;
     }
 
-    // ir_mod is SCALAR_12 → convert to decimal multiplier (1e12 = 1.0x)
-    const irModDecimal = irMod / SCALAR_12;
-    const perLedgerDecimal = rateDecimal * irModDecimal;
+    const borrowAprDecimal = curIrSCALAR_7 / SCALAR_7;
+    // Blend UI compounds borrow APR daily (365 periods/yr).
+    const borrowApyDecimal = Math.pow(1 + borrowAprDecimal / 365, 365) - 1;
 
-    // Blend UI displays SIMPLE APR (not compound APY):
-    //   simple APR = perLedger * LEDGERS_PER_YEAR
-    // (compound APY would be (1+perLedger)^LEDGERS_PER_YEAR-1 which is ~2.4x higher and doesn't match Blend UI)
-    const borrowAPR = perLedgerDecimal * LEDGERS_PER_YEAR * 100;
+    // Supply APR = borrow APR × utilization × (1 − backstop_take_rate).
+    // Blend's bstop_rate is on-chain at pool_config().bstop_rate (SCALAR_7).
+    // For the four supported testnet pools it has historically been 0.10
+    // (10%); fetching it dynamically would require an extra simulate call
+    // per pool, so we keep the constant in sync with current testnet config.
+    const BACKSTOP_TAKE_RATE = 0.10;
+    const supplyAprDecimal = borrowAprDecimal * utilization * (1 - BACKSTOP_TAKE_RATE);
+    // Blend UI compounds supply APR weekly (52 periods/yr).
+    const supplyApyDecimal = Math.pow(1 + supplyAprDecimal / 52, 52) - 1;
 
-    // Supply APR = borrow APR * underlying_utilization * (1 - backstop_take_rate)
-    // Blend testnet pool has backstop_take_rate ≈ 0.25 (25%).
-    // This can be fetched from pool_config().bstop_rate / 1e7 if needed dynamically.
-    const BACKSTOP_RATE = 0.25;
-    const supplyAPY = borrowAPR * utilization * (1 - BACKSTOP_RATE);
+    if (typeof window !== "undefined") {
+      // Diagnostic log: lets us spot-check raw on-chain vs derived APYs
+      // against testnet.blend.capital. Safe to leave on (small payload, dev
+      // console only) until APY parity is verified across all pools.
+      console.log("[BlendService] reserve rates", {
+        rBase, rOne, rTwo, rThree,
+        targetUtilDecimal,
+        irMod,
+        utilization,
+        baseRate_or_curIr_SCALAR_7: curIrSCALAR_7,
+        borrowAprDecimal,
+        borrowApyPct: (borrowApyDecimal * 100).toFixed(2),
+        supplyAprDecimal,
+        supplyApyPct: (supplyApyDecimal * 100).toFixed(2),
+      });
+    }
 
     return {
       totalSupply: totalSupplyRaw.toFixed(decimals > 4 ? 4 : decimals),
       totalBorrow: totalBorrowRaw.toFixed(decimals > 4 ? 4 : decimals),
       utilizationRate: (utilization * 100).toFixed(2),
-      supplyAPY: Math.max(0, supplyAPY).toFixed(2),
-      borrowAPY: Math.max(0, borrowAPR).toFixed(2),
+      supplyAPY: Math.max(0, supplyApyDecimal * 100).toFixed(2),
+      borrowAPY: Math.max(0, borrowApyDecimal * 100).toFixed(2),
       bRate: (bRate / SCALAR_12).toFixed(7),
       decimals,
     };

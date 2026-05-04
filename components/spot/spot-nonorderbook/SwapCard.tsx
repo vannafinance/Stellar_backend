@@ -730,7 +730,11 @@ export const SwapCard = ({
             showPresets
             activePercent={activePercent}
             onPercentClick={handlePercentClick}
-            showModeTabs={isAquarius || isSoroswap}
+            // WB/MB tabs hidden — spot swaps always go through the margin
+            // account (wallet-balance path was redundant), so locking
+            // swapMode to "margin" keeps the underlying flow correct
+            // without exposing the toggle.
+            showModeTabs={false}
             swapMode={swapMode}
             onSwapModeChange={setSwapMode}
           />
