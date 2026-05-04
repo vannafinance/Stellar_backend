@@ -13,6 +13,12 @@ export interface AccountStatItem {
 interface AccountStatsProps {
   items: readonly AccountStatItem[];
   values: Record<string, string | number | null | undefined>;
+  /**
+   * Optional per-item Tailwind class overrides for the value text. Lets the
+   * parent color a stat (e.g. green/red for P&L) without leaking domain rules
+   * into this generic renderer.
+   */
+  valueColors?: Record<string, string>;
   gridCols?: string;
   gridRows?: string;
   backgroundColor?: string;
@@ -22,6 +28,7 @@ interface AccountStatsProps {
 export const AccountStats = ({
   items,
   values,
+  valueColors,
   gridCols = "grid-cols-1 sm:grid-cols-2 md:grid-cols-3",
   gridRows,
   backgroundColor = "#F7F7F7",
@@ -89,7 +96,7 @@ export const AccountStats = ({
               </p>
               <p
                 className={`text-[15px] font-bold leading-tight ${
-                  isDark ? "text-white" : "text-neutral-800"
+                  valueColors?.[item.id] ?? (isDark ? "text-white" : "text-neutral-800")
                 }`}
               >
                 {isLoading ? renderLoadingSpinner() : displayValue}
@@ -138,7 +145,7 @@ export const AccountStats = ({
               {/* Value */}
               <motion.div
                 className={`text-[26px] font-bold leading-none pl-0.5 ${
-                  isDark ? "text-white" : "text-[#111111]"
+                  valueColors?.[item.id] ?? (isDark ? "text-white" : "text-[#111111]")
                 }`}
                 initial={{ opacity: 0 }}
                 whileInView={{ opacity: 1 }}

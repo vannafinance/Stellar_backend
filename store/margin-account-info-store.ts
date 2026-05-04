@@ -1,6 +1,8 @@
 import createNewStore from "@/zustand/index";
 import { MarginAccountService, type MarginAccount } from "@/lib/margin-utils";
 import { fetchTokenPrices, getCachedTokenPrice } from "@/lib/oracle-price";
+import { ContractService, ASSET_TYPES, type AssetType } from "@/lib/stellar-utils";
+import { computeBorrowApr } from "@/lib/utils/borrow-rate";
 
 // ────────────────────────────────────────────────────────────────────
 // Rate-limiting / request-dedup gates.
@@ -39,6 +41,18 @@ const canonicalMarginToken = (token: string): string => {
   if (normalized === 'AQUIRESUSDC' || normalized === 'AQUARIUS_USDC') return 'AQUSDC';
   if (normalized === 'SOROSWAPUSDC' || normalized === 'SOROSWAP_USDC') return 'SOUSDC';
   return normalized;
+};
+
+// Map a canonical debt symbol back to the lending pool's AssetType so we can
+// fetch its on-chain utilization for borrow-rate computation.
+const debtSymbolToAssetType = (symbol: string): AssetType | null => {
+  switch (symbol.toUpperCase()) {
+    case 'XLM': return ASSET_TYPES.XLM;
+    case 'BLUSDC': return ASSET_TYPES.USDC;
+    case 'AQUSDC': return ASSET_TYPES.AQUARIUS_USDC;
+    case 'SOUSDC': return ASSET_TYPES.SOROSWAP_USDC;
+    default: return null;
+  }
 };
 
 // Types
@@ -546,10 +560,26 @@ export const refreshBorrowedBalances = async (
       ? grossCollateralValue / LIQUIDATION_THRESHOLD
       : 0;
 
-    //  Borrow rate: use a flat 6.5% placeholder (matches lending pool borrow APY).
-    // Gate on effectiveDebtValue so dust residuals don't show 6.5% on a fully
-    // repaid position.
-    const borrowRate = effectiveDebtValue > 0 ? 6.5 : 0;
+    //  Borrow rate — derive from the lending pool's live on-chain utilization
+    // for the user's largest debt asset, then apply the documented two-slope
+    // rate model (see lib/utils/borrow-rate.ts). Falls back to 0 when there
+    // is no real debt or the pool stats RPC fails.
+    let borrowRate = 0;
+    if (effectiveDebtValue > 0) {
+      const primaryDebtSymbol = Object.entries(borrowedBalances)
+        .map(([symbol, b]) => ({ symbol, usd: parseFloat(b.usdValue) || 0 }))
+        .sort((a, b) => b.usd - a.usd)[0]?.symbol;
+      const assetType = primaryDebtSymbol ? debtSymbolToAssetType(primaryDebtSymbol) : null;
+      if (assetType) {
+        try {
+          const stats = await ContractService.getPoolStats(assetType);
+          const utilizationPct = parseFloat(stats.utilizationRate) || 0;
+          borrowRate = parseFloat(computeBorrowApr(utilizationPct).toFixed(2));
+        } catch (rateErr) {
+          console.warn('⚠️ Borrow rate fetch failed, leaving as 0:', rateErr);
+        }
+      }
+    }
 
     useMarginAccountInfoStore.getState().set({
       borrowedBalances,

@@ -16,6 +16,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 import { useTokenPrices } from "@/hooks/use-token-prices";
+import { ConversionRatio } from "@/components/ui/conversion-ratio";
 
 interface Collateral {
   id?: string;
@@ -255,6 +256,17 @@ const CollateralComponent = (props: Collateral) => {
               </div>
             </div>
 
+            {/* Row 2b: ≈ USD value (right-aligned, mirrors borrow card) */}
+            <div className="flex items-center justify-end pt-0.5">
+              <span
+                className={`text-[12px] font-medium ${
+                  isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                }`}
+              >
+                ≈ ${(parseFloat(valueInUsd) || 0).toFixed(2)} USD
+              </span>
+            </div>
+
             {/* Row 3: WB/MB tabs only */}
             <div className="flex items-center">
               <div
@@ -289,15 +301,22 @@ const CollateralComponent = (props: Collateral) => {
               </div>
             </div>
 
-            {/* Row 4: balance info | Cancel | Add */}
+            {/* Row 4: balance + inline ratio | Cancel | Add */}
             <div className="flex items-center justify-between gap-2">
-              <span
-                className={`text-[12px] font-medium truncate min-w-0 ${
-                  isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                }`}
-              >
-                Balance: {(parseFloat(String(liveBalance)) || 0).toFixed(2)} {selectedCurrency}
-              </span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={`text-[12px] font-medium truncate ${
+                    isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                  }`}
+                >
+                  Balance: {(parseFloat(String(liveBalance)) || 0).toFixed(2)} {selectedCurrency}
+                </span>
+                <ConversionRatio
+                  tokenSymbol={selectedCurrency}
+                  tokenPrice={priceFor(selectedCurrency)}
+                  variant="inline"
+                />
+              </div>
 
               <div className="flex items-center gap-3 shrink-0">
                 <motion.button
@@ -452,35 +471,44 @@ const CollateralComponent = (props: Collateral) => {
               </div>
             )}
 
-            {/* Row 3: balance label */}
-            {hasCollateral && collateral && (
-              <div className="flex items-center justify-between">
-                <span
-                  className={`text-[12px] font-medium ${
-                    isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                  }`}
-                >
-                  Balance:{" "}
-                  {collateral.balanceType.toLowerCase() === "wb"
-                    ? String(tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0")
-                    : collateral.unifiedBalance}{" "}
-                  {collateral.asset}
-                </span>
-                <span
-                  className={`text-[12px] font-medium ${
-                    isDark ? "text-[#777777]" : "text-[#A7A7A7]"
-                  }`}
-                >
-                  Balance:{" "}
-                  {(parseFloat(String(
-                    collateral.balanceType.toLowerCase() === "wb"
-                      ? tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0"
-                      : collateral.unifiedBalance
-                  )) || 0).toFixed(2)}{" "}
-                  {collateral.asset}
-                </span>
-              </div>
-            )}
+            {/* Row 3: balance + inline ratio | ≈ USD equivalent (single row) */}
+            {hasCollateral && collateral && (() => {
+              const livePrice = priceFor(collateral.asset);
+              const storedUsd = Number(collateral.amountInUsd) || 0;
+              const computedUsd = Number(collateral.amount || 0) * livePrice;
+              const usdValue = storedUsd > 0 ? storedUsd : computedUsd;
+              return (
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`text-[12px] font-medium truncate ${
+                        isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                      }`}
+                    >
+                      Balance:{" "}
+                      {(parseFloat(String(
+                        collateral.balanceType.toLowerCase() === "wb"
+                          ? tokenBalances[getTokenBalanceKey(collateral.asset) as keyof typeof tokenBalances] || "0"
+                          : collateral.unifiedBalance
+                      )) || 0).toFixed(2)}{" "}
+                      {collateral.asset}
+                    </span>
+                    <ConversionRatio
+                      tokenSymbol={collateral.asset}
+                      tokenPrice={livePrice}
+                      variant="inline"
+                    />
+                  </div>
+                  <span
+                    className={`text-[12px] font-medium shrink-0 ${
+                      isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                    }`}
+                  >
+                    ≈ ${usdValue.toFixed(2)} USD
+                  </span>
+                </div>
+              );
+            })()}
           </motion.section>
         )}
       </AnimatePresence>

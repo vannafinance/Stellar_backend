@@ -15,6 +15,7 @@ import { ContractService } from "@/lib/stellar-utils";
 import { refreshBorrowedBalances as refreshMarginStoreBorrowedBalances } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import { useTokenPrices } from "@/hooks/use-token-prices";
+import { ConversionRatio } from "@/components/ui/conversion-ratio";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 
@@ -98,7 +99,6 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
 
   // Popup visibility states
   const [isPayNowPopupOpen, setIsPayNowPopupOpen] = useState(false);
-  const [isFlashClosePopupOpen, setIsFlashClosePopupOpen] = useState(false);
 
   const clampRepayDust = (value: number) => {
     if (!Number.isFinite(value)) return 0;
@@ -112,14 +112,26 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
     return `${whole.toString()}.${frac7}`;
   };
 
+  // Both stat tiles are denominated in tokens of the selected repay currency,
+  // so we convert via the live oracle price and display USD. When the price is
+  // unavailable we fall back to the token amount + symbol to avoid showing
+  // misleading "$0" while a real balance exists.
   const formatStatValue = (value: number, _key: string) => {
     const cleaned = clampRepayDust(value);
-    if (cleaned === 0) return "0";
-
-    return cleaned.toLocaleString(undefined, {
+    const tokenText = cleaned.toLocaleString(undefined, {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
     });
+
+    if (selectedTokenPrice > 0) {
+      const usd = cleaned * selectedTokenPrice;
+      return `$${usd.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+    }
+
+    return `${tokenText} ${selectedRepayCurrency}`;
   };
 
   const getSelectedWalletBalance = async (address: string, selectedToken: string): Promise<number> => {
@@ -296,19 +308,9 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
     }
   };
 
-  // Handler for flash close click
-  const handleFlashCloseClick = () => {
-    setIsFlashClosePopupOpen(true);
-  };
-
   // Handler for closing pay now popup
   const handleClosePayNowPopup = () => {
     setIsPayNowPopupOpen(false);
-  };
-
-  // Handler for closing flash close popup
-  const handleCloseFlashClosePopup = () => {
-    setIsFlashClosePopupOpen(false);
   };
 
   // Check if buttons should be disabled (when input is 0 or empty)
@@ -453,8 +455,13 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
             </div>
           </div>
 
-          {/* Row 3: USD value */}
-          <div className="flex justify-end">
+          {/* Row 3: live conversion ratio (click to swap) + USD value */}
+          <div className="flex items-center justify-between">
+            <ConversionRatio
+              tokenSymbol={selectedRepayCurrency}
+              tokenPrice={selectedTokenPrice}
+              variant="inline"
+            />
             <span
               className={`text-sm font-medium ${
                 isDark ? "text-[#777777]" : "text-[#A7A7A7]"
@@ -494,28 +501,6 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
               disabled={isInputEmpty || isLoading || !marginAccount}
             />
           </motion.div>
-
-          {/* Flash Close button */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{
-              type: "spring",
-              stiffness: 300,
-              damping: 25,
-              delay: 0.6,
-            }}
-            whileHover={isInputEmpty ? {} : { scale: 1.02 }}
-            whileTap={isInputEmpty ? {} : { scale: 0.98 }}
-          >
-            <Button
-              text="Flash Close"
-              size="large"
-              type="ghost"
-              onClick={handleFlashCloseClick}
-              disabled={isInputEmpty}
-            />
-          </motion.div>
         </motion.section>
       </motion.section>
 
@@ -550,37 +535,6 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
         )}
       </AnimatePresence>
 
-      {/* Flash Close popup */}
-      <AnimatePresence>
-        {isFlashClosePopupOpen && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#45454566]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            onClick={handleCloseFlashClosePopup}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ duration: 0.3 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Popup
-                icon="/assets/lightning.svg"
-                description="Are you sure you want to flash close all positions? All open trades will be closed instantly, locking in current P&L, and this action cannot be undone."
-                buttonText="Close all Position"
-                buttonOnClick={handleCloseFlashClosePopup}
-                closeButtonText="Cancel"
-                closeButtonOnClick={handleCloseFlashClosePopup}
-                iconBgColor="bg-[#F1EBFD]"
-              />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.section>
   );
 };
