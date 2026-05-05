@@ -551,9 +551,12 @@ export const refreshBorrowedBalances = async (
     // the borrowed assets sit in the account but they're owed, not free.
     const netAvailableCollateral = Math.max(0, totalCollateralValue);
 
-    //  Total Value = net equity (collateral minus debt). When the user is
-    // self-financed (debt = 0) this is just their collateral.
-    const totalValue = Math.max(0, grossCollateralValue - effectiveDebtValue);
+    //  Total Value = collateral + debt (gross balance sheet). Reflects the
+    // total USD value sitting in the margin account — both the user's own
+    // deposit and the borrowed funds physically held by the smart account.
+    // Equity (collateral − debt) is already surfaced separately as
+    // "Net Available Collateral", so this row is the additive total.
+    const totalValue = totalCollateralValue + effectiveDebtValue;
 
     //  Debt limit = maximum safe debt at liquidation threshold
     const debtLimit = grossCollateralValue > 0
