@@ -11,6 +11,7 @@ import { useUserStore } from "@/store/user";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAppModeStore } from "@/store/app-mode-store";
 import { useViewportScale } from "@/lib/hooks/useViewportScale";
+import { FaucetPopup } from "./faucet/faucet-popup";
 
 interface Navbar {
   items: {
@@ -82,6 +83,7 @@ export const Navbar = (props: Navbar) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
+  const [isFaucetOpen, setIsFaucetOpen] = useState(false);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const walletMenuRef = useRef<HTMLDivElement>(null);
   const walletMenuMobileRef = useRef<HTMLDivElement>(null);
@@ -672,6 +674,33 @@ export const Navbar = (props: Navbar) => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
           >
+            {/* Faucet — testnet-only helper that mints XLM + Blend/Aquarius/
+                Soroswap USDC in one popup. Hidden until a wallet is connected
+                because every faucet path needs a destination address. */}
+            {address && (
+              <motion.button
+                type="button"
+                onClick={() => setIsFaucetOpen(true)}
+                whileTap={{ scale: 0.97 }}
+                aria-label="Open testnet faucet"
+                className={`flex items-center gap-2 py-[10px] px-3 rounded-xl font-semibold text-[13px] cursor-pointer transition-colors ${
+                  isDark
+                    ? "bg-[#1C1C1C] border border-[#2A2A2A] text-white hover:border-[#3A3A3A]"
+                    : "bg-[#F7F7F7] border border-[#DFDFDF] text-[#1F1F1F] hover:border-[#BFBFBF]"
+                }`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 3v3M9 6h6M7 9h10l-1.5 9.5a2 2 0 0 1-2 1.5h-5a2 2 0 0 1-2-1.5L7 9z"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                Faucet
+              </motion.button>
+            )}
             {/* Wallet / Login */}
             {!address ? (
               <div className="hidden xl:block">
@@ -1007,6 +1036,28 @@ export const Navbar = (props: Navbar) => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
           >
+            {address && (
+              <button
+                type="button"
+                onClick={() => setIsFaucetOpen(true)}
+                aria-label="Open testnet faucet"
+                className={`flex items-center justify-center w-8 h-8 rounded-lg cursor-pointer ${
+                  isDark
+                    ? "bg-[#1C1C1C] border border-[#2A2A2A] text-white"
+                    : "bg-[#F7F7F7] border border-[#DFDFDF] text-[#1F1F1F]"
+                }`}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 3v3M9 6h6M7 9h10l-1.5 9.5a2 2 0 0 1-2 1.5h-5a2 2 0 0 1-2-1.5L7 9z"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
             {!address ? (
               <Button
                 size="small"
@@ -1486,6 +1537,12 @@ export const Navbar = (props: Navbar) => {
           </>
         )}
       </AnimatePresence>
+
+      <FaucetPopup
+        isOpen={isFaucetOpen}
+        onClose={() => setIsFaucetOpen(false)}
+        walletAddress={address || null}
+      />
     </div>
   );
 };

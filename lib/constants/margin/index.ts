@@ -22,7 +22,6 @@ export const COIN_ICONS: Record<string, string> = {
   AQUSDC: "/icons/usdc-icon.svg",
   SOUSDC: "/icons/usdc-icon.svg",
   USDC: "/icons/usdc-icon.svg",
-  EURC: "/icons/usdc-icon.svg",
 };
 
 // ============================================
@@ -148,11 +147,6 @@ export const ACCOUNT_STATS_ITEMS = [
     name: "Net amount Borrowed",
     icon: "/margin/retry.png",
   },
-  {
-    id: "netProfitAndLoss",
-    name: "Net Profit & Loss",
-    icon: "/margin/bag.png",
-  },
 ] as const;
 
 // ============================================
@@ -174,10 +168,6 @@ export const MARGIN_ACCOUNT_INFO_ITEMS = [
   {
     id: "avgHealthFactor",
     name: "Avg Health Factor",
-  },
-  {
-    id: "timeToLiquidation",
-    name: "Time to liquidation",
   },
   {
     id: "borrowRate",

@@ -44,6 +44,53 @@ const BACKFILL_POINTS: Record<string, number> = {
   "All Time": 0,    // use real data only
 };
 
+// Bucket width per timeframe. Snapshots that fall into the same bucket are
+// collapsed to a single point (latest value wins). Without this, every
+// per-minute snapshot pushes a new chart point even on multi-month views,
+// which makes the chart visibly reshape every refresh tick.
+const BUCKET_MS_BY_FILTER: Record<string, number> = {
+  "3 Months": 24 * 60 * 60 * 1000,        // 1 day
+  "6 Months": 24 * 60 * 60 * 1000,        // 1 day
+  "1 Year": 7 * 24 * 60 * 60 * 1000,      // 1 week
+  // "All Time" uses an adaptive bucket computed from the actual span — see
+  // bucketByInterval() below — so a 2-day-old account doesn't collapse to a
+  // single point but a 2-year-old account doesn't render 100k+ points.
+};
+
+const bucketByInterval = (
+  data: Array<{ date: string; amount: number }>,
+  bucketMs: number,
+): Array<{ date: string; amount: number }> => {
+  if (bucketMs <= 0 || data.length === 0) return data;
+  const buckets = new Map<number, { date: string; amount: number; ts: number }>();
+  for (const item of data) {
+    const ts = new Date(item.date).getTime();
+    if (!Number.isFinite(ts)) continue;
+    const bucketKey = Math.floor(ts / bucketMs);
+    const existing = buckets.get(bucketKey);
+    // Keep the LATEST value within each bucket so the most recent state of
+    // the world is what shows for that day/week.
+    if (!existing || ts > existing.ts) {
+      buckets.set(bucketKey, { date: item.date, amount: item.amount, ts });
+    }
+  }
+  return Array.from(buckets.values())
+    .sort((a, b) => a.ts - b.ts)
+    .map(({ date, amount }) => ({ date, amount }));
+};
+
+const adaptiveBucketMs = (data: Array<{ date: string; amount: number }>): number => {
+  if (data.length < 2) return 0;
+  const first = new Date(data[0].date).getTime();
+  const last = new Date(data[data.length - 1].date).getTime();
+  const span = Math.max(0, last - first);
+  // Aim for ~50 buckets across the available history.
+  const target = Math.floor(span / 50);
+  // Floor at 1 hour so a wallet with 2 days of activity still gets a
+  // smooth shape instead of one bucket every few minutes.
+  return Math.max(60 * 60 * 1000, target);
+};
+
 // Helper function to filter data based on selected filter. Also pads the
 // window with synthetic backfill points when real data doesn't span the
 // selected range, so the X-axis shows the full timeframe instead of
@@ -66,7 +113,10 @@ const filterDataByTimeRange = (
       startDate.setFullYear(now.getFullYear() - 1);
       break;
     case "All Time":
-      return data;
+      // Adaptive bucket so the curve stays stable across refreshes — without
+      // this, every per-minute snapshot becomes its own X-axis tick and the
+      // chart visibly reshapes every refresh tick on long histories.
+      return bucketByInterval(data, adaptiveBucketMs(data));
     default:
       return data;
   }
@@ -74,21 +124,25 @@ const filterDataByTimeRange = (
   startDate.setHours(0, 0, 0, 0);
   const inWindow = data.filter((item) => new Date(item.date) >= startDate);
 
+  // Collapse rapid-fire snapshots into per-day / per-week points so the chart
+  // doesn't redraw for every minute-level data write.
+  const bucketed = bucketByInterval(inWindow, BUCKET_MS_BY_FILTER[filter] ?? 0);
+
   // If real data fully covers the window (oldest point ≥ 80% of window from
   // start), we don't need synthetic backfill. Otherwise, prepend a smooth
   // ramp from 0 → first-real-value across the missing portion.
   const targetCount = BACKFILL_POINTS[filter] ?? 0;
-  if (targetCount === 0 || inWindow.length === 0) return inWindow;
+  if (targetCount === 0 || bucketed.length === 0) return bucketed;
 
-  const oldestReal = new Date(inWindow[0].date).getTime();
+  const oldestReal = new Date(bucketed[0].date).getTime();
   const startMs = startDate.getTime();
   const realSpanRatio = (now.getTime() - oldestReal) / (now.getTime() - startMs);
-  if (realSpanRatio >= 0.8) return inWindow;
+  if (realSpanRatio >= 0.8) return bucketed;
 
   // Build synthetic backfill: targetCount evenly-spaced points from startDate
   // to oldestReal, ramping linearly from 0 to first real value. Real data
   // points then appear unmodified at the end of the array.
-  const firstRealValue = inWindow[0].amount;
+  const firstRealValue = bucketed[0].amount;
   const synthetic: Array<{ date: string; amount: number }> = [];
   const realStartMs = oldestReal;
   const stepMs = (realStartMs - startMs) / targetCount;
@@ -101,7 +155,7 @@ const filterDataByTimeRange = (
     });
   }
 
-  return [...synthetic, ...inWindow];
+  return [...synthetic, ...bucketed];
 };
 
 // Helper function to filter data based on selected days
@@ -338,7 +392,7 @@ export const Chart = memo(function Chart({ type, currencyTab, height, containerW
                 <header className="w-full h-fit flex justify-between">
                   <div className={`w-full h-fit flex flex-col`}>
                     <h2 className={`text-[13px] font-medium leading-[18px] ${isDark ? "text-[#A7A7A7]" : "text-[#777777]"}`}>
-                      {type === "farm" ? (heading || "Farm") : type === "overall-deposit" ? "Overall Deposit" : type === "net-apy" ? "Net APY" : type === "my-supply" ? "My Supply" : type === "net-volume" ? "Net Volume" : type === "net-profit-loss" ? "Net Profit & Loss" : "Chart"}
+                      {type === "farm" ? (heading || "Farm") : type === "overall-deposit" ? "Overall Deposit" : type === "net-apy" ? "Net Earnings" : type === "my-supply" ? "My Supply" : type === "net-volume" ? "Net Volume" : type === "net-profit-loss" ? "Net Profit & Loss" : "Chart"}
                     </h2>
                     <p className={`w-full text-[17px] sm:text-[21px] font-semibold ${isDark ? "text-white" : "text-[#111111]"}`}>
                       ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -381,7 +435,7 @@ export const Chart = memo(function Chart({ type, currencyTab, height, containerW
               ) : type === "overall-deposit" ? (
                 "Overall Deposit"
               ) : type === "net-apy" ? (
-                "Net APY"
+                "Net Earnings"
               ) : type === "my-supply" ? (
                 "My Supply"
               ) : type === "net-volume" ? (

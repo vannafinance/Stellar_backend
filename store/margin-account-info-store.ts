@@ -1,6 +1,8 @@
 import createNewStore from "@/zustand/index";
 import { MarginAccountService, type MarginAccount } from "@/lib/margin-utils";
-import { getTokenPriceUsdSync } from "@/lib/prices";
+import { fetchTokenPrices, getCachedTokenPrice } from "@/lib/oracle-price";
+import { ContractService, ASSET_TYPES, type AssetType } from "@/lib/stellar-utils";
+import { computeBorrowApr } from "@/lib/utils/borrow-rate";
 
 // ────────────────────────────────────────────────────────────────────
 // Rate-limiting / request-dedup gates.
@@ -16,10 +18,12 @@ const inflightCheckByUser = new Map<string, Promise<void>>();
 const lastRefreshByAccount = new Map<string, number>();
 const inflightRefreshByAccount = new Map<string, Promise<void>>();
 
-// USD prices come from the live price service (CoinGecko for XLM, $1.00 for
-// USD-pegged variants). Resolved per-call so freshly fetched values land in
-// store totals on the next refresh.
-const tokenPriceUsd = (token: string): number => getTokenPriceUsdSync(token);
+// Live token prices via the on-chain Reflector oracle. The cached helper
+// returns the most recently fetched price (or a static fallback the very
+// first time) so synchronous reducers stay synchronous; refresh paths await
+// `fetchTokenPrices` to keep the cache warm before recomputing USD totals.
+const PRICEABLE_TOKENS = ['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC'] as const;
+const tokenPrice = (token: string): number => getCachedTokenPrice(token);
 
 // Liquidation threshold from RiskEngine contract: BALANCE_TO_BORROW_THRESHOLD = 1.1 * WAD
 // Account is liquidatable when: (totalCollateral / totalDebt) < 1.1
@@ -37,6 +41,18 @@ const canonicalMarginToken = (token: string): string => {
   if (normalized === 'AQUIRESUSDC' || normalized === 'AQUARIUS_USDC') return 'AQUSDC';
   if (normalized === 'SOROSWAPUSDC' || normalized === 'SOROSWAP_USDC') return 'SOUSDC';
   return normalized;
+};
+
+// Map a canonical debt symbol back to the lending pool's AssetType so we can
+// fetch its on-chain utilization for borrow-rate computation.
+const debtSymbolToAssetType = (symbol: string): AssetType | null => {
+  switch (symbol.toUpperCase()) {
+    case 'XLM': return ASSET_TYPES.XLM;
+    case 'BLUSDC': return ASSET_TYPES.USDC;
+    case 'AQUSDC': return ASSET_TYPES.AQUARIUS_USDC;
+    case 'SOUSDC': return ASSET_TYPES.SOROSWAP_USDC;
+    default: return null;
+  }
 };
 
 // Types
@@ -427,10 +443,13 @@ export const refreshBorrowedBalances = async (
   try {
     useMarginAccountInfoStore.getState().set({ isLoadingBorrowedBalances: true });
 
-    // Fetch borrowed balances AND collateral balances in parallel
+    // Fetch borrowed balances, collateral balances, and live oracle prices in
+    // parallel. The oracle warm-up is what makes downstream `tokenPrice()`
+    // calls return real-time values instead of static fallbacks.
     const [borrowedResult, collateralResult] = await Promise.all([
       MarginAccountService.getCurrentBorrowedBalances(marginAccountAddress),
       MarginAccountService.getCollateralBalances(marginAccountAddress),
+      fetchTokenPrices([...PRICEABLE_TOKENS]),
     ]);
 
     let totalBorrowedValue = 0;
@@ -449,12 +468,13 @@ export const refreshBorrowedBalances = async (
         }
       });
 
-      Object.entries(dedupedBorrowed).forEach(([token, { amount, usdValue }]) => {
-        // Use fetched usdValue if non-zero, otherwise compute from live price
-        const fetchedUsd = parseFloat(usdValue);
-        const price = tokenPriceUsd(token);
-        const computed = parseFloat(amount) * price;
-        const usd = fetchedUsd > 0 ? fetchedUsd : computed;
+      Object.entries(dedupedBorrowed).forEach(([token, { amount }]) => {
+        // Always recompute USD from the live oracle cache. The upstream
+        // getCurrentBorrowedBalances sometimes returns a 1:1 placeholder
+        // (token amount as USD) which would make XLM debt look 10× too big
+        // and tank the displayed Health Factor / Net Available Collateral.
+        const price = tokenPrice(token);
+        const usd = parseFloat(amount) * price;
         totalBorrowedValue += usd;
         borrowedBalances[token] = { amount, usdValue: usd.toFixed(2) };
       });
@@ -472,7 +492,7 @@ export const refreshBorrowedBalances = async (
       });
 
       Object.entries(dedupedCollateral).forEach(([token, amount]) => {
-        const price = tokenPriceUsd(token);
+        const price = tokenPrice(token);
         const tokenAmount = parseFloat(amount);
         const usd = tokenAmount * price;
         totalCollateralValue += usd;
@@ -540,10 +560,26 @@ export const refreshBorrowedBalances = async (
       ? grossCollateralValue / LIQUIDATION_THRESHOLD
       : 0;
 
-    //  Borrow rate: use a flat 6.5% placeholder (matches lending pool borrow APY).
-    // Gate on effectiveDebtValue so dust residuals don't show 6.5% on a fully
-    // repaid position.
-    const borrowRate = effectiveDebtValue > 0 ? 6.5 : 0;
+    //  Borrow rate — derive from the lending pool's live on-chain utilization
+    // for the user's largest debt asset, then apply the documented two-slope
+    // rate model (see lib/utils/borrow-rate.ts). Falls back to 0 when there
+    // is no real debt or the pool stats RPC fails.
+    let borrowRate = 0;
+    if (effectiveDebtValue > 0) {
+      const primaryDebtSymbol = Object.entries(borrowedBalances)
+        .map(([symbol, b]) => ({ symbol, usd: parseFloat(b.usdValue) || 0 }))
+        .sort((a, b) => b.usd - a.usd)[0]?.symbol;
+      const assetType = primaryDebtSymbol ? debtSymbolToAssetType(primaryDebtSymbol) : null;
+      if (assetType) {
+        try {
+          const stats = await ContractService.getPoolStats(assetType);
+          const utilizationPct = parseFloat(stats.utilizationRate) || 0;
+          borrowRate = parseFloat(computeBorrowApr(utilizationPct).toFixed(2));
+        } catch (rateErr) {
+          console.warn('⚠️ Borrow rate fetch failed, leaving as 0:', rateErr);
+        }
+      }
+    }
 
     useMarginAccountInfoStore.getState().set({
       borrowedBalances,

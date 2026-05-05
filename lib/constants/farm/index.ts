@@ -2,12 +2,12 @@ export const farmTableHeadings = [
   { label: "Pool", id: "pool", icon: true },
   { label: "DEX", id: "dex", icon: true },
   { label: "DEX LP TVL", id: "dex-lp-tvl", icon: true },
-  { label: "Vanna TVL", id: "vanna-tvl", icon: true },
+  { label: "DEX TVL Token 0", id: "dex-tvl-token-0", icon: true },
+  { label: "DEX TVL Token 1", id: "dex-tvl-token-1", icon: true },
   { label: "Pool APR", id: "pool-apr", icon: true },
-  { label: "Leveraged APR", id: "leveraged-apr", icon: true },
-  { label: "1D VOL", id: "1d-vol", icon: true },
-  { label: "30 D VOL", id: "30d-vol", icon: true },
-  { label: "1D VOL/TVL", id: "1d-vol-tvl", icon: true },
+  { label: "24h APY", id: "24h-apy", icon: true },
+  { label: "Fees", id: "fees", icon: true },
+  { label: "Pool Type", id: "pool-type", icon: true },
 ];
 
 export const farmTableBody = {

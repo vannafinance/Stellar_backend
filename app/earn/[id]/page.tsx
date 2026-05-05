@@ -18,7 +18,16 @@ import { useTheme } from "@/contexts/theme-context";
 import { setSelectedPool, useSelectedPoolStore } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { usePoolData } from "@/hooks/use-earn";
-import { useTokenPrices } from "@/contexts/price-context";
+import { useTokenPrices } from "@/hooks/use-token-prices";
+
+// AQUARIUS_USDC / SOROSWAP_USDC peg to USDC's oracle price (alias resolved
+// inside oracle-price.ts).
+const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
+  XLM: 'XLM',
+  USDC: 'USDC',
+  AQUARIUS_USDC: 'USDC',
+  SOROSWAP_USDC: 'USDC',
+};
 
 const fmt = (n: number, decimals = 4) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M`
@@ -27,13 +36,13 @@ const fmt = (n: number, decimals = 4) =>
 
 const EarnHeaderStats = memo(function EarnHeaderStats({ assetTitle }: { assetTitle: string }) {
   const { pools } = usePoolData();
-  const { getPrice } = useTokenPrices();
+  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
 
   const items = useMemo(() => {
     const asset = toInternalAsset(assetTitle);
     const displayAsset = toDisplayAsset(assetTitle);
     const pool = pools[asset as keyof typeof pools];
-    const price = getPrice(asset);
+    const price = tokenPrices[PRICE_TOKEN_FOR_ASSET[asset] ?? asset] ?? 1;
 
     const totalSupply = parseFloat(pool?.totalSupply || '0');
     const availableLiquidity = parseFloat(pool?.availableLiquidity || '0');
@@ -46,7 +55,7 @@ const EarnHeaderStats = memo(function EarnHeaderStats({ assetTitle }: { assetTit
       { id: "3", name: "Utilization Rate", amount: `${utilizationRate.toFixed(2)}%` },
       { id: "4", name: "Supply APY", amount: `${supplyAPY.toFixed(2)}%` },
     ];
-  }, [pools, assetTitle, getPrice]);
+  }, [pools, assetTitle, tokenPrices]);
 
   return <AccountStatsGhost items={items} />;
 });

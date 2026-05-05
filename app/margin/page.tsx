@@ -4,7 +4,6 @@ import { Carousel } from "@/components/ui/carousel";
 import {
   CAROUSEL_ITEMS,
   MARGIN_ACCOUNT_INFO_ITEMS,
-  MARGIN_ACCOUNT_MORE_DETAILS_ITEMS,
   MARGIN_ORACLE_LTS_ITEMS,
   ACCOUNT_STATS_ITEMS,
 } from "@/lib/constants/margin";
@@ -15,6 +14,8 @@ import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
 import { AccountStats } from "@/components/margin/account-stats";
+import { MarginAccountAddress } from "@/components/margin/margin-account-address";
+import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import {
   useMarginAccountInfoStore,
   refreshBorrowedBalances,
@@ -67,6 +68,7 @@ const Margin = () => {
   // Margin account data — single shallow-compared read.
   const {
     hasMarginAccount,
+    marginAccountAddress,
     avgHealthFactor,
     totalCollateralValue,
     totalBorrowedValue,
@@ -79,6 +81,7 @@ const Margin = () => {
   } = useMarginAccountInfoStore(
     useShallow((state) => ({
       hasMarginAccount: state.hasMarginAccount,
+      marginAccountAddress: state.marginAccountAddress,
       avgHealthFactor: state.avgHealthFactor,
       totalCollateralValue: state.totalCollateralValue,
       totalBorrowedValue: state.totalBorrowedValue,
@@ -205,11 +208,13 @@ const Margin = () => {
     totalValue,
   ]);
 
+  // Real on-chain contract addresses — InfoCard auto-renders Stellar contract
+  // strings as copyable badges with a Stellar Expert link.
   const oracleAndLtsData = useMemo(
     () => ({
-      oracleContract: "Band Oracle",
+      oracleContract: CONTRACT_ADDRESSES.ORACLE,
       liquidationThreshold: "1.10x",
-      riskEngine: "Enabled",
+      riskEngine: CONTRACT_ADDRESSES.RISK_ENGINE,
     }),
     [],
   );
@@ -224,18 +229,11 @@ const Margin = () => {
   const infoCardExpandableSections = useMemo(
     () => [
       {
-        title: "MORE DETAILS",
-        headingBold: true,
-        items: MARGIN_ACCOUNT_MORE_DETAILS_ITEMS,
-        defaultExpanded: true,
-        delay: 0.1,
-      },
-      {
         title: "ORACLES AND LTS",
         headingBold: true,
         items: MARGIN_ORACLE_LTS_ITEMS,
         defaultExpanded: false,
-        delay: 0.2,
+        delay: 0.1,
       },
     ],
     [],
@@ -248,7 +246,9 @@ const Margin = () => {
     setSwitchToRepayTab(true);
   }, []);
 
-  // Format account stats value
+  // Format account stats value with explicit units, following industry
+  // conventions: Health Factor is a bare unitless ratio (Aave/Compound style,
+  // never with ×), USD totals with $ prefix, P&L with signed $ prefix (+/-).
   const formatAccountStatValue = (itemId: string, value: number) => {
     if (itemId === "netHealthFactor") {
       if (value === Infinity || !isFinite(value) || value >= 999) {
@@ -260,39 +260,59 @@ const Margin = () => {
       });
     }
 
-    return `$${formatValue(value, {
+    const usdText = formatValue(Math.abs(value), {
       type: "number",
       useLargeFormat: true,
       showZeroAsDash: false,
-    })}`;
+    });
+
+    if (itemId === "netProfitAndLoss") {
+      // Signed display: +$X for gains, -$X for losses, $0.00 at exactly zero.
+      if (value > 0) return `+$${usdText}`;
+      if (value < 0) return `-$${usdText}`;
+      return `$${usdText}`;
+    }
+
+    return `$${usdText}`;
   };
 
-  // Prepare account stats values for AccountStats component
+  // Prepare account stats values for AccountStats component.
+  // While the on-chain refresh is in flight AND we don't yet have any real
+  // data (collateral + debt both 0), render a spinner instead of "$0.00" so
+  // a freshly-connected wallet doesn't briefly look empty during the ~12s
+  // RPC round-trip. Once data lands we keep showing the last-known values
+  // through subsequent refreshes (no flicker on the polling interval).
   const accountStatsValues = useMemo(() => {
-    const values = ACCOUNT_STATS_ITEMS.reduce(
+    const noDataYet =
+      totalCollateralValue <= 0 && totalBorrowedValue <= 0;
+    const showSpinner = isLoadingMargin && noDataYet;
+
+    return ACCOUNT_STATS_ITEMS.reduce(
       (acc, item) => {
-        if (isLoadingMargin && !accountStats) {
+        if (showSpinner) {
           acc[item.id] = "⟳";
           return acc;
         }
-
         if (!accountStats) {
           acc[item.id] = formatAccountStatValue(item.id, 0);
           return acc;
         }
-
         const value = accountStats[item.id as keyof typeof accountStats] ?? 0;
-
         acc[item.id] = formatAccountStatValue(item.id, value);
-
         return acc;
       },
       {} as Record<string, string>,
     );
+  }, [accountStats, isLoadingMargin, totalBorrowedValue, totalCollateralValue]);
 
-    console.log("[Account Stats Values] Generated:", values);
-    return values;
-  }, [accountStats, isLoadingMargin]);
+  // Industry-standard P&L coloring: green when positive, red when negative,
+  // neutral (default) at exactly zero.
+  const accountStatsValueColors = useMemo(() => {
+    const pnl = accountStats?.netProfitAndLoss ?? 0;
+    if (pnl > 0) return { netProfitAndLoss: "text-emerald-500" };
+    if (pnl < 0) return { netProfitAndLoss: "text-rose-500" };
+    return undefined;
+  }, [accountStats?.netProfitAndLoss]);
 
   return (
     <main className="w-full h-[calc(100vh-56px)] lg:h-[calc(100vh-72px)] overflow-y-auto scrollbar-hide px-4 sm:px-10 lg:px-30 pb-8 lg:pb-0">
@@ -394,7 +414,8 @@ const Margin = () => {
           <AccountStats
             items={ACCOUNT_STATS_ITEMS}
             values={accountStatsValues}
-            gridCols="grid-cols-5"
+            valueColors={accountStatsValueColors}
+            gridCols="grid-cols-4"
           />
         </motion.section>
       )}
@@ -478,7 +499,7 @@ const Margin = () => {
               transition={{ duration: 0.4, ease: "easeOut" }}
             >
               <motion.div
-                className="border flex flex-col justify-center items-center p-1.5 rounded-[11px] w-11 h-11"
+                className="border flex flex-col justify-center items-center p-1.5 rounded-[11px] w-11 h-11 shrink-0"
                 initial={{ scale: 0, rotate: -180 }}
                 whileInView={{ scale: 1, rotate: 0 }}
                 viewport={{ once: true }}
@@ -491,7 +512,7 @@ const Margin = () => {
                   height={20}
                 />
               </motion.div>
-              <div className="flex flex-col flex-1">
+              <div className="flex flex-col flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h2
                     className={`text-lg font-bold ${isDark ? "text-white" : ""}`}
@@ -526,6 +547,12 @@ const Margin = () => {
                     ? "Fetching latest data..."
                     : "Stay updated details and status."}
                 </p>
+                {marginAccountAddress && (
+                  <MarginAccountAddress
+                    address={marginAccountAddress}
+                    className="mt-1"
+                  />
+                )}
               </div>
             </motion.header>
 

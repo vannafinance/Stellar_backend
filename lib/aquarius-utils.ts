@@ -40,6 +40,13 @@ export interface AquariusPoolStats {
   totalShares: string; // total LP shares, human-readable
   feeFraction: string; // e.g., "0.30%"
   feeRaw: number;      // raw fee fraction (30 = 0.30%)
+  // Optional API-sourced fields (populated when stats come from the
+  // Aquarius AMM API; on-chain-only fallback paths leave these undefined).
+  apy?: string;        // base trading APY, decimal string (e.g. "0.0234")
+  totalApy?: string;   // base + incentive + rewards APY, decimal string
+  volumeUsd?: string;  // aggregate USD volume (whatever window the API ships)
+  liquidityUsd?: string; // pool TVL in USD
+  poolType?: string;   // "constant_product" | "stable" | "concentrated"
 }
 
 export interface AquariusLpEvent {
@@ -102,8 +109,17 @@ interface AquariusApiPoolsResponse {
 interface AquariusApiPoolItem {
   address?: string;
   reserves?: [string, string] | string[];
+  // tokens_str is the API's ordered list of token symbols, matching the
+  // alphabetical-by-contract-address sort of `reserves`. We use it to map
+  // each AQUARIUS_POOLS config's token order onto the API's reserve order.
+  tokens_str?: string[];
   fee?: string;
   total_share?: string;
+  apy?: string;            // base trading APY (decimal string)
+  total_apy?: string;      // base + incentives + rewards
+  volume_usd?: string;     // aggregate USD volume
+  liquidity_usd?: string;  // pool TVL in USD
+  pool_type?: string;      // "constant_product" | "stable" | "concentrated"
 }
 
 const toWad = (amount: number): bigint => {
@@ -138,21 +154,53 @@ export class AquariusService {
     const json = (await response.json()) as AquariusApiPoolsResponse;
     const byAddress: Record<string, AquariusPoolStats> = {};
 
+    // The Aquarius API returns reserves as 7-decimal scaled raw strings
+    // (e.g. "1313891897900000" = 131,389,189.79 / 1e7 = 131,389,189.79 USDC),
+    // ordered alphabetically by token contract address — NOT in the order
+    // that AQUARIUS_POOLS configs list their tokens. Without re-ordering,
+    // the reserveA/reserveB labels would be flipped (XLM value shown under
+    // USDC and vice versa). We map by symbol via `tokens_str` so the
+    // returned reserveA always matches AQUARIUS_POOLS config tokens[0].
+    const SCALAR_7 = 1e7;
+    const fromStroop = (raw: string | undefined): string => {
+      const n = parseFloat(raw ?? '0');
+      return Number.isFinite(n) ? (n / SCALAR_7).toFixed(7) : '0';
+    };
+
     for (const pool of json.items ?? []) {
       const address = (pool.address ?? '').trim().toUpperCase();
       if (!address) continue;
 
-      const reserveA = pool.reserves?.[0] ?? '0';
-      const reserveB = pool.reserves?.[1] ?? '0';
-      const totalShare = pool.total_share ?? '0';
+      // Resolve reserves by symbol so config order wins, not API sort order.
+      const apiTokens = (pool.tokens_str ?? []).map((s) => (s || '').toUpperCase());
+      const reservesByToken: Record<string, string> = {};
+      apiTokens.forEach((sym, idx) => {
+        const raw = pool.reserves?.[idx];
+        if (sym && raw !== undefined) reservesByToken[sym] = raw;
+      });
+
+      // Find this pool's AQUARIUS_POOLS config so we can return reserves in
+      // the config's token order. Falls back to raw API order for unknown
+      // pools (so we degrade gracefully instead of returning zeros).
+      const cfg = AQUARIUS_POOLS.find((p) => p.poolAddress.toUpperCase() === address);
+      const [cfgTokenA, cfgTokenB] = cfg?.tokens ?? [apiTokens[0] ?? '', apiTokens[1] ?? ''];
+      const rawA = reservesByToken[cfgTokenA?.toUpperCase()] ?? pool.reserves?.[0];
+      const rawB = reservesByToken[cfgTokenB?.toUpperCase()] ?? pool.reserves?.[1];
+
+      const totalShare = fromStroop(pool.total_share);
       const feeRaw = Math.round((parseFloat(pool.fee ?? '0.003') || 0.003) * 10_000);
 
       byAddress[address] = {
-        reserveA,
-        reserveB,
+        reserveA: fromStroop(rawA),
+        reserveB: fromStroop(rawB),
         totalShares: totalShare,
         feeFraction: `${(feeRaw / 100).toFixed(2)}%`,
         feeRaw,
+        apy: pool.apy,
+        totalApy: pool.total_apy,
+        volumeUsd: pool.volume_usd,
+        liquidityUsd: pool.liquidity_usd,
+        poolType: pool.pool_type,
       };
     }
 
@@ -1053,8 +1101,54 @@ export class AquariusService {
   }
 
   /**
-   * Get expected output amount from pool reserves.
-   * Tries all available XLM/USDC pools on Aquarius and returns the best (highest) quote.
+   * Ask the Aquarius router for the swap output via its `estimate_swap_routed` view.
+   * Mirrors the exact swaps_chain that `swap_chained` would execute, so the returned
+   * amount is what the actual swap will produce (no off-chain math drift).
+   * Returns human-readable amount (7 decimals), or null if the router rejects/lacks the method.
+   */
+  private static async estimateSwapRouted(
+    tokenInContract: string,
+    amountInStroops: bigint,
+    poolIndexBytes: Buffer,
+  ): Promise<number | null> {
+    try {
+      const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+      const tempKeypair = StellarSdk.Keypair.random();
+      const tempAccount = new StellarSdk.Account(tempKeypair.publicKey(), '0');
+      const router = new StellarSdk.Contract(CONTRACT_ADDRESSES.AQUARIUS_ROUTER);
+      const swapsChain = buildSwapsChain(tokenInContract, poolIndexBytes);
+
+      const tx = new StellarSdk.TransactionBuilder(tempAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          router.call(
+            'estimate_swap_routed',
+            swapsChain,
+            StellarSdk.nativeToScVal(tokenInContract, { type: 'address' }),
+            StellarSdk.nativeToScVal(amountInStroops, { type: 'u128' }),
+          )
+        )
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+      if (!StellarSdk.rpc.Api.isSimulationSuccess(sim) || !sim.result?.retval) return null;
+
+      const raw = StellarSdk.scValToNative(sim.result.retval) as bigint;
+      const amountOut = Number(raw) / 1e7;
+      return Number.isFinite(amountOut) && amountOut > 0 ? amountOut : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get expected output amount for the swap.
+   * Primary path: ask the Aquarius router (`estimate_swap_routed`) — guarantees the quote
+   *   matches what `swap_chained` will actually return at execution.
+   * Fallback path: read pool reserves and compute the constant-product output locally.
    * Returns the output amount in human-readable form (7 decimals), or null on error.
    */
   static async getSwapQuote(
@@ -1067,19 +1161,25 @@ export class AquariusService {
       const tokenInContract = tokenInSymbol === 'XLM' ? XLM_CONTRACT : CONTRACT_ADDRESSES.AQUARIUS_USDC;
       const amountInStroops = BigInt(Math.round(amountIn * 1e7));
 
-      // Discover all pools for this pair and pick the one giving the best (highest) quote.
-      // This ensures we always match the most liquid Aquarius pool (same as their UI).
       const poolIndices = await AquariusService.getAquariusPoolIndices();
 
       let bestAmount = 0;
       let bestQuote: string | null = null;
 
       for (const poolIndexBytes of poolIndices) {
-        const amount = await AquariusService.getQuotedOutForPoolIndex(
+        // Prefer the router's own estimate; fall back to local math only if router rejects.
+        let amount = await AquariusService.estimateSwapRouted(
           tokenInContract,
           amountInStroops,
           poolIndexBytes,
         );
+        if (amount === null) {
+          amount = await AquariusService.getQuotedOutForPoolIndex(
+            tokenInContract,
+            amountInStroops,
+            poolIndexBytes,
+          );
+        }
         if (amount !== null && amount > bestAmount) {
           bestAmount = amount;
           bestQuote = amount.toFixed(7);

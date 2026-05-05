@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { useTheme } from "@/contexts/theme-context";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
@@ -8,8 +8,14 @@ import { OneClickStrategy } from "./one-click-strategy";
 import { OnboardingTutorial } from "./onboarding-tutorial";
 import { PositionsList } from "./positions-list";
 import { PositionDetail } from "./position-detail";
-import { MOCK_LITE_POSITIONS, buildRealPositions } from "./lite-position-types";
-import { aggregateByPool } from "./lite-position-math";
+import type { LitePosition, LitePositionStatus } from "./lite-position-types";
+import { calcNetApr, calcEarningsUsd, aggregateByPool } from "./lite-position-math";
+import {
+  getLitePositions,
+  subscribeLitePositions,
+  type LitePositionRecord,
+} from "@/lib/lite-positions";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -31,24 +37,91 @@ export const LiteHome = () => {
   const [activeTab, setActiveTab] = useState<LiteTab>("deposit");
   const [selectedPositionId, setSelectedPositionId] = useState<string | null>(null);
 
-  const hasMarginAccount = useMarginAccountInfoStore((s) => s.hasMarginAccount);
-  const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
-  const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
-  const borrowedBalances = useMarginAccountInfoStore((s) => s.borrowedBalances);
-  const avgHealthFactor = useMarginAccountInfoStore((s) => s.avgHealthFactor);
+  const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
 
-  /* Build positions: prefer real on-chain data when the user has an active
-     margin account with borrowed balances; fall back to Stellar-themed mocks. */
-  const positions = useMemo(() => {
-    if (hasMarginAccount && Object.keys(borrowedBalances).length > 0) {
-      const hf = avgHealthFactor > 0
-        ? avgHealthFactor
-        : totalBorrowedValue > 0 ? totalCollateralValue / totalBorrowedValue : 999;
-      const real = buildRealPositions(borrowedBalances, totalCollateralValue, hf);
-      if (real.length > 0) return aggregateByPool(real);
-    }
-    return aggregateByPool(MOCK_LITE_POSITIONS);
-  }, [hasMarginAccount, borrowedBalances, totalCollateralValue, totalBorrowedValue, avgHealthFactor]);
+  // Subscribe to the Lite-only registry. We deliberately don't read from the
+  // margin store's borrowedBalances anymore — that would surface Pro-mode
+  // borrows in the Lite Position tab, which is what the user pushed back on:
+  // a wallet with a vanilla margin borrow (no Lite "Deposit & Deploy") should
+  // show nothing here.
+  const [liteRecords, setLiteRecords] = useState<LitePositionRecord[]>(() =>
+    getLitePositions(marginAccountAddress)
+  );
+  useEffect(() => {
+    setLiteRecords(getLitePositions(marginAccountAddress));
+    return subscribeLitePositions(() => {
+      setLiteRecords(getLitePositions(marginAccountAddress));
+    });
+  }, [marginAccountAddress]);
+
+  const tokenPrices = useTokenPrices(["XLM", "USDC", "BLUSDC", "AQUSDC", "SOUSDC"]);
+
+  const positions = useMemo<LitePosition[]>(() => {
+    if (liteRecords.length === 0) return [];
+    const now = Date.now();
+    const built: LitePosition[] = liteRecords.map((r) => {
+      // Live USD valuation — re-price asset units against the oracle so a
+      // moving XLM price reflects in collateral / borrow / Net Value.
+      const collateralPrice = tokenPrices[r.collateralAsset] ?? 0;
+      const borrowPrice = tokenPrices[r.borrowAsset] ?? 0;
+      const collateralUsd = collateralPrice > 0 ? r.collateralAmount * collateralPrice : r.collateralUsdAtOpen;
+      const borrowUsd = borrowPrice > 0 ? r.borrowAmount * borrowPrice : r.borrowUsdAtOpen;
+
+      // Earnings since opening — simple-APR estimate. The protocol doesn't
+      // surface a per-position interest accrual, so we approximate with
+      // (collateralUsd × netApr × elapsedYears).
+      const elapsedYears = Math.max(0, (now - r.openedAt) / (1000 * 60 * 60 * 24 * 365));
+      const netApr = calcNetApr({
+        supplyApr: r.supplyApr,
+        vannaFeeApr: r.vannaFeeApr,
+        leverage: r.leverage,
+      });
+      const earningsUsd = calcEarningsUsd(collateralUsd, netApr, elapsedYears);
+
+      // Per-position health factor — independent of any other Pro-mode debt
+      // on the same margin account.
+      const hf = borrowUsd > 0 ? (collateralUsd + borrowUsd) / borrowUsd : 999;
+      const status: LitePositionStatus =
+        hf >= 1.5 ? "active" : hf >= 1.1 ? "risky" : "liquidation";
+
+      const ageMs = now - r.openedAt;
+      const minutes = Math.floor(ageMs / 60_000);
+      const hours = Math.floor(ageMs / (60_000 * 60));
+      const days = Math.floor(ageMs / (60_000 * 60 * 24));
+      const openedAt =
+        days >= 1 ? `${days}d ago`
+        : hours >= 1 ? `${hours}h ago`
+        : minutes >= 1 ? `${minutes}m ago`
+        : "just now";
+
+      return {
+        id: r.id,
+        poolId: r.poolId,
+        poolLabel: r.poolLabel,
+        protocol: r.protocol,
+        poolVersion: r.poolVersion,
+        poolType: r.poolType,
+        poolTokens: r.poolTokens,
+        collateralAsset: r.collateralAsset,
+        collateralAmount: r.collateralAmount,
+        collateralUsd,
+        borrowAsset: r.borrowAsset,
+        borrowAmount: r.borrowAmount,
+        borrowUsd,
+        isSameAsset: r.isSameAsset,
+        leverage: r.leverage,
+        supplyApr: r.supplyApr,
+        vannaFeeApr: r.vannaFeeApr,
+        netApr,
+        earningsUsd,
+        healthFactor: hf,
+        liquidationLtv: r.liquidationLtv,
+        status,
+        openedAt,
+      };
+    });
+    return aggregateByPool(built);
+  }, [liteRecords, tokenPrices]);
 
   const hasPosition = positions.length > 0;
 

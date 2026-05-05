@@ -27,11 +27,30 @@ import { useTokenPrices } from "@/contexts/price-context";
 import { useWallet } from "@/hooks/use-wallet";
 import { appendMarginHistory } from "@/lib/margin-history";
 import toast from "react-hot-toast";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 type Modes = "Deposit" | "Borrow";
 
 // Helper to generate unique ID for collateral
 const generateCollateralId = () => `collateral-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+// Map common create-account failure modes to actionable user-facing copy.
+// Without this the toast is always "Failed to create margin account. Please
+// try again." even when the wallet just has 0 XLM and the fix is one click.
+const humanizeCreateAccountError = (msg: string): string => {
+  const m = (msg || "").toLowerCase();
+  if (!m) return "Failed to create margin account. Please try again.";
+  if (m.includes("account not found") || m.includes("not found on network")) {
+    return "Wallet has no XLM on testnet. Open the Faucet and fund your wallet, then try again.";
+  }
+  if (m.includes("insufficient") || m.includes("balance") || m.includes("fee")) {
+    return "Wallet doesn't have enough XLM to pay the transaction fee. Use the Faucet to fund it, then try again.";
+  }
+  if (m.includes("rejected") || m.includes("cancelled") || m.includes("user denied")) {
+    return "Transaction was cancelled in Freighter.";
+  }
+  return "Failed to create margin account. Please try again.";
+};
 
 // Helper to ensure collateral has ID
 const ensureCollateralId = (collateral: Collaterals): Collaterals => {
@@ -145,9 +164,9 @@ export const LeverageAssetsTab = () => {
   // Single source of truth for MB mode
   const isMBMode = collateralList.length === 1 && collateralList[0]?.balanceType.toLowerCase() === "mb";
 
-  const MB_TOKEN_PRICES: Record<string, number> = {
-    XLM: 0.10, BLUSDC: 1.00, AQUSDC: 1.00, SOUSDC: 1.00, USDC: 1.00, EURC: 1.00,
-  };
+  // Live oracle prices for USD conversions in deposit/borrow flows. Aliased
+  // tokens (BLUSDC/AQUSDC/SOUSDC) resolve to USDC inside oracle-price.ts.
+  const MB_TOKEN_PRICES = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
 
   // Map dropdown asset name → canonical key used in collateralBalances.
   // Mirrors canonicalMarginToken() in margin-account-info-store.ts.
@@ -810,11 +829,13 @@ export const LeverageAssetsTab = () => {
         setActiveDialogue("none");
         toast.success("Margin account created successfully.");
       } else {
-        toast.error("Failed to create margin account. Please try again.");
+        const reason = useMarginAccountInfoStore.getState().accountCreationError || "";
+        toast.error(humanizeCreateAccountError(reason));
       }
     } catch (error) {
       console.error("Failed to create margin account:", error);
-      toast.error("Failed to create margin account. Please try again.");
+      const msg = error instanceof Error ? error.message : "";
+      toast.error(humanizeCreateAccountError(msg));
     }
   };
 

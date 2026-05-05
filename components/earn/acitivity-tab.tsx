@@ -8,6 +8,7 @@ import { usePoolData, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
 import { getEarnHistoryByAsset } from "@/lib/earn-history";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 type EarnTx = {
   type: 'supply' | 'withdraw';
@@ -62,6 +63,15 @@ const toInternalAsset = (value: string): string => {
   return value.toUpperCase();
 };
 
+// Aquarius / Soroswap USDC variants share USDC's oracle price (no separate
+// Reflector entry exists). The hook resolves the alias internally.
+const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
+  XLM: 'XLM',
+  USDC: 'USDC',
+  AQUARIUS_USDC: 'USDC',
+  SOROSWAP_USDC: 'USDC',
+};
+
 const normalizeTimestamp = (value: number | string | undefined): number => {
   const ts = Number(value ?? 0);
   if (!Number.isFinite(ts) || ts <= 0) return 0;
@@ -76,6 +86,9 @@ export const ActivityTab = () => {
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const assetKey = toInternalAsset(selectedAsset);
   const displaySymbol = DISPLAY_SYMBOL[assetKey] ?? assetKey;
+  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
+  const priceForAsset = (key: string): number =>
+    tokenPrices[PRICE_TOKEN_FOR_ASSET[key] ?? key] ?? 1;
 
   const filteredTransactions = useMemo(() => {
     const normalizeAsset = (value: string) => toInternalAsset(value || "");
@@ -110,7 +123,7 @@ export const ActivityTab = () => {
   const userDistributionBody = useMemo(() => {
     const pool = pools[assetKey as keyof typeof pools];
     const totalSupply = parseFloat(pool?.totalSupply || '0');
-    const price = getPrice(assetKey);
+    const price = priceForAsset(assetKey);
     const usdValue = totalSupply * price;
 
     return {
@@ -166,7 +179,7 @@ export const ActivityTab = () => {
           {
             icon: iconPaths[DISPLAY_SYMBOL[assetKey] ?? assetKey] || iconPaths[assetKey] || `/icons/usdc-icon.svg`,
             title: `${(parseFloat(tx.amount) || 0).toFixed(2)} ${DISPLAY_SYMBOL[assetKey] ?? assetKey}`,
-            description: `$${(parseFloat(tx.amount) * getPrice(assetKey)).toFixed(2)}`,
+            description: `$${(parseFloat(tx.amount) * priceForAsset(assetKey)).toFixed(2)}`,
           },
           {
             title: tx.status ?? 'success',

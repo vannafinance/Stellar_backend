@@ -8,6 +8,7 @@ import { TABLE_ROW_HEADINGS, COIN_ICONS } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
 import { useShallow } from "zustand/shallow";
 import { useMarginHistory } from "@/hooks/use-margin";
+import { useTokenPrices } from "@/hooks/use-token-prices";
 
 interface PositionstableProps {
   onRepayClick?: (asset?: string) => void;
@@ -15,7 +16,14 @@ interface PositionstableProps {
 }
 
 const ITEMS_PER_PAGE = 5;
+// Match the store's USD-denominated dust floor. A previously-repaid loan
+// often leaves a sub-cent residual that rounds to "0.00 XLM" in the UI but
+// would still pass an amount-only filter — keeping the Repay button hot
+// when there's nothing real left to repay.
+const BORROW_DUST_USD = 0.01;
 const BORROW_DUST_EPSILON = 1e-6;
+
+const PRICEABLE_TOKENS = ['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC'];
 
 const canonicalToken = (token: string): string => {
   const normalized = token.toUpperCase();
@@ -36,6 +44,12 @@ const getTokenIcon = (asset: string): string => {
 const formatTokenName = (asset: string): string => {
   if (asset.startsWith("0x")) return asset.split("0x")[1] || asset;
   return asset;
+};
+
+const formatInterestUsd = (value: number): string => {
+  if (!Number.isFinite(value) || value <= 0) return "$0";
+  if (value < 0.01) return "<$0.01";
+  return `$${value.toFixed(2)}`;
 };
 
 export const Positionstable = ({
@@ -59,6 +73,9 @@ export const Positionstable = ({
     })),
   );
 
+  const { history } = useMarginHistory();
+  const tokenPrices = useTokenPrices(PRICEABLE_TOKENS);
+
   const positions = useMemo<Position[]>(() => {
     const collateralEntries = (Object.entries(collateralBalances) as [string, BorrowedBalance][]).filter(
       ([, bal]) => parseFloat(bal.amount) > 0
@@ -70,7 +87,12 @@ export const Positionstable = ({
 
     for (const [token, bal] of borrowedEntries) {
       const amount = parseFloat(bal.amount || '0');
-      if (!(amount > BORROW_DUST_EPSILON)) continue;
+      const usd = parseFloat(bal.usdValue || '0');
+      // Drop dust by both axes: the token amount must be non-zero AND the
+      // USD value must clear the cent floor. Either alone leaks: a 0.001
+      // XLM dust passes the amount check but is worth $0; a $0.005 amount
+      // passes the USD check but is below the cent floor.
+      if (!(amount > BORROW_DUST_EPSILON) || !(usd > BORROW_DUST_USD)) continue;
 
       const canonical = canonicalToken(token);
       const existing = dedupedBorrowed.get(canonical);
@@ -96,11 +118,50 @@ export const Positionstable = ({
         usdValue: parseFloat(bal.usdValue),
       }));
 
-    const equity = totalCollateralValue - totalBorrowedValue;
+    // Leverage matches the slider semantic in leverage-assets-tab.tsx:
+    //   borrow_amount = own_deposit × (multiplier − 1)
+    // For a fresh position this means debt_USD == own × (m−1), so
+    //   m = 1 + debt_USD / own_USD  ≈  1 + debt / collateral
+    // when borrow proceeds aren't redeposited. This is the same as the
+    // standard "1 + LTV" leverage figure DeFi protocols display, and it
+    // stays finite & ≥ 1 even when debt exceeds collateral (e.g. user
+    // borrowed and withdrew the proceeds, making equity negative). The
+    // earlier collateral/equity formula divided by 0 / went negative in
+    // exactly those cases and fell through to "1x" — which is what
+    // surfaced as the user-reported "leverage shows 1x" bug.
     const leverage =
-      totalCollateralValue > 0 && equity > 0
-        ? parseFloat((totalCollateralValue / equity).toFixed(2))
+      totalCollateralValue > 0
+        ? parseFloat((1 + totalBorrowedValue / totalCollateralValue).toFixed(2))
         : 1;
+
+    // Interest accrued = current debt − net principal still owed, in USD.
+    // Net principal per token = sum(borrow events) − sum(repay events). The
+    // pool's b_rate accrual makes current debt drift above net principal; that
+    // drift is the user-visible interest. Negative diffs (e.g. when local
+    // history is incomplete) are clamped to 0 so we never show "credit".
+    const netPrincipalByToken: Record<string, number> = {};
+    for (const item of history) {
+      const canonical = canonicalToken(item.asset || '');
+      const amt = parseFloat(String(item.amount ?? '0')) || 0;
+      if (!Number.isFinite(amt) || amt <= 0) continue;
+      if (item.type === 'borrow') {
+        netPrincipalByToken[canonical] = (netPrincipalByToken[canonical] ?? 0) + amt;
+      } else if (item.type === 'repay') {
+        netPrincipalByToken[canonical] = (netPrincipalByToken[canonical] ?? 0) - amt;
+      }
+    }
+
+    let interestAccruedUsd = 0;
+    for (const [, bal] of dedupedBorrowed) {
+      const canonical = canonicalToken(bal.token);
+      const currentAmt = parseFloat(bal.balance.amount || '0');
+      const principalAmt = Math.max(0, netPrincipalByToken[canonical] ?? 0);
+      const diff = currentAmt - principalAmt;
+      if (diff > 0) {
+        const price = tokenPrices[canonical] ?? 1;
+        interestAccruedUsd += diff * price;
+      }
+    }
 
     // A margin account is ONE leveraged position even when collateral and
     // borrow are different assets (e.g. deposit XLM, borrow BLUSDC). The old
@@ -116,26 +177,25 @@ export const Positionstable = ({
         collateralUsdValue: parseFloat(bal.usdValue),
         borrowed: borrowedArray,
         leverage,
-        interestAccrued: 0,
+        interestAccrued: hasAnyDebt ? parseFloat(interestAccruedUsd.toFixed(4)) : 0,
         isOpen: hasAnyDebt,
         user: '',
       };
     });
-  }, [collateralBalances, borrowedBalances, totalCollateralValue, totalBorrowedValue]);
-
-  const { history } = useMarginHistory();
+  }, [collateralBalances, borrowedBalances, totalCollateralValue, totalBorrowedValue, history, tokenPrices]);
 
   const [activeTab, setActiveTab] = useState<string>("currentPositions");
   const [currentPage, setCurrentPage] = useState<number>(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filter positions based on active tab
+  // Current Positions = anything the user currently has collateral on (the
+  // `positions` array is already keyed off non-zero collateral entries, so
+  // every row qualifies). Rows with no real borrow render the Repay button
+  // in disabled gray rather than dropping into the History tab — which is
+  // a separate view that lists margin transaction events, not positions.
   const filteredPositions = useMemo(() => {
-    if (activeTab === "currentPositions") {
-      return positions.filter((pos: Position) => pos.borrowed.length > 0);
-    } else {
-      return positions.filter((pos: Position) => pos.borrowed.length === 0);
-    }
+    if (activeTab === "currentPositions") return positions;
+    return [];
   }, [positions, activeTab]);
 
   // Calculate pagination
@@ -422,7 +482,7 @@ export const Positionstable = ({
                 fill={isDark ? "#FFFFFF" : "black"}
               />
             </svg>
-            ${item.interestAccrued}
+            {formatInterestUsd(item.interestAccrued)}
           </>
         ) : (
           <span className={isDark ? "text-[#666666]" : "text-[#A0A0A0]"}>
@@ -439,21 +499,21 @@ export const Positionstable = ({
         viewport={{ once: true }}
         transition={{ duration: 0.3, delay: idx * 0.08 + 0.3 }}
       >
-        {item.isOpen && item.borrowed.length > 0 ? (
-          <div className="w-fit">
-            <Button
-              size="small"
-              type="gradient"
-              disabled={false}
-              text="Repay"
-              onClick={() => onRepayClick?.(item.borrowed[0]?.assetData.asset)}
-            />
-          </div>
-        ) : (
-          <span className={`text-[12px] font-medium ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>
-            Repaid
-          </span>
-        )}
+        {(() => {
+          const totalBorrowUsd = item.borrowed.reduce((s, b) => s + (b.usdValue || 0), 0);
+          const canRepay = item.borrowed.length > 0 && totalBorrowUsd > BORROW_DUST_USD;
+          return (
+            <div className="w-fit">
+              <Button
+                size="small"
+                type="gradient"
+                disabled={!canRepay}
+                text="Repay"
+                onClick={() => canRepay && onRepayClick?.(item.borrowed[0]?.assetData.asset)}
+              />
+            </div>
+          );
+        })()}
       </motion.div>
     </motion.article>
   );
@@ -542,25 +602,25 @@ export const Positionstable = ({
           </div>
           <div>
             <p className={lbl}>Interest Accrued</p>
-            <p className={val}>{item.interestAccrued > 0 ? `$${item.interestAccrued}` : "$0"}</p>
+            <p className={val}>{formatInterestUsd(item.interestAccrued)}</p>
           </div>
         </div>
 
         {/* Action */}
         <div className="flex justify-end">
-          {item.isOpen && item.borrowed.length > 0 ? (
-            <Button
-              size="small"
-              type="gradient"
-              disabled={false}
-              text="Repay"
-              onClick={() => onRepayClick?.(item.borrowed[0]?.assetData.asset)}
-            />
-          ) : (
-            <span className={`text-[12px] font-medium ${isDark ? "text-[#666666]" : "text-[#A0A0A0]"}`}>
-              Repaid
-            </span>
-          )}
+          {(() => {
+            const totalBorrowUsd = item.borrowed.reduce((s, b) => s + (b.usdValue || 0), 0);
+            const canRepay = item.borrowed.length > 0 && totalBorrowUsd > BORROW_DUST_USD;
+            return (
+              <Button
+                size="small"
+                type="gradient"
+                disabled={!canRepay}
+                text="Repay"
+                onClick={() => canRepay && onRepayClick?.(item.borrowed[0]?.assetData.asset)}
+              />
+            );
+          })()}
         </div>
       </motion.div>
     );

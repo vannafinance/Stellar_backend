@@ -2,7 +2,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { getAddress, signTransaction } from '@stellar/freighter-api';
 import { CONTRACT_ADDRESSES, NETWORK_PASSPHRASE, SOROBAN_RPC_URL } from './stellar-utils';
 import { BlendService } from './blend-utils';
-import { getTokenPriceUsdSync } from './prices';
+import { fetchTokenPrice } from './oracle-price';
 
 // Types
 export interface MarginAccount {
@@ -1661,9 +1661,13 @@ export class MarginAccountService {
           if (!('error' in balanceResult) && 'result' in balanceResult && balanceResult.result) {
             const balanceWad = StellarSdk.scValToNative(balanceResult.result.retval) as string;
             const balanceNumber = parseFloat(balanceWad) / Math.pow(10, 18); // Convert from WAD
-            
+
             if (balanceNumber > 0) {
-              const usdValue = (balanceNumber * getTokenPriceUsdSync(token)).toFixed(2);
+              // USD value comes straight from the on-chain Reflector oracle so
+              // event-based callers that don't run the store's recompute still
+              // see live prices instead of a 1:1 placeholder.
+              const price = await fetchTokenPrice(token);
+              const usdValue = (balanceNumber * price).toFixed(2);
               borrowedBalances[token] = {
                 amount: balanceNumber.toFixed(6),
                 usdValue
@@ -1774,7 +1778,7 @@ export class MarginAccountService {
       const balances: Record<string, { amount: string; usdValue: string }> = {};
 
       // Query collateral balances for each token
-      for (const tokenSymbol of ['XLM', 'BLUSDC', 'AQUSDC', 'SOUSDC', 'USDC', 'EURC']) {
+      for (const tokenSymbol of ['XLM', 'BLUSDC', 'AQUSDC', 'SOUSDC', 'USDC']) {
         try {
           const userAddress = await getAddress();
           if (userAddress.error) continue;

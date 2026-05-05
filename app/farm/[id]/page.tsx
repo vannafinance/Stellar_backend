@@ -38,6 +38,17 @@ import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { useBlendStore } from "@/store/blend-store";
 import { buildFarmPoolKey, getFarmHistory } from "@/lib/farm-history";
 
+// Compact human-readable number: "62.44M", "1.23K", "987.65".
+// Used for large pool/reserve totals where full digit grouping ("62,438,184.70")
+// is noisy and harder to scan. Mirrors the helper in app/earn/[id]/page.tsx.
+const fmtCompact = (raw: string | number | null | undefined): string => {
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw ?? "0"));
+  if (!Number.isFinite(n)) return "0";
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+};
+
 const UI_TABS = [
   { id: "all-transactions", label: "All Transactions" },
   { id: "analytics", label: "Analytics" },
@@ -199,7 +210,7 @@ const FarmHeaderStats = memo(function FarmHeaderStats({
       { id: "supplyApy", name: "Supply APY", amount: statsLoading ? "..." : reserveData ? `${(parseFloat(reserveData.supplyAPY) || 0).toFixed(2)}%` : "N/A" },
       { id: "borrowApy", name: "Borrow APY", amount: statsLoading ? "..." : reserveData ? `${(parseFloat(reserveData.borrowAPY) || 0).toFixed(2)}%` : "N/A" },
       { id: "utilization", name: "Utilization Rate", amount: statsLoading ? "..." : reserveData ? `${(parseFloat(reserveData.utilizationRate) || 0).toFixed(2)}%` : "N/A" },
-      { id: "totalSupply", name: "Total Pool Supply", amount: statsLoading ? "..." : reserveData ? `${parseFloat(reserveData.totalSupply).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${tokenSymbol}` : "N/A" },
+      { id: "totalSupply", name: "Total Pool Supply", amount: statsLoading ? "..." : reserveData ? `${fmtCompact(reserveData.totalSupply)} ${tokenSymbol}` : "N/A" },
     ];
   }, [isSoroswapEarly, ssStats, ssStatsLoading, ssTokenA, ssTokenB, reserveData, statsLoading, tokenSymbol]);
 

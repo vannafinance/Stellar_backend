@@ -12,6 +12,7 @@ import { useMarginAccountInfoStore, refreshBorrowedBalances } from "@/store/marg
 import type { LitePosition } from "./lite-position-types";
 import { calcExitPreview } from "./lite-position-math";
 import { closePosition } from "@/lib/one-click-strategy";
+import { applyLiteExit } from "@/lib/lite-positions";
 
 function parseContractError(msg: string): string {
   if (!msg) return "Transaction failed. Please try again.";
@@ -154,6 +155,10 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
         onStep: (msg) => setTxModal((p) => ({ ...p, message: msg })),
       });
       if (!result.success) throw new Error(parseContractError(result.error ?? ""));
+      // Drop / scale the Lite registry record to match the on-chain state.
+      // Without this the Position tab keeps showing the original numbers
+      // even after a 100% close, which looks like the close failed.
+      applyLiteExit(position.id, exitPct);
       setTxModal({
         open: true, status: "success",
         title: exitPct === 100 ? "Position Closed" : `${exitPct}% Exit Complete`,
@@ -477,8 +482,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
             {/* Repay row */}
             <div className={`flex items-center justify-between gap-3 rounded-lg px-3.5 py-3 ${rowBg}`}>
               <div className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#FC5457]" />
-                <span className={`text-[10px] font-bold uppercase tracking-[0.5px] ${bodyText}`}>
+                <span className={`text-[11px] font-semibold uppercase tracking-[0.5px] ${bodyText}`}>
                   Repay
                 </span>
                 <TokenIcon symbol={position.borrowAsset} size={16} />
@@ -493,8 +497,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
             {/* Withdraw row */}
             <div className={`flex items-center justify-between gap-3 rounded-lg px-3.5 py-3 ${rowBg}`}>
               <div className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
-                <span className={`text-[10px] font-bold uppercase tracking-[0.5px] ${bodyText}`}>
+                <span className={`text-[11px] font-semibold uppercase tracking-[0.5px] ${bodyText}`}>
                   Withdraw
                 </span>
                 <TokenIcon symbol={position.collateralAsset} size={16} />
@@ -540,8 +543,7 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
             {/* Projected HF — directly addresses "does exit affect HF?" */}
             <div className={`flex items-center justify-between gap-3 rounded-lg px-3.5 py-3 ${rowBg}`}>
               <div className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#703AE6]" />
-                <span className={`text-[10px] font-bold uppercase tracking-[0.5px] ${bodyText}`}>
+                <span className={`text-[11px] font-semibold uppercase tracking-[0.5px] ${bodyText}`}>
                   Projected HF
                 </span>
               </div>
@@ -632,14 +634,13 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
       >
         {/* APR breakdown */}
         <div className={`w-full rounded-xl border overflow-hidden ${cardBg}`}>
-          <div className="flex items-center gap-2 px-5 pt-5 pb-4">
-            <div className="w-1.5 h-1.5 rounded-full bg-gradient" />
-            <h3 className={`text-[13px] font-semibold ${headingText}`}>
+          <div className={`px-5 pt-4 pb-3 border-b ${divider}`}>
+            <h3 className={`text-[12px] font-bold uppercase tracking-[0.6px] ${headingText}`}>
               APR Breakdown
             </h3>
           </div>
 
-          <div className={`grid grid-cols-2 border-y ${divider}`}>
+          <div className={`grid grid-cols-2 border-b ${divider}`}>
             <div className="flex flex-col gap-1 px-5 py-4">
               <span className={`text-[10px] font-semibold uppercase tracking-[0.5px] ${subMuted}`}>
                 Supply APY
@@ -675,16 +676,15 @@ export const PositionDetail = ({ position, onBack, onExitSuccess }: PositionDeta
           </div>
         </div>
 
-        {/* Detailed attributes — Morpho style */}
+        {/* Detailed attributes */}
         <div className={`w-full rounded-xl border overflow-hidden ${cardBg}`}>
-          <div className="flex items-center gap-2 px-5 pt-5 pb-4">
-            <div className="w-1.5 h-1.5 rounded-full bg-gradient" />
-            <h3 className={`text-[13px] font-semibold ${headingText}`}>
+          <div className={`px-5 pt-4 pb-3 border-b ${divider}`}>
+            <h3 className={`text-[12px] font-bold uppercase tracking-[0.6px] ${headingText}`}>
               Position Details
             </h3>
           </div>
 
-          <div className={`flex flex-col border-t ${divider}`}>
+          <div className={`flex flex-col`}>
             {[
               {
                 label: "Collateral",

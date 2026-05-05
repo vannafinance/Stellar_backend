@@ -11,15 +11,45 @@ import { useEarnVaultStore } from "@/store/earn-vault-store";
 import { setSelectedPool } from "@/store/selected-pool-store";
 import { AssetType } from "@/lib/stellar-utils";
 import { usePoolData, useUserPositions } from "@/hooks/use-earn";
-import { useTokenPrices } from "@/contexts/price-context";
+import { useTokenPrices } from "@/hooks/use-token-prices";
+import { getEarnHistoryByAsset } from "@/lib/earn-history";
 
+// AQUARIUS_USDC / SOROSWAP_USDC piggyback on USDC's oracle price (no separate
+// Reflector entry exists — the alias resolves inside oracle-price.ts).
+const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
+  XLM: 'XLM',
+  USDC: 'USDC',
+  AQUARIUS_USDC: 'USDC',
+  SOROSWAP_USDC: 'USDC',
+};
 const HISTORY_MAX_ITEMS = 3000;
 const ALL_ASSETS = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
+
+// Minimum spacing between persisted history snapshots. Without this, every
+// 30-second oracle refresh that nudges the price by even a hundredth of a
+// cent pushes a new chart point, which makes long-range views (3M / All
+// Time) visibly reshape every minute even though nothing material changed.
+const SNAPSHOT_MIN_INTERVAL_MS = 60_000;
 
 type EarnOverviewSnapshot = {
   timestamp: number;
   totalDepositedUSD: number;
-  annualEarningsUSD: number;
+  earnedYieldUSD: number;
+};
+
+// Net principal still on deposit per asset, derived from local earn history
+// (sum of supplies minus withdrawals). Used as the baseline against which
+// the on-chain vToken-redeem value is compared to surface accrued yield.
+const sumNetSuppliedTokens = (asset: AssetType): number => {
+  const events = getEarnHistoryByAsset(asset);
+  let net = 0;
+  for (const e of events) {
+    const amt = parseFloat(e.amount || '0') || 0;
+    if (!Number.isFinite(amt) || amt <= 0) continue;
+    if (e.type === 'supply') net += amt;
+    else if (e.type === 'withdraw') net -= amt;
+  }
+  return net;
 };
 
 const getHistoryKey = (address: string) => `vanna_earn_overview_history_v2_${address}`;
@@ -41,12 +71,15 @@ const readOverviewHistory = (address: string): EarnOverviewSnapshot[] => {
       .map((item) => ({
         timestamp: normalizeTimestamp(item?.timestamp),
         totalDepositedUSD: Number(item?.totalDepositedUSD ?? 0),
-        annualEarningsUSD: Number(item?.annualEarningsUSD ?? 0),
+        // Migrate older snapshots that used the projected-annual figure: treat
+        // any missing earnedYieldUSD as 0, ignoring the legacy field, so the
+        // chart no longer pretends past projections were earned dollars.
+        earnedYieldUSD: Number(item?.earnedYieldUSD ?? 0),
       }))
       .filter((item) =>
         item.timestamp > 0 &&
         Number.isFinite(item.totalDepositedUSD) &&
-        Number.isFinite(item.annualEarningsUSD)
+        Number.isFinite(item.earnedYieldUSD)
       )
       .sort((a, b) => a.timestamp - b.timestamp);
 
@@ -73,13 +106,17 @@ const writeOverviewHistory = (address: string, snapshots: EarnOverviewSnapshot[]
 
 const toChartData = (
   snapshots: EarnOverviewSnapshot[],
-  key: "totalDepositedUSD" | "annualEarningsUSD"
+  key: "totalDepositedUSD" | "earnedYieldUSD"
 ): Array<{ date: string; amount: number }> => {
   if (snapshots.length === 0) return [];
+  // Earned yield on testnet/short timeframes is often well under $0.01.
+  // Rounding to 2 decimals would flatten the chart to zero, so keep more
+  // precision for earnings while keeping deposits at 2 decimals.
+  const decimals = key === "earnedYieldUSD" ? 6 : 2;
   const points = snapshots
     .map((item) => ({
       date: new Date(item.timestamp).toISOString(),
-      amount: parseFloat((item[key] || 0).toFixed(2)),
+      amount: parseFloat((item[key] || 0).toFixed(decimals)),
     }))
     .filter((item) => Number.isFinite(item.amount));
 
@@ -224,6 +261,7 @@ export default function Earn() {
   // Live data from on-chain contracts (auto-refreshes every 30s)
   const { pools, isLoading: poolsLoading } = usePoolData();
   const { positions: userPositions, isLoading: positionsLoading } = useUserPositions();
+  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
   const [overviewHistory, setOverviewHistory] = useState<EarnOverviewSnapshot[]>([]);
 
   // Set default pool selection on mount
@@ -236,27 +274,29 @@ export default function Earn() {
     });
   }, []);
 
-  const { totalDepositedUSD, annualEarnings } = useMemo(() => {
-    const totalUSD = ALL_ASSETS.reduce((sum, asset) => {
-      const deposited = parseFloat(userPositions[asset]?.deposited || "0");
-      return sum + deposited * getPrice(asset);
-    }, 0);
-    let weightedAPY = 0;
-    let weightTotal = 0;
+  const { totalDepositedUSD, earnedYieldUSD } = useMemo(() => {
+    let totalUSD = 0;
+    let earnedUSD = 0;
     ALL_ASSETS.forEach((asset) => {
-      const deposited = parseFloat(userPositions[asset]?.deposited || "0");
-      if (deposited > 0) {
-        weightTotal += deposited;
-        weightedAPY += deposited * parseFloat(pools[asset]?.supplyAPY || "0");
-      }
+      const depositedTokens = parseFloat(userPositions[asset]?.deposited || "0");
+      const price = tokenPrices[PRICE_TOKEN_FOR_ASSET[asset] ?? asset] ?? 1;
+      totalUSD += depositedTokens * price;
+
+      // Earned yield = on-chain redeemable amount − net principal still on
+      // deposit (sum of supplies − withdraws from local history). The vToken
+      // exchange rate grows with accrued interest, so this difference is the
+      // user's actual yield. Showing the *projected annual* return on freshly
+      // supplied liquidity (the previous behavior) misled users into thinking
+      // a year of yield had already accrued the moment they deposited.
+      const netSupplied = sumNetSuppliedTokens(asset);
+      const earnedTokens = Math.max(0, depositedTokens - netSupplied);
+      earnedUSD += earnedTokens * price;
     });
-    const avgAPY = weightTotal > 0 ? weightedAPY / weightTotal : 0;
-    const annual = totalUSD * (avgAPY / 100);
     return {
       totalDepositedUSD: totalUSD,
-      annualEarnings: annual,
+      earnedYieldUSD: earnedUSD,
     };
-  }, [userPositions, pools, getPrice]);
+  }, [userPositions, tokenPrices]);
 
   useEffect(() => {
     if (!userAddress) {
@@ -270,28 +310,32 @@ export default function Earn() {
   useEffect(() => {
     if (!userAddress) return;
     if (poolsLoading || positionsLoading) return;
-    if (!Number.isFinite(totalDepositedUSD) || !Number.isFinite(annualEarnings)) return;
+    if (!Number.isFinite(totalDepositedUSD) || !Number.isFinite(earnedYieldUSD)) return;
 
     queueMicrotask(() => {
       setOverviewHistory((prev) => {
         const now = Date.now();
         const roundedDeposited = parseFloat(totalDepositedUSD.toFixed(2));
-        const roundedAnnual = parseFloat(annualEarnings.toFixed(2));
+        const roundedEarned = parseFloat(earnedYieldUSD.toFixed(6));
         const last = prev[prev.length - 1];
         const depositedChanged = !last || Math.abs(last.totalDepositedUSD - roundedDeposited) >= 0.01;
-        const earningsChanged = !last || Math.abs(last.annualEarningsUSD - roundedAnnual) >= 0.01;
+        // Earned yield can grow by sub-cent amounts per snapshot (especially on
+        // testnet). Use a much smaller threshold so micro-yield still registers.
+        const earnedChanged = !last || Math.abs(last.earnedYieldUSD - roundedEarned) >= 0.000001;
+        // Throttle: even when values change every 30s oracle tick, don't push
+        // a new chart point more than once per minute. This is what stops the
+        // long-range chart shape from visibly reshaping every refresh.
+        const enoughTimePassed = !last || (now - last.timestamp) >= SNAPSHOT_MIN_INTERVAL_MS;
 
-        // Update only when actual value changes; never just because page refreshed.
-        if (!depositedChanged && !earningsChanged) {
-          return prev;
-        }
+        if (!depositedChanged && !earnedChanged) return prev;
+        if (!enoughTimePassed) return prev;
 
-        const next = [
+        const next: EarnOverviewSnapshot[] = [
           ...prev,
           {
             timestamp: now,
             totalDepositedUSD: roundedDeposited,
-            annualEarningsUSD: roundedAnnual,
+            earnedYieldUSD: roundedEarned,
           },
         ].slice(-HISTORY_MAX_ITEMS);
 
@@ -299,14 +343,14 @@ export default function Earn() {
         return next;
       });
     });
-  }, [userAddress, totalDepositedUSD, annualEarnings, poolsLoading, positionsLoading]);
+  }, [userAddress, totalDepositedUSD, earnedYieldUSD, poolsLoading, positionsLoading]);
 
   const liveDepositData = useMemo(
     () => toChartData(overviewHistory, "totalDepositedUSD"),
     [overviewHistory]
   );
-  const liveNetApyData = useMemo(
-    () => toChartData(overviewHistory, "annualEarningsUSD"),
+  const liveEarnedYieldData = useMemo(
+    () => toChartData(overviewHistory, "earnedYieldUSD"),
     [overviewHistory]
   );
 
@@ -447,14 +491,22 @@ export default function Earn() {
           </article>
           <article className="flex-1 min-w-0">
             <CollapsibleChart
-              label="Net APY"
-              statValue={`$${(liveNetApyData.length > 0
-                ? liveNetApyData[liveNetApyData.length - 1].amount
-                : 0
-              ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              label="Net Earnings"
+              statValue={(() => {
+                const v = liveEarnedYieldData.length > 0
+                  ? liveEarnedYieldData[liveEarnedYieldData.length - 1].amount
+                  : 0;
+                // Below $0.01, show more decimals so micro-yield is visible
+                // instead of collapsing to "$0.00".
+                const max = v > 0 && v < 0.01 ? 6 : 2;
+                return `$${v.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: max,
+                })}`;
+              })()}
               chartProps={{
                 type: "net-apy",
-                customData: liveNetApyData,
+                customData: liveEarnedYieldData,
               }}
             />
           </article>

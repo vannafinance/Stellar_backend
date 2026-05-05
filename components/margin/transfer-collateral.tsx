@@ -15,10 +15,19 @@ import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
+import { useTokenPrices } from "@/hooks/use-token-prices";
+import { ConversionRatio } from "@/components/ui/conversion-ratio";
 
 const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
-const XLM_MARGIN_WITHDRAW_BUFFER = 5;
+// XLM reserved inside the margin smart account. Stellar requires every
+// account to keep a base reserve (0.5 XLM × (2 + sub_entries)). A margin
+// account holds 4 collateral trustlines + persistent contract storage,
+// which costs ~5 XLM in base reserve, plus Soroban storage TTL/rent and
+// b_rate→underlying rounding dust. A 5 XLM buffer was too tight in
+// practice (4 XLM withdraws still failed on-chain); bumping to 8 keeps
+// the margin account safely above all on-chain minimums.
+const XLM_MARGIN_WITHDRAW_BUFFER = 8;
 const LIQUIDATION_THRESHOLD = 1.1;
 
 export const TransferCollateral = () => {
@@ -63,13 +72,14 @@ export const TransferCollateral = () => {
     }
   }, [globalIsConnected, globalAddress]);
 
+  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
   const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
   const maxTransferableBalance = computeMaxTransferableBalance(
     selectedTransferType,
     normalizeContractTokenSymbol(selectedCurrency),
     sourceBalance
   );
-  const selectedTokenPrice = getPrice(normalizeContractTokenSymbol(selectedCurrency));
+  const selectedTokenPrice = tokenPrices[normalizeContractTokenSymbol(selectedCurrency)] ?? 1;
   // USD value of the balance shown on the right side of the input row,
   // which mirrors `sourceBalance` (wallet for MB transfers, margin for WB).
   const sourceBalanceInUsd = sourceBalance * selectedTokenPrice;
@@ -136,8 +146,15 @@ export const TransferCollateral = () => {
       text.includes("withdraw transaction failed on-chain") ||
       text.includes("withdraw collateral failed with status")
     ) {
-      if (selectedTransferType === "WB" && totalBorrowedValue <= XLM_TRANSFER_EPSILON) {
-        return `Full withdrawal can fail due to on-chain rounding/state dust. Try up to ${maxExecutableWithdraw.toFixed(2)} ${selectedCurrency}.`;
+      if (
+        selectedTransferType === "WB" &&
+        normalizeContractTokenSymbol(selectedCurrency) === "XLM" &&
+        totalBorrowedValue <= XLM_TRANSFER_EPSILON
+      ) {
+        // The margin smart account itself has to keep ~8 XLM on-chain to
+        // satisfy Stellar's base-reserve rule and Soroban storage rent.
+        // Make this explicit so the user stops blaming a phantom debt.
+        return `~${XLM_MARGIN_WITHDRAW_BUFFER} XLM stay locked in the margin account as Stellar base reserve (needed to keep the smart account alive). You can withdraw at most ${maxExecutableWithdraw.toFixed(2)} XLM.`;
       }
       if (typeof maxSafeWithdrawAmount === "number" && maxSafeWithdrawAmount > 0) {
         return `Withdrawal failed on-chain. Max transferable right now: ${maxSafeWithdrawAmount.toFixed(2)} ${selectedCurrency}.`;
@@ -454,9 +471,9 @@ export const TransferCollateral = () => {
 
         {/* Row 3: balance info + USD + Max */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <span
-              className={`text-[12px] font-medium ${
+              className={`text-[12px] font-medium truncate ${
                 isDark ? "text-[#777777]" : "text-[#A7A7A7]"
               }`}
             >
@@ -471,7 +488,7 @@ export const TransferCollateral = () => {
             </span>
             <motion.button
               onClick={handleMaxValueClick}
-              className={`cursor-pointer rounded-md py-0.5 px-2 text-[11px] font-semibold ${
+              className={`cursor-pointer rounded-md py-0.5 px-2 text-[11px] font-semibold shrink-0 ${
                 isDark
                   ? "bg-[#2A1A3E] text-[#A97EFF]"
                   : "bg-[#F1EBFD] text-[#703AE6]"
@@ -482,6 +499,11 @@ export const TransferCollateral = () => {
             >
               Max
             </motion.button>
+            <ConversionRatio
+              tokenSymbol={selectedCurrency}
+              tokenPrice={selectedTokenPrice}
+              variant="inline"
+            />
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span
@@ -568,13 +590,6 @@ export const TransferCollateral = () => {
           text={isLoading ? "Processing..." : "Transfer"}
           size="large"
           type="gradient"
-          disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount && !isOverSourceBalance)}
-          onClick={handleTransferClick}
-        />
-        <Button
-          text="Flash Close"
-          size="large"
-          type="ghost"
           disabled={!(Number(valueInput) > 0 && !isLoading && marginAccount && !isOverSourceBalance)}
           onClick={handleTransferClick}
         />

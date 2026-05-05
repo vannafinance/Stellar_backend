@@ -8,6 +8,8 @@ import { MAX_LEVERAGE, MODE_CONFIG } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
 import { useTokenPrices } from "@/contexts/price-context";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
+import { useTokenPrices } from "@/hooks/use-token-prices";
+import { ConversionRatio } from "@/components/ui/conversion-ratio";
 
 type Mode = "Deposit" | "Borrow";
 
@@ -29,7 +31,7 @@ export const BorrowBox = ({
   onTokenChange,
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
-  const { getPrice } = useTokenPrices();
+  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
 
   const getCollateralBalanceKey = (symbol: string) => {
     if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";
@@ -58,7 +60,7 @@ export const BorrowBox = ({
 
   const selectedToken = selectedOptions[0] || DropdownOptions[0];
   const selectedCollateralKey = getCollateralBalanceKey(selectedToken);
-  const selectedTokenPrice = getPrice(selectedCollateralKey);
+  const selectedTokenPrice = tokenPrices[selectedCollateralKey] ?? 1;
 
   // Borrow preview based on selected leverage: borrow = deposit * (leverage - 1)
   // totalDeposit is in USD, so divide by token price to get the token amount to display.
@@ -237,23 +239,28 @@ export const BorrowBox = ({
             </p>
           </div>
 
-          {/* Row 3: balance + ≈ USD */}
+          {/* Row 3: balance + inline ratio + ≈ USD (single row, no extra space) */}
           <div
-            className={`flex items-center justify-between text-[12px] font-medium ${
+            className={`flex items-center justify-between gap-2 text-[12px] font-medium ${
               isDark ? "text-[#777777]" : "text-[#A7A7A7]"
             }`}
           >
-            <span>
-              Balance:{" "}
-              {collateralBalances[selectedCollateralKey]
-                ? parseFloat(collateralBalances[selectedCollateralKey].amount).toFixed(2)
-                : "0.00"}{" "}
-              {selectedToken}
-            </span>
-            <span>
-              ≈{" "}
-              {previewBorrowableUsd.toFixed(2)}{" "}
-              USD
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="truncate">
+                Balance:{" "}
+                {collateralBalances[selectedCollateralKey]
+                  ? parseFloat(collateralBalances[selectedCollateralKey].amount).toFixed(2)
+                  : "0.00"}{" "}
+                {selectedToken}
+              </span>
+              <ConversionRatio
+                tokenSymbol={selectedToken}
+                tokenPrice={selectedTokenPrice}
+                variant="inline"
+              />
+            </div>
+            <span className="shrink-0">
+              ≈ {previewBorrowableUsd.toFixed(2)} USD
             </span>
           </div>
         </article>
@@ -390,12 +397,26 @@ export const BorrowBox = ({
                         isDark ? "text-[#A7A7A7]" : "text-[#888888]"
                       }`}
                     >
+                      {selectedAmountType === "Amount in %" ? (
+                        <span>
+                          % of {totalDeposit > 0 ? `$${totalDeposit.toFixed(2)}` : "$0.00"}
+                        </span>
+                      ) : (
+                        <ConversionRatio
+                          tokenSymbol={selectedOption}
+                          tokenPrice={tokenPrices[getCollateralBalanceKey(selectedOption)] ?? 0}
+                          variant="inline"
+                        />
+                      )}
                       <span>
-                        {selectedAmountType === "Amount in %"
-                          ? `% of ${totalDeposit > 0 ? `$${totalDeposit.toFixed(2)}` : "$0.00"}`
-                          : `1 ${selectedOption} = $1.00`}
+                        ≈{" "}
+                        {(() => {
+                          const livePrice = tokenPrices[getCollateralBalanceKey(selectedOption)] ?? 0;
+                          const usdValue = inputValue * livePrice;
+                          return usdValue > 0 ? usdValue.toFixed(2) : "0.00";
+                        })()}{" "}
+                        USD
                       </span>
-                      <span>≈ {inputValue > 0 ? inputValue.toFixed(2) : "0.00"} USD</span>
                     </div>
                   </article>
 
