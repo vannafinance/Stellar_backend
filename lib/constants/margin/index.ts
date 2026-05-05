@@ -127,6 +127,23 @@ export const LARGE_FORMAT_FIELDS = [
   "maxDebt",
 ] as const;
 
+/**
+ * Fields rendered as USD currency. InfoCard auto-prefixes "$" to these.
+ * Keep this list in sync with any new dollar-valued field IDs.
+ */
+export const USD_FIELDS = [
+  "totalBorrowedValue",
+  "totalCollateralValue",
+  "totalValue",
+  "debtLimit",
+  "minDebt",
+  "maxDebt",
+  "depositAmount",
+  "fees",
+  "totalDeposit",
+  "updatedCollateral",
+] as const;
+
 // ============================================
 // Account Stats Constants
 // ============================================

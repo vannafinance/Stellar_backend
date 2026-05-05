@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { FIELD_FORMAT_MAP, LARGE_FORMAT_FIELDS } from "@/lib/constants/margin";
+import { FIELD_FORMAT_MAP, LARGE_FORMAT_FIELDS, USD_FIELDS } from "@/lib/constants/margin";
 import { formatValue, FormatType } from "@/lib/utils/format-value";
 import { useTheme } from "@/contexts/theme-context";
 import { AddressBadge, isStellarContractAddress } from "@/components/ui/address-badge";
@@ -49,19 +49,22 @@ const formatFieldValue = (
   }
 
   const formatType = FIELD_FORMAT_MAP[id] as FormatType | undefined;
+  const isUsdField = USD_FIELDS.includes(id as (typeof USD_FIELDS)[number]);
 
   if (!formatType) {
     // Fallback to default number formatting
-    return formatValue(value, { type: "number" });
+    const formatted = formatValue(value, { type: "number" });
+    return isUsdField ? `$${formatted}` : formatted;
   }
 
   // Determine if large format should be used
-  const useLargeFormat = LARGE_FORMAT_FIELDS.includes(id as any);
+  const useLargeFormat = LARGE_FORMAT_FIELDS.includes(id as (typeof LARGE_FORMAT_FIELDS)[number]);
 
-  return formatValue(value, {
+  const formatted = formatValue(value, {
     type: formatType,
     useLargeFormat,
   });
+  return isUsdField ? `$${formatted}` : formatted;
 };
 
 export const InfoCard = ({

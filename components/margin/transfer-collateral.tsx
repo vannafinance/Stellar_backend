@@ -17,6 +17,7 @@ import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
 import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 import { ConversionRatio } from "@/components/ui/conversion-ratio";
+import { MarginActionPreview, type PreviewRow } from "@/components/margin/margin-action-preview";
 
 const XLM_WALLET_RESERVE = 1;
 const XLM_TRANSFER_EPSILON = 1e-7;
@@ -29,6 +30,11 @@ const XLM_TRANSFER_EPSILON = 1e-7;
 // the margin account safely above all on-chain minimums.
 const XLM_MARGIN_WITHDRAW_BUFFER = 8;
 const LIQUIDATION_THRESHOLD = 1.1;
+const HF_INF_SENTINEL = 999;
+const formatHF = (hf: number): string =>
+  !Number.isFinite(hf) || hf >= HF_INF_SENTINEL ? "∞" : hf.toFixed(2);
+const formatUsd = (n: number): string =>
+  `$${(n < 0 ? 0 : n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
@@ -600,6 +606,13 @@ export const TransferCollateral = () => {
         />
       </motion.aside>
 
+      {/* Transaction preview — collateral / HF / liquidation buffer before vs after */}
+      <TransferPreviewSection
+        transferAmount={Number(valueInput) || 0}
+        selectedTokenPrice={selectedTokenPrice}
+        transferType={selectedTransferType}
+      />
+
       {/* Action buttons */}
       <motion.section
         className="flex flex-col gap-4"
@@ -617,4 +630,80 @@ export const TransferCollateral = () => {
       </motion.section>
     </motion.section>
   );
+};
+
+interface TransferPreviewSectionProps {
+  transferAmount: number;
+  selectedTokenPrice: number;
+  /** "MB" = wallet → margin (collateral grows). "WB" = margin → wallet (collateral shrinks). */
+  transferType: "MB" | "WB";
+}
+
+/**
+ * Computes the after-state of a collateral transfer and renders the
+ * before → after preview. Reads margin totals from the store.
+ *
+ * - WB→MB (deposit into margin): collateral grows, debt unchanged → HF improves.
+ * - MB→WB (withdraw from margin): collateral shrinks, debt unchanged → HF drops.
+ *
+ * gross_collateral here mirrors the store's risk-engine math:
+ *   gross = collateral + debt   (smart-account holds borrowed funds)
+ *   HF    = gross / debt
+ */
+const TransferPreviewSection = ({
+  transferAmount,
+  selectedTokenPrice,
+  transferType,
+}: TransferPreviewSectionProps) => {
+  const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
+  const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
+
+  const transferUsd = Math.max(0, transferAmount * selectedTokenPrice);
+  if (transferUsd <= 0) return null;
+
+  // WB→MB increases on-margin collateral, MB→WB decreases it.
+  const isInbound = transferType === "MB";
+  const collateralAfter = isInbound
+    ? totalCollateralValue + transferUsd
+    : Math.max(0, totalCollateralValue - transferUsd);
+
+  const grossBefore = totalCollateralValue + totalBorrowedValue;
+  const grossAfter = collateralAfter + totalBorrowedValue;
+
+  const hfBefore =
+    totalBorrowedValue > 0 ? grossBefore / totalBorrowedValue : HF_INF_SENTINEL;
+  const hfAfter =
+    totalBorrowedValue > 0 ? grossAfter / totalBorrowedValue : HF_INF_SENTINEL;
+
+  const bufferBefore = Math.max(
+    0,
+    grossBefore - totalBorrowedValue * LIQUIDATION_THRESHOLD,
+  );
+  const bufferAfter = Math.max(
+    0,
+    grossAfter - totalBorrowedValue * LIQUIDATION_THRESHOLD,
+  );
+
+  const rows: PreviewRow[] = [
+    {
+      label: "Margin Collateral",
+      before: formatUsd(totalCollateralValue),
+      after: formatUsd(collateralAfter),
+      tone: isInbound ? "positive" : "negative",
+    },
+    {
+      label: "Health Factor",
+      before: formatHF(hfBefore),
+      after: formatHF(hfAfter),
+      tone: hfAfter >= hfBefore ? "positive" : "negative",
+    },
+    {
+      label: "Liquidation Buffer",
+      before: formatUsd(bufferBefore),
+      after: formatUsd(bufferAfter),
+      tone: bufferAfter >= bufferBefore ? "positive" : "negative",
+    },
+  ];
+
+  return <MarginActionPreview rows={rows} />;
 };

@@ -13,7 +13,6 @@ import { InfoCard } from "@/components/margin/info-card";
 import { LeverageCollateral } from "@/components/margin/leverage-collateral";
 import { Positionstable } from "@/components/margin/positions-table";
 import { AccountStats } from "@/components/margin/account-stats";
-import { MarginAccountAddress } from "@/components/margin/margin-account-address";
 import { useMarginAccountInfoStore, checkUserMarginAccount, refreshBorrowedBalances } from "@/store/margin-account-info-store";
 import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { useUserStore } from "@/store/user";
