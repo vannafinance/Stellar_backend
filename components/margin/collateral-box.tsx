@@ -16,7 +16,7 @@ import { useTheme } from "@/contexts/theme-context";
 import { useTokenPrices } from "@/contexts/price-context";
 import { useUserStore } from "@/store/user";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 import { ConversionRatio } from "@/components/ui/conversion-ratio";
 
 interface Collateral {
@@ -95,7 +95,7 @@ const CollateralComponent = (props: Collateral) => {
   // Live oracle-backed prices. AqUSDC / SoUSDC fall through the canonicalize
   // step inside oracle-price.ts (alias → USDC), so we only request the base
   // symbols and then look the selection up directly.
-  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
+  const tokenPrices = useTokenPricesFromHook(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
   const priceFor = (symbol: string): number => {
     const upper = symbol.toUpperCase();
     if (upper === 'AQUSDC' || upper === 'SOUSDC' || upper === 'BLUSDC' || upper === 'USDC') {

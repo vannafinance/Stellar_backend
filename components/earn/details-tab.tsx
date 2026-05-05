@@ -9,7 +9,7 @@ import { usePoolData } from "@/hooks/use-earn";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 
 // Earn pool keys → oracle symbol (Aquarius/Soroswap USDC peg via alias).
 const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
@@ -76,7 +76,7 @@ export const Details = () => {
 
   const selectedPool = pools[selectedAssetKey as keyof typeof pools];
   const addresses = getAddresses(selectedAssetKey, selectedAssetLabel);
-  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
+  const tokenPrices = useTokenPricesFromHook(['XLM', 'USDC']);
   const oraclePrice = tokenPrices[PRICE_TOKEN_FOR_ASSET[selectedAssetKey] ?? selectedAssetKey] ?? 1;
 
   const totalSupplied = useMemo(() => {

@@ -8,7 +8,7 @@ import { usePoolData, useEarnTransactions } from "@/hooks/use-earn";
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
 import { getEarnHistoryByAsset } from "@/lib/earn-history";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 
 type EarnTx = {
   type: 'supply' | 'withdraw';
@@ -86,7 +86,7 @@ export const ActivityTab = () => {
   const selectedAsset = useSelectedPoolStore((state) => state.selectedAsset);
   const assetKey = toInternalAsset(selectedAsset);
   const displaySymbol = DISPLAY_SYMBOL[assetKey] ?? assetKey;
-  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
+  const tokenPrices = useTokenPricesFromHook(['XLM', 'USDC']);
   const priceForAsset = (key: string): number =>
     tokenPrices[PRICE_TOKEN_FOR_ASSET[key] ?? key] ?? 1;
 

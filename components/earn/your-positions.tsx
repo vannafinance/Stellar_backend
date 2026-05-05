@@ -9,7 +9,7 @@ import { usePoolData, useUserPositions, useEarnTransactions } from "@/hooks/use-
 import { useSelectedPoolStore } from "@/store/selected-pool-store";
 import { iconPaths } from "@/lib/constants";
 import { getEarnHistoryByAsset } from "@/lib/earn-history";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 
 const tabs = [
   { id: "current-positions", label: "Current Position" },
@@ -81,7 +81,7 @@ export const YourPositions = memo(function YourPositions() {
   const deposited = parseFloat(userPosition?.deposited || '0');
   const hasPosition = deposited > 0;
 
-  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
+  const tokenPrices = useTokenPricesFromHook(['XLM', 'USDC']);
   const price = tokenPrices[PRICE_TOKEN_FOR_ASSET[assetKey] ?? assetKey] ?? 1;
   const vTokenBalance = parseFloat(userPosition?.vTokenBalance || '0');
 

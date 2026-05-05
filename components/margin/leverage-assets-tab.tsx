@@ -27,7 +27,7 @@ import { useTokenPrices } from "@/contexts/price-context";
 import { useWallet } from "@/hooks/use-wallet";
 import { appendMarginHistory } from "@/lib/margin-history";
 import toast from "react-hot-toast";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 
 type Modes = "Deposit" | "Borrow";
 
@@ -166,7 +166,7 @@ export const LeverageAssetsTab = () => {
 
   // Live oracle prices for USD conversions in deposit/borrow flows. Aliased
   // tokens (BLUSDC/AQUSDC/SOUSDC) resolve to USDC inside oracle-price.ts.
-  const MB_TOKEN_PRICES = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
+  const MB_TOKEN_PRICES = useTokenPricesFromHook(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
 
   // Map dropdown asset name → canonical key used in collateralBalances.
   // Mirrors canonicalMarginToken() in margin-account-info-store.ts.

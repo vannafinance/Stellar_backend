@@ -6,9 +6,8 @@ import { BorrowInfo } from "@/lib/types";
 import { motion } from "framer-motion";
 import { MAX_LEVERAGE, MODE_CONFIG } from "@/lib/constants/margin";
 import { useTheme } from "@/contexts/theme-context";
-import { useTokenPrices } from "@/contexts/price-context";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 import { ConversionRatio } from "@/components/ui/conversion-ratio";
 
 type Mode = "Deposit" | "Borrow";
@@ -31,7 +30,7 @@ export const BorrowBox = ({
   onTokenChange,
 }: BorrowBoxProps) => {
   const { isDark } = useTheme();
-  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
+  const tokenPrices = useTokenPricesFromHook(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
 
   const getCollateralBalanceKey = (symbol: string) => {
     if (symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC") return "BLUSDC";

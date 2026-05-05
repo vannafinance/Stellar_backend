@@ -7,7 +7,7 @@ import { useTokenPrices } from "@/contexts/price-context";
 import { usePoolData } from "@/hooks/use-earn";
 import { STELLAR_POOLS } from "@/lib/constants/earn";
 import { useUserStore } from "@/store/user";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 
 const PRICE_TOKEN_FOR_ASSET: Record<string, string> = {
   XLM: 'XLM',
@@ -30,7 +30,7 @@ export const MarginManagersTab = () => {
   const { getPrice } = useTokenPrices();
   const { pools, isLoading } = usePoolData();
   const userAddress = useUserStore((state) => state.address);
-  const tokenPrices = useTokenPrices(['XLM', 'USDC']);
+  const tokenPrices = useTokenPricesFromHook(['XLM', 'USDC']);
 
   const tableBody = useMemo(() => {
     return {
