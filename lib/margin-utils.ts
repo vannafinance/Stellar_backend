@@ -486,7 +486,7 @@ export class MarginAccountService {
       for (let i = candidates.length - 1; i >= 0; i--) {
         const accountAddress = candidates[i];
         try {
-          const isActive = await this.isAccountActive(accountAddress, server);
+          const isActive = await this.isAccountActive(accountAddress, server, userAddress);
           console.log(`📊 Account ${accountAddress} is active: ${isActive}`);
 
           if (isActive) {
@@ -648,19 +648,28 @@ export class MarginAccountService {
   }
 
   /**
-   * Check if a smart account is active with improved error handling
+   * Check if a smart account is active with improved error handling.
+   *
+   * The simulateTransaction source must be a real ed25519 G-address — passing
+   * the AccountManager's contract C-address fails with "accountId is invalid"
+   * inside the SDK's StrKey check. We use the trader's wallet address since
+   * it's always available at the call site and is a valid G-address.
    */
-  private static async isAccountActive(accountAddress: string, server: StellarSdk.rpc.Server): Promise<boolean> {
+  private static async isAccountActive(
+    accountAddress: string,
+    server: StellarSdk.rpc.Server,
+    sourceUserAddress: string,
+  ): Promise<boolean> {
     try {
       console.log('🔍 Checking if account is active:', accountAddress);
-      
+
       // Create contract client for the smart account
       const contract = new StellarSdk.Contract(accountAddress);
       const call = contract.call('is_account_active');
-      
+
       // Create a transaction to simulate the call
       const transaction = new StellarSdk.TransactionBuilder(
-        new StellarSdk.Account(CONTRACT_ADDRESSES.ACCOUNT_MANAGER, '0'), 
+        new StellarSdk.Account(sourceUserAddress, '0'),
         { fee: '100', networkPassphrase: NETWORK_PASSPHRASE }
       )
       .addOperation(call)
