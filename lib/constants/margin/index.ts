@@ -83,17 +83,21 @@ export const MODE_CONFIG = {
 import { FormatType } from "@/lib/utils/format-value";
 
 export const FIELD_FORMAT_MAP: Record<string, FormatType> = {
-  // Number values (components add currency names)
-  totalBorrowedValue: "number",
-  totalCollateralValue: "number",
-  totalValue: "number",
-  debtLimit: "number",
-  minDebt: "number",
-  maxDebt: "number",
+  // Currency values (displayed with $ prefix)
+  totalBorrowedValue: "currency",
+  totalCollateralValue: "currency",
+  totalValue: "currency",
+  debtLimit: "currency",
+  minDebt: "currency",
+  maxDebt: "currency",
+  // Plain number values
   depositAmount: "number",
   fees: "number",
   totalDeposit: "number",
-  updatedCollateral: "number",
+  updatedCollateral: "currency",
+  updatedBorrowedAmount: "currency",
+  updatedHealthFactor: "health-factor",
+  updatedLeverage: "leverage",
   
   // Percentage values
   borrowRate: "percentage",

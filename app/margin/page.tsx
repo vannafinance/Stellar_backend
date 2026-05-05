@@ -542,16 +542,17 @@ const Margin = () => {
                     </svg>
                   )}
                 </div>
-                <p className="w-full text-sm font-medium text-gray-400">
-                  {isLoadingMargin
-                    ? "Fetching latest data..."
-                    : "Stay updated details and status."}
-                </p>
-                {marginAccountAddress && (
+                {marginAccountAddress ? (
                   <MarginAccountAddress
                     address={marginAccountAddress}
-                    className="mt-1"
+                    className="mt-0.5"
                   />
+                ) : (
+                  <p className="w-full text-sm font-medium text-gray-400">
+                    {isLoadingMargin
+                      ? "Fetching latest data..."
+                      : "No account connected."}
+                  </p>
                 )}
               </div>
             </motion.header>

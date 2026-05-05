@@ -256,7 +256,7 @@ export default function Home() {
             items={ACCOUNT_STATS_ITEMS}
             values={accountStatsValues}
             valueColors={accountStatsValueColors}
-            gridCols="grid-cols-5"
+            gridCols="grid-cols-4"
           />
         </motion.section>
       )}
@@ -322,14 +322,17 @@ export default function Home() {
                 <h2 className={`text-[18px] font-bold ${isDark ? "text-white" : ""}`}>
                   Margin Account Info
                 </h2>
-                <p className="w-full text-[13px] font-medium text-[#A3A3A3]">
-                  Stay updated details and status.
-                </p>
-                {marginAccountAddress && (
+                {marginAccountAddress ? (
                   <MarginAccountAddress
                     address={marginAccountAddress}
-                    className="mt-1"
+                    className="mt-0.5"
                   />
+                ) : (
+                  <p className="w-full text-[13px] font-medium text-[#A3A3A3]">
+                    {isLoadingBorrowedBalances
+                      ? "Fetching latest data..."
+                      : "No account connected."}
+                  </p>
                 )}
               </div>
             </motion.header>
