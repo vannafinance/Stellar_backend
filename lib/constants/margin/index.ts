@@ -91,9 +91,9 @@ export const FIELD_FORMAT_MAP: Record<string, FormatType> = {
   minDebt: "currency",
   maxDebt: "currency",
   // Plain number values
-  depositAmount: "number",
-  fees: "number",
-  totalDeposit: "number",
+  depositAmount: "currency",
+  fees: "currency",
+  totalDeposit: "currency",
   updatedCollateral: "currency",
   updatedBorrowedAmount: "currency",
   updatedHealthFactor: "health-factor",
