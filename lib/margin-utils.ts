@@ -448,52 +448,110 @@ export class MarginAccountService {
   }
 
   /**
-   * Get margin account from blockchain by querying smart contracts
-   * Uses Registry contract and event system to find existing accounts
+   * Get margin account from blockchain by querying smart contracts.
+   *
+   * Lookup strategy (most reliable first):
+   *   1. Read AccountManager persistent storage `SmartAccounts(trader)` via
+   *      getContractData. This is the ground truth — the contract writes here
+   *      on every account creation and extends TTL by 1+ year, so it never
+   *      expires the way RPC events do.
+   *   2. Fall back to Smart_account_creation events (only ~7d retention on
+   *      testnet) — covers the edge case where storage read fails (RPC
+   *      hiccup, key shape change, etc.).
+   *
+   * Then for each candidate, verify on-chain that the smart account is still
+   * active before returning it.
    */
   private static async getMarginAccountFromRegistry(userAddress: string): Promise<string | null> {
     try {
       console.log('🔍 Discovering existing margin accounts from blockchain for:', userAddress);
-      
+
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
-      
-      // Step 1: Query Smart_account_creation events to find accounts created for this user
-      console.log('📋 Step 1: Searching for Smart_account_creation events...');
-      const eventAccounts = await this.getAccountsFromEvents(userAddress, server);
-      console.log('📋 Accounts found from events:', eventAccounts);
-      
-      // Step 2: For each account found, check if it's still active
-      console.log('🔍 Step 2: Checking account activity status...');
-      for (const accountAddress of eventAccounts) {
+
+      // Step 1: read on-chain persistent storage (permanent, no event-retention limit)
+      console.log('📦 Step 1: Reading AccountManager persistent storage...');
+      let candidates = await this.getSmartAccountsFromStorage(userAddress, server);
+      console.log('📦 Accounts found in storage:', candidates);
+
+      // Step 2: events fallback only if storage returned nothing
+      if (candidates.length === 0) {
+        console.log('📋 Step 2: Storage empty, falling back to event log...');
+        candidates = await this.getAccountsFromEvents(userAddress, server);
+        console.log('📋 Accounts found from events:', candidates);
+      }
+
+      // Step 3: filter by activity. Newest-first so we prefer the most recent
+      // account when a trader has reused inactive slots.
+      console.log('🔍 Step 3: Checking account activity status...');
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        const accountAddress = candidates[i];
         try {
           const isActive = await this.isAccountActive(accountAddress, server);
           console.log(`📊 Account ${accountAddress} is active: ${isActive}`);
-          
+
           if (isActive) {
-            // Found an active account! Store it locally for future use
             const marginAccount: MarginAccount = {
               address: accountAddress,
               owner: userAddress,
               isActive: true,
-              createdAt: Date.now()
+              createdAt: Date.now(),
             };
-            
+
             this.storeMarginAccount(userAddress, marginAccount);
             console.log('✅ Successfully recovered existing margin account:', accountAddress);
             return accountAddress;
-          } else {
-            console.log('⚠️ Account found but inactive:', accountAddress);
           }
         } catch (accountError) {
           console.warn('⚠️ Error checking account activity for:', accountAddress, accountError);
         }
       }
-      
+
       console.log('❌ No existing active margin account found for user');
       return null;
     } catch (error) {
       console.error('❌ Error discovering existing margin account from blockchain:', error);
       return null;
+    }
+  }
+
+  /**
+   * Read trader → smart-accounts mapping directly from AccountManager's
+   * persistent storage.
+   *
+   * The contract stores it under `AccountManagerKey::SmartAccounts(trader)`
+   * (see Protocol_V1_Soroban/contracts/AccountManagerContract — the enum
+   * tuple variant serializes as `ScVec[Symbol("SmartAccounts"), Address]`).
+   * Persistent storage TTL is extended to ~1 year on every write, so this
+   * lookup works even for accounts created weeks/months ago — unlike events,
+   * which Soroban testnet RPC retains for only ~7 days.
+   */
+  private static async getSmartAccountsFromStorage(
+    userAddress: string,
+    server: StellarSdk.rpc.Server,
+  ): Promise<string[]> {
+    try {
+      const key = StellarSdk.xdr.ScVal.scvVec([
+        StellarSdk.xdr.ScVal.scvSymbol('SmartAccounts'),
+        StellarSdk.nativeToScVal(userAddress, { type: 'address' }),
+      ]);
+
+      const entry = await server.getContractData(
+        CONTRACT_ADDRESSES.ACCOUNT_MANAGER,
+        key,
+        StellarSdk.rpc.Durability.Persistent,
+      );
+
+      const native = StellarSdk.scValToNative(entry.val.contractData().val());
+      return Array.isArray(native) ? (native as string[]) : [];
+    } catch (error: any) {
+      // Missing entry → user has never created a margin account on this
+      // contract. Treat as "no accounts" and let the events fallback try.
+      const msg = String(error?.message ?? error ?? '');
+      if (msg.includes('not found') || msg.includes('Could not find ledger entry')) {
+        return [];
+      }
+      console.warn('⚠️ Failed to read SmartAccounts from storage:', error);
+      return [];
     }
   }
 
@@ -530,67 +588,63 @@ export class MarginAccountService {
   }
 
   /**
-   * Get accounts from Smart_account_creation events with improved error handling
+   * Get accounts from Smart_account_creation events.
+   *
+   * Stellar SDK delivers contract events with `topic` (array of ScVals) and
+   * `value` (the body ScVal) as separate fields — NOT a single ScVal of
+   * `[topics, data]`. The previous implementation parsed the wrong shape and
+   * always returned []. This is the only path that recovers a margin account
+   * for a wallet on a fresh origin (no localStorage), e.g. when the user
+   * connects on the deployed URL after creating their account on localhost.
    */
   private static async getAccountsFromEvents(userAddress: string, server: StellarSdk.rpc.Server): Promise<string[]> {
+    const accounts: string[] = [];
     try {
-      const recentLedger = await this.getRecentLedger(server);
-      console.log('📅 Searching events from ledger:', recentLedger);
-      
-      const events = await server.getEvents({
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [CONTRACT_ADDRESSES.ACCOUNT_MANAGER]
-          }
-        ],
-        startLedger: recentLedger,
-        limit: 100
-      });
-      
-      console.log('📊 Total events found:', events.events.length);
-      const accounts: string[] = [];
-      
-      for (const event of events.events) {
-        try {
-          if (event.type === 'contract' && event.value) {
-            const eventBody = event.value;
-            
-            // Convert ScVal to native format first to check if it's an array
-            const nativeEventBody = StellarSdk.scValToNative(eventBody);
-            if (nativeEventBody && Array.isArray(nativeEventBody) && nativeEventBody.length >= 2) {
-              // First element is the event topics (event name + trader)
-              const eventTopics = nativeEventBody[0];
-              
-              // Check if this is a Smart_account_creation event for our user
-              if (eventTopics && Array.isArray(eventTopics) && eventTopics.length >= 2) {
-                const eventName = eventTopics[0];
-                const eventUser = eventTopics[1];
-                
-                if (eventName === 'Smart_account_creation' && eventUser === userAddress) {
-                  // Second element is the event data
-                  const eventData = nativeEventBody[1];
-                  console.log('📋 Found Smart_account_creation event data:', eventData);
-                  
-                  if (eventData && typeof eventData === 'object' && eventData.smart_account) {
-                    accounts.push(eventData.smart_account);
-                    console.log('✅ Added account from event:', eventData.smart_account);
-                  }
-                }
-              }
+      const startLedger = await this.getRecentLedger(server);
+
+      // Pre-filter at the RPC layer: only Smart_account_creation events whose
+      // second topic equals our trader address. Saves us scanning every
+      // Trader_Borrow / Trader_Repay event the AccountManager emits.
+      const nameTopic = StellarSdk.xdr.ScVal.scvSymbol('Smart_account_creation').toXDR('base64');
+      const userTopic = StellarSdk.nativeToScVal(userAddress, { type: 'address' }).toXDR('base64');
+
+      let cursor: string | undefined;
+      // Page through up to ~10k events. Stops early when RPC returns < limit.
+      for (let page = 0; page < 50; page++) {
+        const resp: any = await (server as any).getEvents({
+          startLedger: cursor ? undefined : startLedger,
+          cursor,
+          filters: [
+            {
+              type: 'contract',
+              contractIds: [CONTRACT_ADDRESSES.ACCOUNT_MANAGER],
+              topics: [[nameTopic, userTopic]],
+            },
+          ],
+          limit: 200,
+        });
+
+        const events = resp?.events ?? [];
+        for (const ev of events) {
+          try {
+            const data = ev.value ? StellarSdk.scValToNative(ev.value) : null;
+            if (data && typeof data === 'object' && (data as any).smart_account) {
+              accounts.push((data as any).smart_account);
             }
+          } catch {
+            // skip malformed event
           }
-        } catch (eventError) {
-          console.warn('⚠️ Failed to parse individual event, skipping:', eventError);
-          continue;
         }
+
+        if (events.length < 200) break;
+        cursor = resp?.cursor ?? events[events.length - 1]?.pagingToken;
+        if (!cursor) break;
       }
-      
-      return [...new Set(accounts)]; // Remove duplicates
     } catch (error) {
       console.error('❌ Error getting accounts from events:', error);
-      return [];
     }
+
+    return [...new Set(accounts)];
   }
 
   /**
@@ -642,8 +696,10 @@ export class MarginAccountService {
   private static async getRecentLedger(server: StellarSdk.rpc.Server): Promise<number> {
     try {
       const latestLedger = await server.getLatestLedger();
-      // Look back further to catch more accounts (about 1 day of ledgers)
-      const lookBackLedgers = 17280; // Approximately 24 hours of ledgers (5 second blocks)
+      // Soroban testnet RPC retains events for ~7 days; go back as far as we
+      // can so accounts created earlier in the deployment lifetime are still
+      // discoverable on a fresh origin (deployed URL without localStorage).
+      const lookBackLedgers = 17280 * 7; // ~7 days of ledgers (5s blocks)
       const startLedger = Math.max(1, latestLedger.sequence - lookBackLedgers);
       console.log('📅 Searching from ledger', startLedger, 'to', latestLedger.sequence);
       return startLedger;
