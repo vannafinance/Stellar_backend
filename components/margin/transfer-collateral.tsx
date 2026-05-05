@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dropdown } from "../ui/dropdown";
 import { AnimatePresence, motion } from "framer-motion";
 import { DropdownOptions } from "@/lib/constants";
 import { DEPOSIT_PERCENTAGES, PERCENTAGE_COLORS } from "@/lib/constants/margin";
-import { DetailsPanel } from "../ui/details-panel";
+import { InfoCard } from "./info-card";
 import { Button } from "../ui/button";
 import { useTheme } from "@/contexts/theme-context";
+import { useTokenPrices } from "@/contexts/price-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
@@ -14,7 +15,7 @@ import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
-import { useTokenPrices } from "@/hooks/use-token-prices";
+import { useTokenPrices as useTokenPricesFromHook } from "@/hooks/use-token-prices";
 import { ConversionRatio } from "@/components/ui/conversion-ratio";
 import { MarginActionPreview, type PreviewRow } from "@/components/margin/margin-action-preview";
 
@@ -37,6 +38,7 @@ const formatUsd = (n: number): string =>
 
 export const TransferCollateral = () => {
   const { isDark } = useTheme();
+  const { getPrice } = useTokenPrices();
   const normalizeContractTokenSymbol = (symbol: string) =>
     symbol === "BLUSDC" || symbol === "BLEND_USDC" || symbol === "USDC"
       ? "USDC"
@@ -76,7 +78,7 @@ export const TransferCollateral = () => {
     }
   }, [globalIsConnected, globalAddress]);
 
-  const tokenPrices = useTokenPrices(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
+  const tokenPrices = useTokenPricesFromHook(['XLM', 'USDC', 'BLUSDC', 'AQUSDC', 'SOUSDC']);
   const sourceBalance = selectedTransferType === "MB" ? walletBalance : marginAccountBalance;
   const maxTransferableBalance = computeMaxTransferableBalance(
     selectedTransferType,
@@ -112,6 +114,23 @@ export const TransferCollateral = () => {
     return Math.max(0, maxRiskSafeWithdraw - XLM_TRANSFER_EPSILON);
   })();
   const isOverSourceBalance = Number(valueInput || 0) > sourceBalance;
+
+  // Transfer details — projected values after transfer
+  const transferDetails = useMemo(() => {
+    const transferAmountInUsd = Number(valueInput || 0) * selectedTokenPrice;
+    const updatedCollateral = selectedTransferType === "MB"
+      ? totalCollateralValue + transferAmountInUsd
+      : Math.max(0, totalCollateralValue - transferAmountInUsd);
+    const updatedBorrowedAmount = totalBorrowedValue; // transfer doesn't change debt
+    const updatedHealthFactor = updatedBorrowedAmount > 0
+      ? updatedCollateral / updatedBorrowedAmount
+      : 999;
+    const equity = updatedCollateral - updatedBorrowedAmount;
+    const updatedLeverage = equity > 0
+      ? updatedCollateral / equity
+      : 1;
+    return { updatedCollateral, updatedBorrowedAmount, updatedHealthFactor, updatedLeverage };
+  }, [totalCollateralValue, totalBorrowedValue, valueInput, selectedTokenPrice, selectedTransferType]);
 
   function computeMaxTransferableBalance(
     transferType: "MB" | "WB",
@@ -563,21 +582,25 @@ export const TransferCollateral = () => {
         </div>
       </motion.article>
 
-      {/* Details panel */}
+      {/* Transfer Details */}
       <motion.aside
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.3 }}
       >
-        <DetailsPanel
-          items={[
+        <InfoCard
+          data={transferDetails}
+          showExpandable={true}
+          expandableSections={[
             {
-              title: "Transfer Collateral",
-              value: `${valueInput || "0"} ${selectedCurrency}`,
-            },
-            {
-              title: selectedTransferType === "MB" ? "Margin Account Balance" : "Wallet Balance",
-              value: `${(selectedTransferType === "MB" ? marginAccountBalance : walletBalance).toFixed(2)} ${selectedCurrency}`,
+              title: "Transfer Details",
+              items: [
+                { id: "updatedCollateral", name: "Updated Collateral" },
+                { id: "updatedHealthFactor", name: "Updated Health Factor" },
+                { id: "updatedLeverage", name: "Updated Leverage" },
+              ],
+              defaultExpanded: false,
+              delay: 0.1,
             },
           ]}
         />
