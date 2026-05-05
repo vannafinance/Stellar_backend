@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from "react";
 import { tradeItems } from "@/lib/constants";
 import { useTheme } from "@/contexts/theme-context";
 import { useUserStore } from "@/store/user";
+import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAppModeStore } from "@/store/app-mode-store";
 import { useViewportScale } from "@/lib/hooks/useViewportScale";
@@ -49,6 +50,14 @@ export const Navbar = (props: Navbar) => {
   const zoom = useViewportScale(1440);
   useUserStore();
   const { address, connectWallet, disconnectWallet, isLoading } = useWallet();
+  const marginAccountAddress = useMarginAccountInfoStore((s) => s.marginAccountAddress);
+  const [marginCopied, setMarginCopied] = useState(false);
+  const handleCopyMarginAddress = () => {
+    if (!marginAccountAddress) return;
+    navigator.clipboard.writeText(marginAccountAddress).catch(() => {});
+    setMarginCopied(true);
+    window.setTimeout(() => setMarginCopied(false), 1500);
+  };
   const appMode = useAppModeStore((s) => s.mode);
   const setAppMode = useAppModeStore((s) => s.set);
 
@@ -856,6 +865,70 @@ export const Navbar = (props: Navbar) => {
                         </div>
                       </div>
                       <div className="p-[6px]">
+                        {/* Margin Account */}
+                        {marginAccountAddress && (
+                          <div
+                            className={`flex items-center gap-3 px-3 py-[10px] rounded-[10px] ${
+                              isDark ? "text-[#C0C0C0]" : "text-[#3A3A3A]"
+                            }`}
+                          >
+                            <div
+                              className={`w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0 ${
+                                isDark ? "bg-[#2A1A3E]" : "bg-[#F1EBFD]"
+                              }`}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                                <path
+                                  d="M2 5V11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11V5C14 4.44772 13.5523 4 13 4H3C2.44772 4 2 4.44772 2 5Z"
+                                  stroke="#703AE6"
+                                  strokeWidth="1.5"
+                                />
+                                <path
+                                  d="M11 8.5C11.2761 8.5 11.5 8.27614 11.5 8C11.5 7.72386 11.2761 7.5 11 7.5C10.7239 7.5 10.5 7.72386 10.5 8C10.5 8.27614 10.7239 8.5 11 8.5Z"
+                                  fill="#703AE6"
+                                />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] font-semibold leading-tight">
+                                Margin Account
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleCopyMarginAddress}
+                                className={`flex items-center gap-1 text-[11px] font-mono mt-0.5 cursor-pointer ${
+                                  isDark
+                                    ? "text-[#666] hover:text-[#9F7BEE]"
+                                    : "text-[#999] hover:text-[#703AE6]"
+                                }`}
+                                title={marginCopied ? "Copied!" : "Copy address"}
+                              >
+                                {marginAccountAddress.slice(0, 6) + "..." + marginAccountAddress.slice(-4)}
+                                {marginCopied ? (
+                                  <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+                                    <path d="M3 7.5L6 10.5L11 4.5" stroke="#10B981" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                ) : (
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2" />
+                                    <path d="M5 15V5C5 3.89 5.89 3 7 3H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                            <a
+                              href={`https://stellar.expert/explorer/testnet/contract/${marginAccountAddress}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-[10px] font-semibold transition-colors ${
+                                isDark ? "text-[#9F7BEE] hover:text-white" : "text-[#703AE6] hover:text-[#5C30C0]"
+                              }`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              View ↗
+                            </a>
+                          </div>
+                        )}
                         {/* Network */}
                         <div
                           className={`flex items-center gap-3 px-3 py-[10px] rounded-[10px] ${
@@ -1191,6 +1264,70 @@ export const Navbar = (props: Navbar) => {
                         </div>
                       </div>
                       <div className="p-[6px]">
+                        {/* Margin Account */}
+                        {marginAccountAddress && (
+                          <div
+                            className={`flex items-center gap-3 px-3 py-[10px] rounded-[10px] ${
+                              isDark ? "text-[#C0C0C0]" : "text-[#3A3A3A]"
+                            }`}
+                          >
+                            <div
+                              className={`w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0 ${
+                                isDark ? "bg-[#2A1A3E]" : "bg-[#F1EBFD]"
+                              }`}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                                <path
+                                  d="M2 5V11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11V5C14 4.44772 13.5523 4 13 4H3C2.44772 4 2 4.44772 2 5Z"
+                                  stroke="#703AE6"
+                                  strokeWidth="1.5"
+                                />
+                                <path
+                                  d="M11 8.5C11.2761 8.5 11.5 8.27614 11.5 8C11.5 7.72386 11.2761 7.5 11 7.5C10.7239 7.5 10.5 7.72386 10.5 8C10.5 8.27614 10.7239 8.5 11 8.5Z"
+                                  fill="#703AE6"
+                                />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] font-semibold leading-tight">
+                                Margin Account
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleCopyMarginAddress}
+                                className={`flex items-center gap-1 text-[11px] font-mono mt-0.5 cursor-pointer ${
+                                  isDark
+                                    ? "text-[#666] hover:text-[#9F7BEE]"
+                                    : "text-[#999] hover:text-[#703AE6]"
+                                }`}
+                                title={marginCopied ? "Copied!" : "Copy address"}
+                              >
+                                {marginAccountAddress.slice(0, 6) + "..." + marginAccountAddress.slice(-4)}
+                                {marginCopied ? (
+                                  <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+                                    <path d="M3 7.5L6 10.5L11 4.5" stroke="#10B981" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                ) : (
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2" />
+                                    <path d="M5 15V5C5 3.89 5.89 3 7 3H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                            <a
+                              href={`https://stellar.expert/explorer/testnet/contract/${marginAccountAddress}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-[10px] font-semibold transition-colors ${
+                                isDark ? "text-[#9F7BEE] hover:text-white" : "text-[#703AE6] hover:text-[#5C30C0]"
+                              }`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              View ↗
+                            </a>
+                          </div>
+                        )}
                         <div
                           className={`flex items-center gap-3 px-3 py-[10px] rounded-[10px] ${
                             isDark ? "text-[#C0C0C0]" : "text-[#3A3A3A]"

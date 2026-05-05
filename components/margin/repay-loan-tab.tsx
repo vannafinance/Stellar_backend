@@ -14,10 +14,19 @@ import { getAddress } from "@stellar/freighter-api";
 import { ContractService } from "@/lib/stellar-utils";
 import { refreshBorrowedBalances as refreshMarginStoreBorrowedBalances } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
+import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { useTokenPrices } from "@/hooks/use-token-prices";
 import { ConversionRatio } from "@/components/ui/conversion-ratio";
+import { MarginActionPreview, type PreviewRow } from "@/components/margin/margin-action-preview";
 import toast from "react-hot-toast";
 import { validateAmountChange } from "@/lib/utils/sanitize-amount";
+
+const LIQUIDATION_THRESHOLD = 1.1;
+const HF_INF_SENTINEL = 999;
+const formatHF = (hf: number): string =>
+  !Number.isFinite(hf) || hf >= HF_INF_SENTINEL ? "∞" : hf.toFixed(2);
+const formatUsd = (n: number): string =>
+  `$${(n < 0 ? 0 : n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const REPAY_DUST_EPSILON = 1e-6;
 const WAD = BigInt("1000000000000000000");
@@ -112,26 +121,26 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
     return `${whole.toString()}.${frac7}`;
   };
 
-  // Both stat tiles are denominated in tokens of the selected repay currency,
-  // so we convert via the live oracle price and display USD. When the price is
-  // unavailable we fall back to the token amount + symbol to avoid showing
-  // misleading "$0" while a real balance exists.
-  const formatStatValue = (value: number, _key: string) => {
+  // Both stat tiles are denominated in tokens of the selected repay currency.
+  // Primary line shows the token amount (the actual on-chain debt/balance),
+  // secondary line shows the live USD equivalent via the oracle price.
+  const formatStatValue = (
+    value: number,
+    _key: string,
+  ): { token: string; usd: string | null } => {
     const cleaned = clampRepayDust(value);
-    const tokenText = cleaned.toLocaleString(undefined, {
+    const token = `${cleaned.toLocaleString(undefined, {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
-    });
-
-    if (selectedTokenPrice > 0) {
-      const usd = cleaned * selectedTokenPrice;
-      return `$${usd.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })}`;
-    }
-
-    return `${tokenText} ${selectedRepayCurrency}`;
+    })} ${selectedRepayCurrency}`;
+    const usd =
+      selectedTokenPrice > 0
+        ? `≈ $${(cleaned * selectedTokenPrice).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`
+        : null;
+    return { token, usd };
   };
 
   const getSelectedWalletBalance = async (address: string, selectedToken: string): Promise<number> => {
@@ -357,13 +366,29 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
                   ? "Net Outstanding Amount to Repay"
                   : "Available Balance"}
               </span>
-              <span
-                className={`text-[22px] font-bold leading-tight ${
-                  isDark ? "text-white" : "text-[#111111]"
-                }`}
-              >
-                {formatStatValue(value, key)}
-              </span>
+              {(() => {
+                const { token, usd } = formatStatValue(value, key);
+                return (
+                  <>
+                    <span
+                      className={`text-[22px] font-bold leading-tight ${
+                        isDark ? "text-white" : "text-[#111111]"
+                      }`}
+                    >
+                      {token}
+                    </span>
+                    {usd && (
+                      <span
+                        className={`text-[12px] font-medium ${
+                          isDark ? "text-[#777777]" : "text-[#A7A7A7]"
+                        }`}
+                      >
+                        {usd}
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
             </motion.article>
           ))}
         </motion.section>
@@ -473,6 +498,12 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
           </div>
         </motion.article>
 
+        {/* Transaction preview — debt / HF / liquidation buffer before vs after */}
+        <RepayPreviewSection
+          repayAmount={repayAmount}
+          selectedTokenPrice={selectedTokenPrice}
+        />
+
         {/* Action buttons */}
         <motion.section
           className="flex flex-col gap-[16px]"
@@ -537,4 +568,68 @@ export const RepayLoanTab = ({ prefilledAsset }: RepayLoanTabProps = {}) => {
 
     </motion.section>
   );
+};
+
+interface RepayPreviewSectionProps {
+  repayAmount: number;
+  selectedTokenPrice: number;
+}
+
+/**
+ * Computes the after-state of a repay action and renders the before → after
+ * preview. Reads margin totals from the store so it stays in sync with the
+ * canonical risk-engine values used everywhere else.
+ *
+ * Repay math (mirrors store/margin-account-info-store.ts:498-525):
+ *   gross_collateral = collateral + debt   (smart-account holds borrowed funds)
+ *   HF              = gross_collateral / debt
+ *   buffer          = gross_collateral - debt × 1.1
+ * After repay (uses borrowed funds → both sides drop by repayUsd):
+ *   gross_after  = gross - repayUsd
+ *   debt_after   = debt - repayUsd
+ *   HF_after     = gross_after / debt_after
+ *   buffer_after = gross_after - debt_after × 1.1
+ */
+const RepayPreviewSection = ({
+  repayAmount,
+  selectedTokenPrice,
+}: RepayPreviewSectionProps) => {
+  const totalCollateralValue = useMarginAccountInfoStore((s) => s.totalCollateralValue);
+  const totalBorrowedValue = useMarginAccountInfoStore((s) => s.totalBorrowedValue);
+
+  const repayUsd = Math.max(0, repayAmount * selectedTokenPrice);
+  if (repayUsd <= 0 || totalBorrowedValue <= 0) return null;
+
+  const gross = totalCollateralValue + totalBorrowedValue;
+  const hfBefore = totalBorrowedValue > 0 ? gross / totalBorrowedValue : HF_INF_SENTINEL;
+  const bufferBefore = Math.max(0, gross - totalBorrowedValue * LIQUIDATION_THRESHOLD);
+
+  const cappedRepay = Math.min(repayUsd, totalBorrowedValue);
+  const debtAfter = Math.max(0, totalBorrowedValue - cappedRepay);
+  const grossAfter = Math.max(0, gross - cappedRepay);
+  const hfAfter = debtAfter > 0 ? grossAfter / debtAfter : HF_INF_SENTINEL;
+  const bufferAfter = Math.max(0, grossAfter - debtAfter * LIQUIDATION_THRESHOLD);
+
+  const rows: PreviewRow[] = [
+    {
+      label: "Outstanding Debt",
+      before: formatUsd(totalBorrowedValue),
+      after: formatUsd(debtAfter),
+      tone: "positive",
+    },
+    {
+      label: "Health Factor",
+      before: formatHF(hfBefore),
+      after: formatHF(hfAfter),
+      tone: "positive",
+    },
+    {
+      label: "Liquidation Buffer",
+      before: formatUsd(bufferBefore),
+      after: formatUsd(bufferAfter),
+      tone: bufferAfter >= bufferBefore ? "positive" : "negative",
+    },
+  ];
+
+  return <MarginActionPreview rows={rows} />;
 };
