@@ -97,9 +97,12 @@ export const TransferCollateral = () => {
   const maxRiskSafeWithdraw = (() => {
     if (selectedTransferType !== "WB") return maxTransferableBalance;
     if (totalBorrowedValue <= XLM_TRANSFER_EPSILON) return maxTransferableBalance;
+    // Mirror the RiskEngine withdraw health model:
+    // (collateral + debt - withdraw) / debt > 1.1
+    // => max withdraw value = collateral + debt - (1.1 * debt)
     const withdrawableUsd = Math.max(
       0,
-      totalCollateralValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
+      totalCollateralValue + totalBorrowedValue - totalBorrowedValue * LIQUIDATION_THRESHOLD
     );
     if (selectedTokenPrice <= 0) return 0;
     const withdrawableToken = withdrawableUsd / selectedTokenPrice;
