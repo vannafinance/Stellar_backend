@@ -33,13 +33,25 @@ export const fundXlmViaFriendbot = async (address: string): Promise<FaucetResult
       const body = await res.json().catch(() => ({}));
       return { ok: true, hash: body?.hash };
     }
-    // Friendbot returns 400 with "op_already_exists" once an account is funded.
-    // That's not a failure — it just means the user already has XLM.
+    // Friendbot returns 400 once an account is funded. The body is a JSON
+    // problem document; surface a friendly message for the common cases
+    // instead of dumping raw "Friendbot 400: { type: ... }" at the user.
     const errText = await res.text().catch(() => '');
-    if (errText.includes('op_already_exists') || errText.includes('createAccountAlreadyExist')) {
+    if (
+      errText.includes('op_already_exists') ||
+      errText.includes('createAccountAlreadyExist') ||
+      errText.includes('account already funded')
+    ) {
       return { ok: true, alreadyFunded: true };
     }
-    return { ok: false, error: `Friendbot ${res.status}: ${errText.slice(0, 160)}` };
+    let detail = '';
+    try {
+      const parsed = JSON.parse(errText);
+      detail = parsed?.detail || parsed?.title || '';
+    } catch {
+      detail = errText.slice(0, 160);
+    }
+    return { ok: false, error: detail || `Friendbot returned ${res.status}` };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Friendbot request failed' };
   }
@@ -82,6 +94,14 @@ export const fundBlendAssets = async (address: string): Promise<FaucetResult> =>
       xdrBase64,
       NETWORK_PASSPHRASE
     );
+    // If Blend's faucet returns a tx with no payment operations, the user
+    // already has all required Blend trustlines + balances funded — the
+    // backend has nothing left to send. Surface this as "already funded"
+    // instead of crashing later with "tx_missing_operation".
+    if (partiallySignedTx.operations.length === 0) {
+      return { ok: true, alreadyFunded: true };
+    }
+
     const signedXdr = await signTransaction(partiallySignedTx.toXDR(), {
       networkPassphrase: NETWORK_PASSPHRASE,
       address,
@@ -112,6 +132,17 @@ export const fundBlendAssets = async (address: string): Promise<FaucetResult> =>
   } catch (e: unknown) {
     const err = e as { response?: { data?: { extras?: { result_codes?: unknown } } }; message?: string };
     const horizonExtras = err?.response?.data?.extras?.result_codes;
+    // tx_missing_operation == Blend already topped this account up; nothing
+    // left to mint. Treat as success-already-funded so the UI doesn't show
+    // a scary red error.
+    const horizonStr = horizonExtras ? JSON.stringify(horizonExtras) : '';
+    if (
+      horizonStr.includes('tx_missing_operation') ||
+      err?.message?.includes('tx_missing_operation') ||
+      horizonStr.includes('op_already_exists')
+    ) {
+      return { ok: true, alreadyFunded: true };
+    }
     const msg = horizonExtras
       ? JSON.stringify(horizonExtras).slice(0, 200)
       : err?.message || 'Blend faucet submission failed';
@@ -180,26 +211,51 @@ export const fundAquariusUsdc = async (address: string): Promise<FaucetResult> =
   }
 };
 
-export const FAUCET_TOKEN_META: Record<FaucetTokenId, { label: string; icon: string; description: string }> = {
+// Mint behaviour per token. The UI uses this to decide whether to keep the
+// button disabled forever after the first success ('one-time'), enforce a
+// cooldown timer between mints ('cooldown'), or always allow re-minting
+// ('unlimited').
+export type FaucetTokenCategory = 'one-time' | 'cooldown' | 'unlimited';
+
+export interface FaucetTokenMeta {
+  label: string;
+  icon: string;
+  description: string;
+  category: FaucetTokenCategory;
+  cooldownMs?: number; // only used when category === 'cooldown'
+}
+
+export const FAUCET_TOKEN_META: Record<FaucetTokenId, FaucetTokenMeta> = {
   XLM: {
     label: 'XLM',
     icon: '/coins/xlmbg.png',
-    description: 'Native Stellar asset · funded by Friendbot (10,000 XLM)',
+    description: 'Native Stellar asset · 10,000 XLM via Friendbot (one-time)',
+    // Friendbot creates the account once with 10,000 XLM. Subsequent calls
+    // return "account already funded" — no point retrying.
+    category: 'one-time',
   },
   BLEND_USDC: {
     label: 'Blend USDC',
     icon: '/icons/usdc-icon.svg',
-    description: 'Issued by Blend testnet · also mints BLND, wETH, wBTC',
+    description: 'Blend testnet basket · USDC + BLND + wETH + wBTC (one-time)',
+    // Blend's faucet sends the basket (changeTrust + payments) once. After
+    // that the trustlines exist, balances are paid; nothing to re-mint.
+    category: 'one-time',
   },
   AQUARIUS_USDC: {
     label: 'Aquarius USDC',
-    icon: '/icons/usdc-icon.svg',
-    description: 'Classic asset on Aquarius testnet · 1,000 USDC',
+    icon: '/icons/aquarius-logo.png',
+    description: 'Classic asset on Aquarius testnet · 1,000 USDC per mint',
+    // Aquarius distribution keypair pays 1,000 USDC per call — no rate
+    // limit on testnet, can be re-run as many times as needed.
+    category: 'unlimited',
   },
   SOROSWAP_USDC: {
     label: 'Soroswap USDC',
-    icon: '/icons/usdc-icon.svg',
-    description: 'Soroswap testnet faucet (rate-limited 5/min)',
+    icon: '/icons/soroswap-logo.png',
+    description: 'Soroswap testnet faucet · 5 mints/min cooldown',
+    category: 'cooldown',
+    cooldownMs: 12_000, // 5/min ≈ one mint every 12 seconds
   },
 };
 

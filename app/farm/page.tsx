@@ -104,9 +104,12 @@ export default function FarmPage() {
   const positionsTableBody = useMemo(() => {
     const rows: any[] = [];
 
-    // Blend single-asset positions
+    // Blend single-asset positions. Dust threshold (1e-4 token) hides
+    // stroop-level rounding residue left over after 100% withdrawals so
+    // the table doesn't show "0.00 LP / $0.00" ghost rows.
+    const POSITION_DUST = 1e-4;
     (['XLM', 'USDC'] as const)
-      .filter((sym) => parseFloat(userPositions[sym]?.underlyingValue ?? '0') > 0)
+      .filter((sym) => parseFloat(userPositions[sym]?.underlyingValue ?? '0') > POSITION_DUST)
       .forEach((sym) => {
         const pos = userPositions[sym];
         rows.push({
@@ -124,7 +127,7 @@ export default function FarmPage() {
       });
 
     // Soroswap LP position
-    if (mySSLpBalance > 0) {
+    if (mySSLpBalance > POSITION_DUST) {
       const totalShares = parseFloat(ssStats?.totalShares ?? '0');
       const ratio = totalShares > 0 ? mySSLpBalance / totalShares : 0;
       const xlmShare = (ratio * parseFloat(ssStats?.reserveXLM ?? '0')).toFixed(2);
@@ -147,7 +150,7 @@ export default function FarmPage() {
     // Aquarius LP positions
     AQUARIUS_POOLS.forEach((pool) => {
       const lpBal = parseFloat(aqLpPositions[pool.id] ?? '0');
-      if (lpBal <= 0) return;
+      if (lpBal <= POSITION_DUST) return;
       const aqPoolStats = aquariusPools.find((p) => p.pool.id === pool.id)?.stats ?? null;
       const totalShares = parseFloat(aqPoolStats?.totalShares ?? '0');
       const ratio = totalShares > 0 ? lpBal / totalShares : 0;

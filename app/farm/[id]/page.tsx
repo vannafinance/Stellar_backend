@@ -333,9 +333,11 @@ export default function FarmDetailPage() {
     return `1 b${tokenSymbol} = ${bRate} ${tokenSymbol}`;
   }, [tokenSymbol, reserveData]);
 
-  // Current Position table
+  // Current Position table. Hide stroop-level dust (≤ 1e-4) left over after
+  // a 100% withdrawal so the table doesn't show a "0.00 b/0.00" ghost row.
+  const POSITION_DUST = 1e-4;
   const currentPositionBody = useMemo(() => {
-    if (!tokenSymbol || myBTokens === 0) return { rows: [] };
+    if (!tokenSymbol || myBTokens <= POSITION_DUST) return { rows: [] };
     const bTokens = (parseFloat(myPosition?.bTokenBalance ?? '0') || 0).toFixed(2);
     const underlying = (parseFloat(myPosition?.underlyingValue ?? '0') || 0).toFixed(2);
     const apy = reserveData ? (parseFloat(reserveData.supplyAPY) || 0).toFixed(2) : '—';
@@ -457,7 +459,7 @@ export default function FarmDetailPage() {
   ], [poolTokenA, poolTokenB]);
 
   const aquariusCurrentPositionBody = useMemo(() => {
-    if (myLpBalance <= 0) return { rows: [] };
+    if (myLpBalance <= POSITION_DUST) return { rows: [] };
     // Estimate underlying assets proportional to LP share
     const totalSharesNum = parseFloat(aqStats?.totalShares ?? '0');
     const ratio = totalSharesNum > 0 ? myLpBalance / totalSharesNum : 0;
@@ -626,7 +628,7 @@ export default function FarmDetailPage() {
 
   // Soroswap current position
   const soroswapCurrentPositionBody = useMemo(() => {
-    if (mySSLpBalance <= 0) return { rows: [] };
+    if (mySSLpBalance <= POSITION_DUST) return { rows: [] };
     const totalSharesNum = parseFloat(ssStats?.totalShares ?? '0');
     const ratio = totalSharesNum > 0 ? mySSLpBalance / totalSharesNum : 0;
     const xlmShare = (parseFloat(ssStats?.reserveXLM ?? '0') * ratio).toFixed(2);

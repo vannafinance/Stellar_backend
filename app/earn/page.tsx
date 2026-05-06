@@ -368,15 +368,20 @@ export default function Earn() {
   );
 
   // ─── Positions Table ─────────────────────────────────────────────────────────
-  // Shows only the assets where the user has a non-zero deposited balance.
+  // Shows only the assets where the user has a meaningful (non-dust) balance.
+  // Dust threshold: 0.0001 token. After a 100% withdrawal, contracts typically
+  // leave 1-100 stroops (1e-7 to 1e-5) of rounding residue in the user's
+  // vToken balance — purely numerical, not a real position. Filtering at
+  // 1e-4 hides that dust everywhere consistently.
+  const POSITION_DUST = 1e-4;
   const livePositionsTableBody = useMemo(() => {
     if (!userAddress) return { rows: [] };
 
     const assetKeys = ["XLM", "USDC", "AQUARIUS_USDC", "SOROSWAP_USDC"] as const;
     const rows = assetKeys
       .filter(
-        (asset) => parseFloat(userPositions[asset]?.deposited || "0") > 0 ||
-                   parseFloat(userPositions[asset]?.borrowed || "0") > 0
+        (asset) => parseFloat(userPositions[asset]?.deposited || "0") > POSITION_DUST ||
+                   parseFloat(userPositions[asset]?.borrowed || "0") > POSITION_DUST
       )
       .map((asset) => {
         const displaySymbol =

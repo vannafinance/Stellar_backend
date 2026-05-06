@@ -174,6 +174,17 @@ export const clearMarginAccount = () => {
     collateralBalances: {},
     isLoadingBorrowedBalances: false,
   });
+  // Drop ALL rate-limit caches so a disconnect → reconnect refetches
+  // from scratch. Two pairs exist:
+  //   • lastCheckByUser / inflightCheckByUser  → checkUserMarginAccount()
+  //   • lastRefreshByAccount / inflightRefreshByAccount → refreshBorrowedBalances()
+  // Without clearing the second pair, the margin address gets re-detected on
+  // reconnect but balance/HF stays at $0 because refreshBorrowedBalances
+  // short-circuits on the stale CACHE_DURATION_MS hit.
+  lastCheckByUser.clear();
+  inflightCheckByUser.clear();
+  lastRefreshByAccount.clear();
+  inflightRefreshByAccount.clear();
 };
 
 export const setAccountCreationLoading = (loading: boolean) => {

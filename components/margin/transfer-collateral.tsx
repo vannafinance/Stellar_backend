@@ -8,7 +8,7 @@ import { Button } from "../ui/button";
 import { useTheme } from "@/contexts/theme-context";
 import { MarginAccountService } from "@/lib/margin-utils";
 import { getAddress } from "@stellar/freighter-api";
-import { ContractService } from "@/lib/stellar-utils";
+import { ContractService, CONTRACT_ADDRESSES } from "@/lib/stellar-utils";
 import { appendMarginHistory } from "@/lib/margin-history";
 import { useMarginAccountInfoStore } from "@/store/margin-account-info-store";
 import { useUserStore } from "@/store/user";
@@ -55,6 +55,12 @@ export const TransferCollateral = () => {
   const [userAddress, setUserAddress] = useState<string>("");
   const [marginAccount, setMarginAccount] = useState<string>("");
   const [marginAccountBalance, setMarginAccountBalance] = useState<number>(0);
+  // Raw on-chain SAC balance held by the margin smart account. Differs from
+  // `marginAccountBalance` (collateral book value) because borrowed funds sit
+  // in the smart account but are not registered as collateral. Used for the
+  // display row below the transaction preview — transfer math still uses the
+  // collateral balance since only collateral is withdrawable.
+  const [marginAccountActualBalance, setMarginAccountActualBalance] = useState<number>(0);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const totalCollateralValue = useMarginAccountInfoStore((state) => state.totalCollateralValue);
@@ -69,6 +75,7 @@ export const TransferCollateral = () => {
       setUserAddress("");
       setMarginAccount("");
       setMarginAccountBalance(0);
+      setMarginAccountActualBalance(0);
       setWalletBalance(0);
       setValueInput("");
       setValueInUsd(0);
@@ -190,6 +197,18 @@ export const TransferCollateral = () => {
     }
   };
 
+  // Map our token symbol to the on-chain SAC contract that holds the actual
+  // balance. Used to read the raw token balance of the margin smart account
+  // (borrows + unencumbered collateral) for the display row.
+  const getTokenSacAddress = (tokenSymbol: string): string => {
+    switch (normalizeContractTokenSymbol(tokenSymbol)) {
+      case "USDC": return CONTRACT_ADDRESSES.BLEND_USDC;
+      case "AQUSDC": return CONTRACT_ADDRESSES.AQUARIUS_USDC;
+      case "SOUSDC": return CONTRACT_ADDRESSES.SOROSWAP_USDC;
+      default: return CONTRACT_ADDRESSES.BLEND_XLM; // XLM SAC
+    }
+  };
+
   const refreshTokenBalances = async (address: string, marginAccountAddress?: string) => {
     const selectedWalletBalance = await getSelectedWalletBalance(address, selectedCurrency);
     setWalletBalance(selectedWalletBalance);
@@ -205,6 +224,21 @@ export const TransferCollateral = () => {
       }
     } catch (error) {
       console.error("Error refreshing margin account balance:", error);
+    }
+
+    // Actual on-chain SAC balance held by the smart account. Margin account
+    // is a contract address, so the user's G-address is passed as the
+    // simulation source (SDK rejects C-addresses there).
+    try {
+      const sacAddress = getTokenSacAddress(selectedCurrency);
+      const balance = await ContractService.getSorobanTokenWalletBalance(
+        sacAddress,
+        accountAddress,
+        address,
+      );
+      setMarginAccountActualBalance(parseFloat(balance) || 0);
+    } catch (error) {
+      console.error("Error refreshing actual margin balance:", error);
     }
   };
 
@@ -563,32 +597,31 @@ export const TransferCollateral = () => {
         </div>
       </motion.article>
 
-      {/* Details panel */}
-      <motion.aside
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
-      >
-        <DetailsPanel
-          items={[
-            {
-              title: "Transfer Collateral",
-              value: `${valueInput || "0"} ${selectedCurrency}`,
-            },
-            {
-              title: selectedTransferType === "MB" ? "Margin Account Balance" : "Wallet Balance",
-              value: `${(selectedTransferType === "MB" ? marginAccountBalance : walletBalance).toFixed(2)} ${selectedCurrency}`,
-            },
-          ]}
-        />
-      </motion.aside>
-
       {/* Transaction preview — collateral / HF / liquidation buffer before vs after */}
       <TransferPreviewSection
         transferAmount={Number(valueInput) || 0}
         selectedTokenPrice={selectedTokenPrice}
         transferType={selectedTransferType}
       />
+
+      {/* Margin / Wallet balance row — moved below the transaction preview.
+          For MB destination we show the *actual* on-chain SAC balance of the
+          smart account (collateral + any borrowed funds parked in it), not
+          just the registered collateral book value. */}
+      <motion.aside
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.35 }}
+      >
+        <DetailsPanel
+          items={[
+            {
+              title: selectedTransferType === "MB" ? "Margin Account Balance" : "Wallet Balance",
+              value: `${(selectedTransferType === "MB" ? marginAccountActualBalance : walletBalance).toFixed(2)} ${selectedCurrency}`,
+            },
+          ]}
+        />
+      </motion.aside>
 
       {/* Action buttons */}
       <motion.section

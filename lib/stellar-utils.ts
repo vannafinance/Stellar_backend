@@ -188,10 +188,20 @@ export class ContractService {
     return 7;
   }
 
-  private static async getSorobanTokenWalletBalance(tokenContract: string, walletAddress: string): Promise<string> {
+  /**
+   * Read the on-chain SAC balance for a holder. The holder can be either a
+   * classic G-account or a contract C-account (e.g. a margin smart account) —
+   * in the latter case caller must pass `sourceUserAddress` since the SDK's
+   * `Account` builder rejects contract addresses as the simulation source.
+   */
+  static async getSorobanTokenWalletBalance(
+    tokenContract: string,
+    walletAddress: string,
+    sourceUserAddress?: string,
+  ): Promise<string> {
     try {
       const server = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
-      const sourceAccount = await server.getAccount(walletAddress);
+      const sourceAccount = await server.getAccount(sourceUserAddress ?? walletAddress);
       const token = new StellarSdk.Contract(tokenContract);
 
       const tx = new StellarSdk.TransactionBuilder(sourceAccount, {

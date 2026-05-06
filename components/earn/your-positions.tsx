@@ -77,7 +77,9 @@ export const YourPositions = memo(function YourPositions() {
 
   const userPosition = positions[assetKey as keyof typeof positions];
   const deposited = parseFloat(userPosition?.deposited || '0');
-  const hasPosition = deposited > 0;
+  // Dust threshold: anything below 1e-4 token is on-chain rounding residue
+  // (stroop-level) left over after a 100% withdrawal — not a real position.
+  const hasPosition = deposited > 1e-4;
 
   const tokenPrices = useTokenPrices(['XLM', 'USDC']);
   const price = tokenPrices[PRICE_TOKEN_FOR_ASSET[assetKey] ?? assetKey] ?? 1;

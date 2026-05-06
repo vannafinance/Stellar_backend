@@ -92,22 +92,27 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
   const handlePercentageClick = (percent: number) => {
     setSelectedPercentage(percent);
     if (vTokenBalance > 0) {
+      // 100% pins to the exact balance so float-precision drift (e.g.
+      // 999.139999 displayed as 999.14 after toFixed) doesn't push the
+      // input over the cap and trigger "Insufficient Balance".
+      if (percent === 100) {
+        setShares(String(vTokenBalance));
+        return;
+      }
+      // For partial percentages, floor to 2 decimals so we never round UP
+      // past the actual balance.
       const calculatedAmount = (vTokenBalance * percent) / 100;
-      setShares(calculatedAmount.toFixed(2).replace(/\.?0+$/, ""));
+      const floored = Math.floor(calculatedAmount * 100) / 100;
+      setShares(floored.toFixed(2).replace(/\.?0+$/, ""));
     }
   };
 
   const handleWithdraw = async () => {
     const numAmount = parseFloat(shares);
     if (numAmount > 0 && userAddress) {
-      const isFullBalanceWithdraw =
-        selectedPercentage === 100 || numAmount >= Math.max(0, vTokenBalance - 0.0000001);
-
-      if (isFullBalanceWithdraw) {
-        toast.error(`You cannot withdraw all your v${selectedOption}. Keep a small balance and try again.`);
-        return;
-      }
-
+      // No frontend hardcoded "100% blocked" guard — let the contract
+      // decide. A previous version unconditionally toasted "cannot
+      // withdraw all" on 100%, which made full withdrawals impossible.
       const result = await withdraw(numAmount, normalizedAsset as AssetType);
       if (result.success) {
         setShares("");
@@ -154,7 +159,10 @@ export const WithdrawLiquidity = memo(function WithdrawLiquidity() {
     if (!userAddress) return "Connect Wallet";
     if (isLoading) return "Withdrawing...";
     if (!shares || parseFloat(shares) <= 0) return "Enter Amount";
-    if (parseFloat(shares) > vTokenBalance) return "Insufficient Balance";
+    // 1e-7 tolerance (~one stroop) absorbs float reformatting drift so a
+    // 100% click that pins to the exact balance string doesn't misfire as
+    // "Insufficient Balance".
+    if (parseFloat(shares) > vTokenBalance + 1e-7) return "Insufficient Balance";
     return "Withdraw Liquidity";
   };
 

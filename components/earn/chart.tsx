@@ -62,6 +62,20 @@ const bucketByInterval = (
   bucketMs: number,
 ): Array<{ date: string; amount: number }> => {
   if (bucketMs <= 0 || data.length === 0) return data;
+
+  // If the entire raw-data span is shorter than a single bucket, bucketing
+  // would collapse same-day deposits + withdrawals into one "latest value"
+  // point and erase the rise-then-fall curve. In that case skip bucketing
+  // and return raw points so a "1 Year" view of a fresh wallet still shows
+  // the intra-day movement instead of a flat line at the latest value.
+  const timestamps = data
+    .map((item) => new Date(item.date).getTime())
+    .filter((ts) => Number.isFinite(ts));
+  if (timestamps.length >= 2) {
+    const span = Math.max(...timestamps) - Math.min(...timestamps);
+    if (span > 0 && span < bucketMs) return data;
+  }
+
   const buckets = new Map<number, { date: string; amount: number; ts: number }>();
   for (const item of data) {
     const ts = new Date(item.date).getTime();
@@ -74,9 +88,24 @@ const bucketByInterval = (
       buckets.set(bucketKey, { date: item.date, amount: item.amount, ts });
     }
   }
-  return Array.from(buckets.values())
+  const result = Array.from(buckets.values())
     .sort((a, b) => a.ts - b.ts)
     .map(({ date, amount }) => ({ date, amount }));
+
+  // SvgChart needs at least 2 points to draw a line. If bucketing collapsed a
+  // multi-point input down to a single point (e.g. a fresh position with two
+  // data samples 60s apart all landing in the same hour bucket), keep the
+  // earliest raw sample alongside it so the chart renders a flat line at the
+  // current value instead of falling back to "No data".
+  if (result.length === 1 && data.length >= 2) {
+    const sorted = [...data].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+    if (sorted[0].date !== result[0].date) {
+      return [sorted[0], result[0]];
+    }
+  }
+  return result;
 };
 
 const adaptiveBucketMs = (data: Array<{ date: string; amount: number }>): number => {
@@ -133,6 +162,18 @@ const filterDataByTimeRange = (
   // ramp from 0 → first-real-value across the missing portion.
   const targetCount = BACKFILL_POINTS[filter] ?? 0;
   if (targetCount === 0 || bucketed.length === 0) return bucketed;
+
+  // If the real data already has meaningful variance (the user actually
+  // deposited and withdrew, or their balance grew/dropped), don't drown
+  // it in 12 synthetic zeros — show their real curve directly. Without
+  // this, a fresh wallet's deposit + withdraw cycle on a 1-Year view
+  // gets squashed into the last 0.01% of the X-axis behind a long flat
+  // backfill line. Variance > 0 is a strong signal there's something
+  // worth showing.
+  const amounts = bucketed.map((p) => p.amount);
+  const minAmount = Math.min(...amounts);
+  const maxAmount = Math.max(...amounts);
+  if (maxAmount - minAmount > 1e-6) return bucketed;
 
   const oldestReal = new Date(bucketed[0].date).getTime();
   const startMs = startDate.getTime();
