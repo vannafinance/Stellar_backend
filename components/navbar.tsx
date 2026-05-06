@@ -61,8 +61,8 @@ export const Navbar = (props: Navbar) => {
   const appMode = useAppModeStore((s) => s.mode);
   const setAppMode = useAppModeStore((s) => s.set);
 
-  // In lite mode, hide Trade, Farm, and Portfolio from navigation
-  const LITE_HIDDEN_TITLES = ["Trade", "Farm", "Portfolio"];
+  // In lite mode, hide Trade and Farm from navigation
+  const LITE_HIDDEN_TITLES = ["Trade", "Farm"];
   const filteredItems =
     appMode === "lite"
       ? props.items.filter((item) => !LITE_HIDDEN_TITLES.includes(item.title))
@@ -308,7 +308,6 @@ export const Navbar = (props: Navbar) => {
               if (pathname.startsWith("/trade")) return "Trade";
               if (pathname.startsWith("/farm")) return "Farm";
               if (pathname.startsWith("/earn")) return "Earn";
-              if (pathname.startsWith("/portfolio")) return "Portfolio";
               return "";
             })()}
           </span>

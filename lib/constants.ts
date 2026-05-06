@@ -1,5 +1,4 @@
 export const navbarItems = [
-  { title: "Portfolio", link: "/portfolio", group: "primary" },
   { title: "Earn", link: "/earn", group: "primary" },
   { title: "Margin", link: "/", group: "bordered" },
   { title: "Trade", link: "/trade" , group: "bordered"  },
@@ -57,4 +56,3 @@ export const iconPaths: Record<string, string> = {
   BASE: "/icons/base-icon.svg",
   WBTC: "/icons/wbtc-icon.png",
 };
-
