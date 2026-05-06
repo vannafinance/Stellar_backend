@@ -253,7 +253,11 @@ export const OneClickStrategy = () => {
 
   const totalCollateralUsd = totalCollateralValue + collateralUsd;
   const totalBorrowUsd = totalBorrowedValue + borrowUsd;
-  const newHF = totalBorrowUsd > 0 ? totalCollateralUsd / totalBorrowUsd : 0;
+  // Keep Lite HF aligned with Pro/risk-engine display semantics:
+  // borrowed funds are still assets on the margin account balance sheet
+  // until deployed, so HF is evaluated on gross assets.
+  const grossCollateralUsd = totalCollateralUsd + totalBorrowUsd;
+  const newHF = totalBorrowUsd > 0 ? grossCollateralUsd / totalBorrowUsd : 0;
   const newLTV = totalCollateralUsd > 0 ? (totalBorrowUsd / totalCollateralUsd) * 100 : 0;
   const maxBorrowUsd = collateralUsd * 0.8 + Math.max(0, totalCollateralValue - totalBorrowedValue) * 0.8;
   const liquidationPrice = collateralNum > 0 && borrowedAmount > 0 ? (borrowUsd * 1.1) / collateralNum : 0;
